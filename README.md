@@ -106,7 +106,16 @@ uv run ruff format .
 
 ## Task Format
 
-Tasks are `.md` files in `docs/tasks/<block>/<task>.md`:
+Each task is three files in `docs/tasks/<block>/`:
+
+```
+docs/tasks/block_f_simple/
+├── task_f1.md           # condition (statement, args, rules, example)
+├── task_f1.solution.py  # reference solution
+└── task_f1.tests.py     # test cases (@case) + hooks (@before/@after)
+```
+
+### task_f1.md — condition only
 
 ````markdown
 # Задача F1: Найди первый критический баг
@@ -125,9 +134,9 @@ Tasks are `.md` files in `docs/tasks/<block>/<task>.md`:
 task_f1_find_critical(bugs)
 # -> "Crash on login"
 ```
+````
 
-<details>
-<summary>Эталонное решение</summary>
+### task_f1.solution.py — reference
 
 ```python
 def task_f1_find_critical(bugs):
@@ -137,19 +146,35 @@ def task_f1_find_critical(bugs):
     return ""
 ```
 
-</details>
-
-## Тесты
+### task_f1.tests.py — tests + hooks
 
 ```python
-[
-    (([{"id": "B1", "severity": "critical", "title": "Crash"}],), "Crash", "basic"),
-    (([],), "", "empty list"),
-]
-```
-````
+from ego.testing import case, before, after
 
-Parser extracts: statement (without solution), stub (with `pass`), reference solution, test cases.
+@before
+def setup(task_func):
+    return {"start": time.time()}
+
+@after
+def teardown(task_func, result, ctx):
+    if time.time() - ctx["start"] > 1.0:
+        print(f"Slow: {result.description}")
+
+@case(args=([{"id": "B1", "severity": "critical", "title": "Crash"}],),
+      expected="Crash", description="basic")
+@case(args=([],), expected="", description="empty list")
+@case(args=([{"id": "B1", "severity": "minor", "title": "Typo"}],),
+      expected="", description="no critical")
+def task_f1_find_critical(bugs):
+    ...
+```
+
+Parser extracts: statement (from .md), stub (from .solution.py with `pass`),
+reference solution, test cases (from .tests.py via `@case` decorator).
+
+Checker: imports `.tests.py`, runs `@before` → student code → compare → `@after`.
+
+See [docs/TESTS_DESIGN.md](docs/TESTS_DESIGN.md) for full spec.
 
 ## Documentation
 
