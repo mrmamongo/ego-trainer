@@ -1,14 +1,23 @@
-"""Progress tracking — реализован в задаче ego-trainer-93h (Foundation epic).
+"""Progress persistence (.ego/progress.json)."""
 
-Сейчас заглушка, чтобы пакет импортировался.
-"""
+from __future__ import annotations
 
+from pathlib import Path
 
-def load_progress(*args, **kwargs):  # noqa: D401
-    """Load progress from .ego/progress.json. NOT IMPLEMENTED YET."""
-    raise NotImplementedError("progress is implemented in the ego-trainer-93h epic")
+from ego.models import Progress
 
 
-def save_progress(*args, **kwargs):  # noqa: D401
-    """Save progress to .ego/progress.json. NOT IMPLEMENTED YET."""
-    raise NotImplementedError("progress is implemented in the ego-trainer-93h epic")
+PROGRESS_PATH = Path(".ego/progress.json")
+
+
+def load_progress(path: Path = PROGRESS_PATH) -> Progress:
+    """Load progress from .ego/progress.json. Returns empty Progress if not found."""
+    if not path.exists():
+        return Progress()
+    return Progress.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+def save_progress(progress: Progress, path: Path = PROGRESS_PATH) -> None:
+    """Save progress to .ego/progress.json. Creates parent dirs if needed."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(progress.model_dump_json(indent=2), encoding="utf-8")
