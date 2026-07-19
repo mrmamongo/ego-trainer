@@ -55,6 +55,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('ego.showTask', () => cmdShowTask()),
         vscode.commands.registerCommand('ego.hints', () => cmdHints()),
         vscode.commands.registerCommand('ego.myProgress', () => cmdMyProgress()),
+        vscode.commands.registerCommand('ego.push', () => cmdPush()),
         vscode.commands.registerCommand('ego.refreshTree', () => treeProvider.refresh()),
         vscode.commands.registerCommand('ego.openTask', (task: TaskMeta) => cmdOpenTask(task)),
     );
@@ -452,6 +453,92 @@ async function cmdMyProgress(): Promise<void> {
     } catch (e) {
         vscode.window.showErrorMessage(`Ego: Progress failed — ${(e as Error).message}`);
     }
+}
+
+async function cmdPush(): Promise<void> {
+    const wsFolder = vscode.workspace.workspaceFolders?.[0];
+    if (!wsFolder) {
+        vscode.window.showErrorMessage('Ego: No workspace folder open.');
+        return;
+    }
+
+    // Read .ego/progress.json from workspace.
+    const progressUri = vscode.Uri.joinPath(wsFolder.uri, '.ego', 'progress.json');
+    let progressData: { entries?: Array<{ task_id: string; version: string; status: string; attempts: number; passed_tests: number; total_tests: number; solution_hash?: string }> };
+    try {
+        const buf = await vscode.workspace.fs.readFile(progressUri);
+        progressData = JSON.parse(Buffer.from(buf).toString('utf-8'));
+    } catch {
+        vscode.window.showWarningMessage('Ego: No .ego/progress.json found. Run "Ego: Check" first.');
+        return;
+    }
+
+    const entries = progressData.entries || [];
+    if (entries.length === 0) {
+        vscode.window.showInformationMessage('Ego: No progress entries to push.');
+        return;
+    }
+
+    // Also read run logs from .ego/runs/ to attach to push.
+    const runsDir = vscode.Uri.joinPath(wsFolder.uri, '.ego', 'runs');
+
+    await vscode.window.withProgress(
+        {
+            location: vscode.ProgressLocation.Notification,
+            title: `Ego: Pushing ${entries.length} progress entries...`,
+            cancellable: false,
+        },
+        async (progress) => {
+            let pushed = 0;
+            let errors = 0;
+            for (const entry of entries) {
+                progress.report({
+                    message: `${entry.task_id}: ${entry.status}`,
+                    increment: (pushed / entries.length) * 100,
+                });
+                try {
+                    // Find the latest run log for this task.
+                    let log = '';
+                    try {
+                        const runFiles = await vscode.workspace.fs.readDirectory(runsDir);
+                        const taskRuns = runFiles
+                            .filter(([name]) => name.startsWith(entry.task_id.replace(/\./g, '_') + '-'))
+                            .sort()
+                            .reverse();
+                        if (taskRuns.length > 0) {
+                            const logBuf = await vscode.workspace.fs.readFile(
+                                vscode.Uri.joinPath(runsDir, taskRuns[0][0])
+                            );
+                            const runData = JSON.parse(Buffer.from(logBuf).toString('utf-8'));
+                            log = runData.log || '';
+                        }
+                    } catch {
+                        // No run log — empty log is fine.
+                    }
+
+                    await api.pushProgress({
+                        task_id: entry.task_id,
+                        version: entry.version,
+                        solution_hash: entry.solution_hash || '',
+                        status: entry.status,
+                        log,
+                        passed_tests: entry.passed_tests,
+                        total_tests: entry.total_tests,
+                    });
+                    pushed++;
+                } catch (e) {
+                    errors++;
+                    console.error(`Push ${entry.task_id} failed:`, e);
+                }
+            }
+            if (errors === 0) {
+                vscode.window.showInformationMessage(`Ego: Pushed ${pushed} progress entries to server.`);
+            } else {
+                vscode.window.showWarningMessage(`Ego: Pushed ${pushed}, ${errors} errors.`);
+            }
+            treeProvider.refresh();
+        }
+    );
 }
 
 function updateStatusBar(result: CheckResponse, taskId: string): void {

@@ -57,6 +57,11 @@
         "category": "Ego"
       },
       {
+        "command": "ego.push",
+        "title": "Ego: Push Progress to Server",
+        "category": "Ego"
+      },
+      {
         "command": "ego.refreshTree",
         "title": "Ego: Refresh Task List",
         "icon": "$(refresh)"
