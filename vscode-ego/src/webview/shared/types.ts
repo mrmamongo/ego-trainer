@@ -16,3 +16,37 @@ export interface CheckResult {
 	results: TestResultDTO[];
 	log: string;
 }
+
+export type EgoMode = 'server' | 'offline';
+
+export type TaskStatusFilter = 'all' | 'passed' | 'partial' | 'new' | 'failed';
+
+export interface DashboardRow {
+	id: string;
+	title: string;
+	block: string;
+	slug: string;
+	version: string;
+	status: string; // passed | partial | new | failed | error | ...
+	passed_tests: number;
+	total_tests: number;
+	attempts: number;
+	last_run_at: string | null;
+	md_path?: string;
+}
+
+export interface DashboardSummary {
+	passed: number;
+	partial: number;
+	new: number;
+	failed: number;
+	total: number;
+}
+
+export interface DashboardData {
+	mode: EgoMode;
+	summary: DashboardSummary;
+	blocks: string[];
+	rows: DashboardRow[];
+	error?: string;
+}

@@ -4,10 +4,17 @@ export type ExtMessage =
 	| { type: 'ready' }
 	| { type: 'welcome.connect' }
 	| { type: 'welcome.offline' }
-	| { type: 'welcome.skip' };
+	| { type: 'welcome.skip' }
+	| { type: 'dashboard.refresh' }
+	| { type: 'dashboard.open'; taskId: string }
+	| { type: 'dashboard.check'; taskId: string }
+	| { type: 'dashboard.hints'; taskId: string }
+	| { type: 'dashboard.pullAll' }
+	| { type: 'dashboard.push' };
 
 export type HostMessage =
 	| { type: 'setResult'; payload: import('./types').CheckResult }
+	| { type: 'dashboard.setData'; payload: import('./types').DashboardData }
 	| { type: 'noop' };
 
 declare function acquireVsCodeApi(): {
