@@ -57,9 +57,26 @@ def task_f1_find_critical(bugs):
     return ""
 ```
 
+## Test levels (smoke vs full)
+
+Два уровня прогона — быстрая проверка работоспособности и полный функционал.
+
+| Level | Назначение | Что внутри | Когда |
+|-------|------------|------------|-------|
+| `smoke` | быстрые тесты работоспособности | 2–5 явных `@case` (happy path + 1–2 edge) | default: `ego check`, UI Check |
+| `full` | полный функционал | дополнительные edge `@case` + (post-MVP) Hypothesis `@scenario` | `ego check --full`, CI, ментор |
+
+**Правила:**
+- У каждого `@case` / `@scenario` есть `level: "smoke" | "full"` (default для `@case` — `"smoke"`).
+- `ego check` → только `smoke`.
+- `ego check --full` (или `--level all`) → `smoke` + `full`.
+- `--level smoke|full|all` — явный выбор; `full` = только full-кейсы (без smoke), `all` = оба.
+- Hypothesis / property (эпик `9u7`) всегда `level="full"` — в default-check не тормозят студента.
+- Старые `## Тесты` / `literal_eval` считаются `smoke`.
+
 ## task_f1.tests.py
 
-Тесты с `@case` декоратором + `@before` / `@after` хуками.
+Тесты с `@case` декоратором + `@before` / `@after` хуками + уровнем.
 
 ```python
 from ego.testing import case, before, after
@@ -76,20 +93,26 @@ def teardown(task_func, case_result, ctx):
     if elapsed > 1.0:
         print(f"Slow test: {case_result.description} ({elapsed:.2f}s)")
 
+# --- smoke (default ego check) ---
 @case(
     args=([{"id": "B1", "severity": "critical", "title": "Crash"}],),
     expected="Crash",
     description="basic: one critical bug",
+    level="smoke",
 )
 @case(
     args=([],),
     expected="",
     description="empty list",
+    level="smoke",
 )
+
+# --- full (ego check --full) ---
 @case(
     args=([{"id": "B1", "severity": "minor", "title": "Typo"}],),
     expected="",
     description="no critical bugs",
+    level="full",
 )
 @case(
     args=(
@@ -101,6 +124,7 @@ def teardown(task_func, case_result, ctx):
     ),
     expected="B",
     description="first critical wins",
+    level="full",
 )
 def task_f1_find_critical(bugs):
     ...
@@ -149,13 +173,16 @@ for each @case:
 
 ```python
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, Literal
+
+TestLevel = Literal["smoke", "full"]
 
 @dataclass
 class TestCase:
     args: tuple
     expected: Any
     description: str = ""
+    level: TestLevel = "smoke"
 
 @dataclass
 class CaseResult:
@@ -164,13 +191,22 @@ class CaseResult:
     expected_repr: str
     actual_repr: str | None
     error: str | None = None
+    level: TestLevel = "smoke"
 
-def case(*, args: tuple, expected: Any, description: str = ""):
+def case(
+    *,
+    args: tuple,
+    expected: Any,
+    description: str = "",
+    level: TestLevel = "smoke",
+):
     """Decorator: register a test case for a task function."""
     def decorator(func):
         if not hasattr(func, "_ego_cases"):
             func._ego_cases = []
-        func._ego_cases.append(TestCase(args=args, expected=expected, description=description))
+        func._ego_cases.append(
+            TestCase(args=args, expected=expected, description=description, level=level)
+        )
         return func
     return decorator
 
@@ -189,33 +225,39 @@ def after(func: Callable):
 
 1. Parser находит `task_f1.solution.py` и `task_f1.tests.py` рядом с `.md`
 2. Parser: `solution_py` из `.solution.py` (не из `<details>` в .md)
-3. Parser: `tests_code` — путь к `.tests.py` файлу (не литерал)
+3. Parser: `tests_file` — путь к `.tests.py` (поле `Task.tests_file`)
 4. Checker:
    a. Импортирует `.tests.py` (через `importlib`)
    b. Находит `task_*` функцию, собирает `_ego_cases`
-   c. Находит `_ego_before` / `_ego_after` функции
-   d. Для каждого `@case`:
+   c. Фильтрует по `level` аргумента `run_check` (`smoke` | `full` | `all`, default `smoke`)
+   d. Находит `_ego_before` / `_ego_after` функции
+   e. Для каждого выбранного `@case`:
       - `ctx = before(task_func)` если есть
       - Запускает student code с `case.args`
       - Сравнивает `repr(result)` с `repr(expected)`
       - `after(task_func, result, ctx)` если есть
-   e. Агрегирует в `CheckResult`
+   f. Агрегирует в `CheckResult` (включая какой level был запрошен)
+5. Post-MVP (`9u7`): при `level in (full, all)` дополнительно гоняет `@scenario` / Hypothesis (ref = oracle)
 
 ## Migration
 
-1. Создать `ego/testing.py` (`@case`, `@before`, `@after`, `TestCase`, `CaseResult`)
+1. Создать `ego/testing.py` (`@case` + `level`, `@before`, `@after`, `TestCase`, `CaseResult`)
 2. Обновить parser:
    - `solution_py` — читать из `<task>.solution.py` (fallback: `<details>` в .md для совместимости)
    - `tests_file` — путь к `<task>.tests.py` (новое поле в Task)
 3. Обновить checker:
    - `_extract_test_cases` — импортировать `.tests.py` через `importlib`
+   - Фильтр по level (`smoke` / `full` / `all`)
    - Добавить before/after вызовы в `run_check`
-4. Написать `.solution.py` + `.tests.py` для всех существующих задач
-5. Убрать `<details>Эталонное решение</summary>` из .md (или оставить как fallback)
-6. Тесты на parser (новый формат) + checker (hooks) + testing module
+4. CLI/API: `ego check --full` / `--level`, опционально в `POST /check` и vscode Check
+5. Написать `.solution.py` + `.tests.py` для всех существующих задач (smoke + часть full)
+6. Убрать `<details>Эталонное решение</summary>` из .md (или оставить как fallback)
+7. Тесты на parser (новый формат) + checker (hooks + levels) + testing module
+8. Post-MVP: Hypothesis `@scenario` только на `level=full` (эпик `9u7`)
 
 ## Совместимость
 
 - Старые .md с `<details>` — parser fallback на старый формат (deprecated)
-- Старые .md с `## Тесты` — parser fallback на `ast.literal_eval` (deprecated)
+- Старые .md с `## Тесты` — parser fallback на `ast.literal_eval` (deprecated), level=`smoke`
 - Новые задачи — только отдельные файлы
+- Default check без флагов = `smoke` (быстро для студента)
