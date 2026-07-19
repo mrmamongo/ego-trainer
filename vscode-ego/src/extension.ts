@@ -13,7 +13,7 @@ import { TestResultsPanel } from './resultsPanel';
 import { WelcomeView } from './welcomeView';
 import { runOfflineInit, runServerInit } from './initWizard';
 import { pullTasksToWorkspace } from './pullTasks';
-import { showDashboard } from './dashboardView';
+import { DashboardView } from './dashboardView';
 import { hasEgoDir, readEgoConfig } from './egoWorkspace';
 
 const SECRET_KEY = 'ego.token';
@@ -57,6 +57,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     // Tree view.
     treeProvider = new EgoTaskTreeProvider(api);
+
+    DashboardView.configure(context.extensionUri, {
+        getApi: () => api,
+        refreshTree: () => treeProvider.refresh(),
+        openTask: (task) => cmdOpenTask(task),
+        checkTask: (taskId) => cmdCheckTask(taskId),
+        showHints: (taskId) => cmdHintsForTask(taskId),
+        pullAll: () => cmdPullAll(),
+        pushProgress: () => cmdPush(),
+    });
     const treeView = vscode.window.createTreeView('egoTaskTree', {
         treeDataProvider: treeProvider,
         showCollapseAll: true,
@@ -115,7 +125,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 await runOfflineInit(context, deps);
             }
         }),
-        vscode.commands.registerCommand('ego.dashboard', () => showDashboard()),
+        vscode.commands.registerCommand('ego.dashboard', () => DashboardView.show()),
     );
 
     // Auto-check on save (if enabled).
@@ -258,10 +268,31 @@ async function cmdCheck(): Promise<void> {
         return;
     }
     const taskId = match[1].replace(/_/g, '.').toUpperCase();
+    await runCheckOnCode(taskId, editor.document.getText());
+}
 
-    const code = editor.document.getText();
+/** Check a task by id — used by Dashboard (opens file if needed). */
+async function cmdCheckTask(taskId: string): Promise<void> {
+    const cfg = await readEgoConfig();
+    if (cfg?.mode === 'offline') {
+        vscode.window.showWarningMessage(
+            'Ego: Offline check lands in 8bv.9.9. Switch to Server mode or use CLI: ego check --local.'
+        );
+        return;
+    }
+
+    const code = await readTaskPy(taskId);
+    if (code === undefined) {
+        vscode.window.showWarningMessage(
+            `Ego: No .py stub found for ${taskId}. Open the task first (or Pull All).`
+        );
+        return;
+    }
+    await runCheckOnCode(taskId, code);
+}
+
+async function runCheckOnCode(taskId: string, code: string): Promise<void> {
     statusBar.text = '$(loading~spin) Ego: checking...';
-
     try {
         const result = await api.check(taskId, code);
         showCheckResult(result, taskId);
@@ -271,6 +302,31 @@ async function cmdCheck(): Promise<void> {
         statusBar.text = '$(error) Ego: check failed';
         vscode.window.showErrorMessage(`Ego: Check failed — ${(e as Error).message}`);
     }
+}
+
+/** Find task_*.py on disk (tasks/ preferred). */
+async function readTaskPy(taskId: string): Promise<string | undefined> {
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+    if (!root) return undefined;
+    const normalized = taskId.replace(/\./g, '_').toLowerCase();
+    const filename = `task_${normalized}.py`;
+
+    const matches = await vscode.workspace.findFiles(
+        new vscode.RelativePattern(root, `**/${filename}`),
+        '**/{node_modules,.ego,out}/**',
+        5
+    );
+    // Prefer tasks/ over docs/
+    matches.sort((a, b) => {
+        const ar = vscode.workspace.asRelativePath(a);
+        const br = vscode.workspace.asRelativePath(b);
+        const ascore = ar.startsWith('tasks/') ? 0 : 1;
+        const bscore = br.startsWith('tasks/') ? 0 : 1;
+        return ascore - bscore;
+    });
+    if (matches.length === 0) return undefined;
+    const buf = await vscode.workspace.fs.readFile(matches[0]);
+    return Buffer.from(buf).toString('utf-8');
 }
 
 async function cmdPull(): Promise<void> {
@@ -445,7 +501,18 @@ async function cmdHints(): Promise<void> {
         }
     }
 
-    // Ask which hint level.
+    await cmdHintsForTask(taskId);
+}
+
+async function cmdHintsForTask(taskId: string): Promise<void> {
+    const cfg = await readEgoConfig();
+    if (cfg?.mode === 'offline') {
+        vscode.window.showWarningMessage(
+            'Ego: Hints require server mode (GET /tasks/<id>/hints).'
+        );
+        return;
+    }
+
     const level = await vscode.window.showQuickPick(
         [
             { label: 'Level 1: Rules (Правила)', value: 1 },
@@ -462,7 +529,6 @@ async function cmdHints(): Promise<void> {
             vscode.window.showInformationMessage(`Ego: No hints available for ${taskId}`);
             return;
         }
-        // Show hints in a markdown document.
         const mdContent = resp.hints.map(h => `## ${h.title}\n\n${h.content}`).join('\n\n---\n\n');
         const doc = await vscode.workspace.openTextDocument({
             content: `# Hints for ${taskId}\n\n${mdContent}`,
@@ -475,27 +541,8 @@ async function cmdHints(): Promise<void> {
 }
 
 async function cmdMyProgress(): Promise<void> {
-    try {
-        const me = await api.me();
-        const progress = await api.getProgress(me.user_id);
-        if (progress.length === 0) {
-            vscode.window.showInformationMessage('Ego: No progress yet. Run "Ego: Check" on a task.');
-            return;
-        }
-        // Show progress in a markdown table.
-        const rows = progress.map(p => {
-            const icon = p.status === 'passed' ? '✓' : p.status === 'partial' ? '◐' : '○';
-            return `| ${p.task_id} | ${icon} ${p.status} | ${p.passed_tests}/${p.total_tests} | ${p.attempts} |`;
-        }).join('\n');
-        const mdContent = `# My Progress\n\n| Task | Status | Tests | Attempts |\n|------|--------|-------|----------|\n${rows}\n\n**Total:** ${progress.length} tasks, ${progress.filter(p => p.status === 'passed').length} passed`;
-        const doc = await vscode.workspace.openTextDocument({
-            content: mdContent,
-            language: 'markdown',
-        });
-        await vscode.commands.executeCommand('markdown.showPreview', doc.uri);
-    } catch (e) {
-        vscode.window.showErrorMessage(`Ego: Progress failed — ${(e as Error).message}`);
-    }
+    // Dashboard replaces the old markdown progress table (8bv.9.5).
+    await DashboardView.show();
 }
 
 async function cmdPush(): Promise<void> {
