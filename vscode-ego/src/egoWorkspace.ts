@@ -36,6 +36,17 @@ export async function hasEgoDir(root?: vscode.Uri): Promise<boolean> {
     }
 }
 
+/**
+ * Workspace is initialized when `.ego/config.yaml` exists and parses.
+ * Offline mode does not require a JWT; server mode still counts as
+ * initialized (login is a separate step).
+ */
+export async function isEnvironmentReady(root?: vscode.Uri): Promise<boolean> {
+    if (!(await hasEgoDir(root))) return false;
+    const cfg = await readEgoConfig(root);
+    return cfg !== undefined && (cfg.mode === 'offline' || cfg.mode === 'server');
+}
+
 export async function readEgoConfig(root?: vscode.Uri): Promise<EgoConfigFile | undefined> {
     const dir = egoDir(root);
     if (!dir) return undefined;

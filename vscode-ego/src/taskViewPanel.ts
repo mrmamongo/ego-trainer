@@ -6,6 +6,7 @@ import { webviewHtml, webviewLocalRoots } from './webviewHost';
 import {
     extractSection,
     extractSignature,
+    renderMarkdownHtml,
     renderStatementHtml,
     stripSolutionDetails,
 } from './markdown';
@@ -14,6 +15,7 @@ import { readEgoConfig } from './egoWorkspace';
 export interface TaskViewHint {
     level: number;
     title: string;
+    /** Pre-rendered HTML (host-side markdown). */
     content: string;
 }
 
@@ -130,6 +132,10 @@ export class TaskViewPanel {
         if (TaskViewPanel.current && result.task_id !== TaskViewPanel.current.id) {
             return; // different task
         }
+        // Keep host-side status in sync for later refreshes.
+        if (TaskViewPanel.current && result.task_id === TaskViewPanel.current.id) {
+            TaskViewPanel.current = { ...TaskViewPanel.current, status: result.status };
+        }
         if (TaskViewPanel.ready) {
             TaskViewPanel.panel.webview.postMessage({
                 type: 'taskView.setResult',
@@ -204,7 +210,7 @@ async function loadTaskViewData(api: EgoApi, ref: TaskRef): Promise<TaskViewData
                 hints = resp.hints.map((h) => ({
                     level: h.level,
                     title: h.title,
-                    content: h.content,
+                    content: renderMarkdownHtml(h.content),
                 }));
             } catch {
                 hints = hintsFromMarkdown(full.statement_md, full.stub_py);
@@ -242,15 +248,15 @@ async function loadTaskViewData(api: EgoApi, ref: TaskRef): Promise<TaskViewData
 function hintsFromMarkdown(statementMd: string, stubPy: string): TaskViewHint[] {
     const hints: TaskViewHint[] = [];
     const rules = extractSection(statementMd, 'Правила');
-    if (rules) hints.push({ level: 1, title: 'Правила', content: rules });
+    if (rules) hints.push({ level: 1, title: 'Правила', content: renderMarkdownHtml(rules) });
     const example = extractSection(statementMd, 'Пример');
-    if (example) hints.push({ level: 2, title: 'Пример', content: example });
+    if (example) hints.push({ level: 2, title: 'Пример', content: renderMarkdownHtml(example) });
     const sig = extractSignature(stubPy);
     if (sig) {
         hints.push({
             level: 3,
             title: 'Сигнатура функции',
-            content: `\`\`\`python\n${sig}\n\`\`\``,
+            content: renderMarkdownHtml('```python\n' + sig + '\n```'),
         });
     }
     return hints;

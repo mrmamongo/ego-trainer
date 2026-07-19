@@ -35,6 +35,11 @@ def main(argv=None):
         action="store_true",
         help="Offline: parse docs/tasks/ directly, no .ego/ needed",
     )
+    p_check.add_argument(
+        "--json",
+        action="store_true",
+        help="Print CheckResult as JSON on stdout (for VSCode extension / tooling)",
+    )
 
     # pull — реализован в ego.cli.pull_cmd (задача 8bv.4)
     p_pull = sub.add_parser("pull", help="Pull tasks from server into tasks/ + .ego/cache/")

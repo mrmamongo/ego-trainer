@@ -15,6 +15,12 @@ onHostMessage((msg) => {
 	}
 	if (msg.type === 'taskView.setResult' || msg.type === 'setResult') {
 		checkResult.set(msg.payload);
+		// Keep header status badge in sync with latest check.
+		taskViewData.update((data) =>
+			data && msg.payload?.task_id === data.id
+				? { ...data, status: msg.payload.status }
+				: data
+		);
 	}
 });
 

@@ -12,6 +12,9 @@
     "Other"
   ],
   "main": "./out/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "contributes": {
     "commands": [
       {
@@ -30,6 +33,11 @@
         "category": "Ego"
       },
       {
+        "command": "ego.checkTask",
+        "title": "Ego: Check Task",
+        "category": "Ego"
+      },
+      {
         "command": "ego.pull",
         "title": "Ego: Pull Tasks",
         "category": "Ego"
@@ -37,6 +45,11 @@
       {
         "command": "ego.pullAll",
         "title": "Ego: Pull All Tasks",
+        "category": "Ego"
+      },
+      {
+        "command": "ego.pullTask",
+        "title": "Ego: Pull Task",
         "category": "Ego"
       },
       {
@@ -52,6 +65,11 @@
       {
         "command": "ego.hints",
         "title": "Ego: Show Hints",
+        "category": "Ego"
+      },
+      {
+        "command": "ego.hintsForTask",
+        "title": "Ego: Show Hints for Task",
         "category": "Ego"
       },
       {
@@ -93,6 +111,11 @@
         "command": "ego.openTaskView",
         "title": "Ego: Open Task View",
         "category": "Ego"
+      },
+      {
+        "command": "ego.switchMode",
+        "title": "Ego: Switch Mode",
+        "category": "Ego"
       }
     ],
     "views": {
@@ -116,12 +139,22 @@
         {
           "command": "ego.openTask",
           "when": "view == egoTaskTree && viewItem == task",
-          "group": "inline"
+          "group": "inline@1"
         },
         {
-          "command": "ego.check",
+          "command": "ego.checkTask",
           "when": "view == egoTaskTree && viewItem == task",
-          "group": "inline"
+          "group": "inline@2"
+        },
+        {
+          "command": "ego.hintsForTask",
+          "when": "view == egoTaskTree && viewItem == task",
+          "group": "1_actions@1"
+        },
+        {
+          "command": "ego.pullTask",
+          "when": "view == egoTaskTree && viewItem == task && !ego.offline",
+          "group": "1_actions@2"
         }
       ]
     },

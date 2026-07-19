@@ -30,6 +30,10 @@ export class DashboardView {
         DashboardView.deps = deps;
     }
 
+    static isOpen(): boolean {
+        return DashboardView.panel !== undefined;
+    }
+
     static async show(): Promise<void> {
         const extensionUri = DashboardView.extensionUri;
         const deps = DashboardView.deps;
@@ -128,10 +132,18 @@ export class DashboardView {
                 deps.refreshTree();
                 break;
             }
-            case 'dashboard.push':
+            case 'dashboard.push': {
+                const cfg = await readEgoConfig();
+                if (cfg?.mode === 'offline') {
+                    vscode.window.showWarningMessage(
+                        'Ego: Push Progress is unavailable in offline mode. Switch to Server first.'
+                    );
+                    return;
+                }
                 await deps.pushProgress();
                 await DashboardView.refresh();
                 break;
+            }
             default:
                 break;
         }
