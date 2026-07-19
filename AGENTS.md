@@ -157,7 +157,7 @@ bd search "keyword"                # Search issues by text
 - **ADR-0001**: Platform architecture — .md as canonical, parser, sandbox runner, SQLite MVP
 - **ADR-0014**: VSCode extension = primary UI, TUI frozen, CLI secondary
 - **ADR-0015**: VSCode extension UI flow — welcome, init wizard, dashboard, task view, check flow
-- **ADR-0016**: Tasks content repo — separate git, server sync (cron/manual), configurable URL/auth/ref
+- **ADR-0016**: Tasks content repo — separate git, server sync (cron/manual), configurable URL/auth/ref; catalog = Project → Folder → Task (see docs/CONTENT_CATALOG.md)
 - **Task Format**: separate .solution.py + .tests.py with @case/@before/@after hooks (see docs/TESTS_DESIGN.md)
 
 See `docs/adr/` for full text.
