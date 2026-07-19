@@ -17,3 +17,5 @@ docs/JUNIOR.md
 docs/MENTOR.md
 docs/TASKS.md
 .gitignore
+vscode-ego
+*.vsix

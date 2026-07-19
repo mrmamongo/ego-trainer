@@ -1,60 +1,160 @@
 # Agent Instructions
 
-This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
+This project uses **bd (beads)** for issue tracking. Run `bd onboard` to get started.
 
-## Quick Reference
+## Project Overview
 
-```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --claim  # Claim work atomically
-bd close <id>         # Complete work
-bd dolt push          # Push beads data to remote
+**ego-trainer** — platform for junior developers to practice coding tasks with auto-checking.
+Tasks are markdown files (.md) with statement + reference solution + tests. Students write
+solutions in .py stubs, run `check`, get test results. Server tracks progress.
+
+### Architecture (ADR-0001, ADR-0014)
+
+```
+docs/tasks/*.md          ← git canonical source of truth (D2)
+   ↓ parser
+ego core (parser, runner, checker)  ← Python library
+   ↓
+ego-server (FastAPI + SQLite)       ← HTTP API, sandbox check, progress
+   ↓
+vscode-ego (VSCode extension)       ← primary UI (ADR-0014)
+ego CLI                             ← secondary, for CI/scripts
+ego_tui (textual)                   ← FROZEN per ADR-0014
 ```
 
-## Non-Interactive Shell Commands
+### Tech Stack
 
-**ALWAYS use non-interactive flags** with file operations to avoid hanging on confirmation prompts.
+| Layer | Tech | Notes |
+|-------|------|-------|
+| Core | Python 3.11+, Pydantic v2 | `ego/` package |
+| Server | FastAPI, SQLite, JWT, uvicorn | `ego_server/` package |
+| Extension | TypeScript, VSCode API | `vscode-ego/` — primary UI |
+| CLI | Python (argparse) | `ego` entry-point — secondary |
+| TUI | textual | `ego_tui/` — FROZEN (ADR-0014) |
+| Tests | pytest, pytest-cov | `tests/` — 264 passed, 6 skipped |
+| Container | podman/docker compose | `Dockerfile`, `docker-compose.yml` |
 
-Shell commands like `cp`, `mv`, and `rm` may be aliased to include `-i` (interactive) mode on some systems, causing the agent to hang indefinitely waiting for y/n input.
+### Project Structure
 
-**Use these forms instead:**
-```bash
-# Force overwrite without prompting
-cp -f source dest           # NOT: cp source dest
-mv -f source dest           # NOT: mv source dest
-rm -f file                  # NOT: rm file
-
-# For recursive operations
-rm -rf directory            # NOT: rm -r directory
-cp -rf source dest          # NOT: cp -r source dest
+```
+ego-trainer/
+├── ego/                    # Core library (parser, runner, checker, models)
+│   ├── parser.py           # .md -> Task (statement, stub, solution, tests)
+│   ├── runner.py           # Subprocess sandbox (timeout 5s, no network)
+│   ├── checker.py          # Compare student vs reference on test cases
+│   ├── models.py           # Pydantic: Task, Manifest, Progress, Run, Config
+│   ├── progress.py         # Progress upsert, run log write
+│   └── cli/                # ego CLI (init, check, pull, list)
+├── ego_server/             # FastAPI server
+│   ├── main.py             # App + router registration
+│   ├── db.py               # SQLite schema + init
+│   ├── auth.py             # JWT auth, roles (student/mentor/admin)
+│   ├── config.py           # Env-based settings (EGO_DB_PATH, EGO_JWT_SECRET)
+│   ├── deps.py             # FastAPI deps (CurrentUser, DbDep, require_role)
+│   ├── models.py           # API DTOs (TaskMeta, TaskFull, CheckRequest, etc.)
+│   └── routers/
+│       ├── auth.py         # POST /auth/register, /auth/login, GET /auth/me
+│       ├── tasks.py        # GET /tasks, /tasks/<id>, /tasks/<id>/hints
+│       ├── check.py        # POST /check (server-side checker + progress)
+│       └── progress.py     # POST /progress/push, GET /progress/<student>
+├── ego_tui/                # Textual TUI — FROZEN (ADR-0014)
+├── vscode-ego/             # VSCode extension — primary UI
+│   ├── src/
+│   │   ├── extension.ts    # Activate, commands, status bar
+│   │   ├── api.ts          # HTTP client to ego-server
+│   │   ├── treeProvider.ts # TreeView sidebar (blocks -> tasks)
+│   │   └── resultsPanel.ts # Webview for test results
+│   ├── package.json        # Commands, views, configuration
+│   └── tsconfig.json
+├── docs/
+│   ├── adr/                # Architecture Decision Records
+│   │   ├── 0001-platform-architecture.md
+│   │   └── 0014-vscode-extension.md
+│   └── tasks/              # Task .md files (git canonical, D2)
+│       ├── block_f_simple/ # Block F — basic patterns
+│       ├── block_h_more_domains/  # Block H — variety
+│       └── ...
+├── tests/                  # pytest tests (264 passed, 6 skipped)
+├── Dockerfile              # ego-server image
+├── docker-compose.yml      # Local dev: podman compose up -d
+├── pyproject.toml          # uv project, deps: pydantic, fastapi, etc.
+└── AGENTS.md               # This file
 ```
 
-**Other commands that may prompt:**
-- `scp` - use `-o BatchMode=yes` for non-interactive
-- `ssh` - use `-o BatchMode=yes` to fail instead of prompting
-- `apt-get` - use `-y` flag
-- `brew` - use `HOMEBREW_NO_AUTO_UPDATE=1` env var
+## Common Commands
+
+```bash
+# Python (uv)
+uv run pytest                          # Run all tests
+uv run pytest tests/test_server_check.py -v  # Run specific test file
+uv run ego-server migrate              # Init SQLite schema
+uv run ego-server admin import-tasks --docs-dir docs/tasks  # Import tasks to DB
+uv run uvicorn ego_server.main:app --reload  # Start server (dev)
+
+# Server (podman/docker)
+podman compose up -d                   # Start server on :8000
+podman compose logs -f                 # View logs
+podman compose down                    # Stop
+podman compose down -v                 # Stop + wipe DB
+# Server: http://localhost:8000
+# Swagger: http://localhost:8000/docs
+# Health: http://localhost:8000/health
+
+# VSCode extension
+cd vscode-ego && npx tsc -p .          # Compile TypeScript
+cd vscode-ego && npx @vscode/vsce package --allow-missing-repository  # Build .vsix
+code --install-extension vscode-ego/ego-trainer-0.1.0.vsix  # Install
+
+# Lint
+uv run ruff check .                    # Lint
+uv run ruff format .                   # Format
+```
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
 ## Beads Issue Tracker
 
 This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
 
-### Quick Reference
+### Quickstart
 
 ```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --claim  # Claim work
-bd close <id>         # Complete work
+bd ready               # Find available work (no blockers)
+bd list --status open  # All open issues
+bd show <id>           # View issue details (e.g. bd show ego-trainer-8bv.9)
+bd create --title "..." --type task --priority P1 --parent <epic>  # Create task
+bd update <id> --status closed     # Close task
+bd update <id> --status deferred   # Defer task
+bd dep add <child> <parent>        # Add dependency (child blocked by parent)
+bd search "keyword"                # Search issues by text
 ```
+
+### Current State (Wave 8)
+
+| Epic | Status | Notes |
+|------|--------|-------|
+| 93h Foundation | done | Core library complete |
+| 8bv CLI | active | 8bv.9 (extension UI) — next |
+| bmh Server | done | FastAPI + SQLite + Docker |
+| x4f TUI | frozen | ADR-0014 — VSCode extension replaces TUI |
+| 9u7 Hypothesis | deferred | Post-MVP |
+| bbe AI Assistant | deferred | Post-MVP |
+| bd2 Content | deferred | Post-MVP |
+| gdl Web Dashboard | deferred | Post-MVP |
+
+**Next task:** `ego-trainer-8bv.9` — VSCode extension UI + Init wizard + Dashboard
 
 ### Rules
 
 - Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
 - Run `bd prime` for detailed command reference and session close protocol
 - Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
+
+## Key Design Decisions (ADRs)
+
+- **ADR-0001**: Platform architecture — .md as canonical, parser, sandbox runner, SQLite MVP
+- **ADR-0014**: VSCode extension = primary UI, TUI frozen, CLI secondary
+
+See `docs/adr/` for full text.
 
 ## Session Completion
 
@@ -82,3 +182,27 @@ bd close <id>         # Complete work
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
 <!-- END BEADS INTEGRATION -->
+
+## Non-Interactive Shell Commands
+
+**ALWAYS use non-interactive flags** with file operations to avoid hanging on confirmation prompts.
+
+Shell commands like `cp`, `mv`, and `rm` may be aliased to include `-i` (interactive) mode on some systems, causing the agent to hang indefinitely waiting for y/n input.
+
+**Use these forms instead:**
+```bash
+# Force overwrite without prompting
+cp -f source dest           # NOT: cp source dest
+mv -f source dest           # NOT: mv source dest
+rm -f file                  # NOT: rm file
+
+# For recursive operations
+rm -rf directory            # NOT: rm -r directory
+cp -rf source dest          # NOT: cp -r source dest
+```
+
+**Other commands that may prompt:**
+- `scp` - use `-o BatchMode=yes` for non-interactive
+- `ssh` - use `-o BatchMode=yes` to fail instead of prompting
+- `apt-get` - use `-y` flag
+- `brew` - use `HOMEBREW_NO_AUTO_UPDATE=1` env var
