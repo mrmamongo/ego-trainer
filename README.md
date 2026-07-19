@@ -180,6 +180,8 @@ See [docs/TESTS_DESIGN.md](docs/TESTS_DESIGN.md) for full spec.
 
 - [ADR-0001: Platform Architecture](docs/adr/0001-platform-architecture.md)
 - [ADR-0014: VSCode Extension as Primary UI](docs/adr/0014-vscode-extension.md)
+- [ADR-0015: VSCode Extension UI Flow](docs/adr/0015-vscode-extension-ui-flow.md)
+- [Task Format Spec](docs/TESTS_DESIGN.md)
 - [AGENTS.md](AGENTS.md) — full project guide for AI agents
 
 ## License
