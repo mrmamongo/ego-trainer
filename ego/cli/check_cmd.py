@@ -69,9 +69,10 @@ def run(args) -> int:
 
     student_code = student_path.read_text(encoding="utf-8")
 
-    # 4. Run the checker.
+    # 4. Run the checker (default level=smoke; --full → all).
     timeout = _load_timeout(local=local)
-    result = run_check(task, student_code, timeout=timeout)
+    level = _resolve_level(args)
+    result = run_check(task, student_code, timeout=timeout, level=level)
     as_json = getattr(args, "json", False)
 
     # 5. Print result (human text, or JSON for tooling / VSCode extension).
@@ -93,12 +94,21 @@ def run(args) -> int:
     return 0 if result.all_passed else 1
 
 
+def _resolve_level(args) -> str:
+    """Map CLI flags to checker level filter."""
+    if getattr(args, "full", False):
+        return "all"
+    level = getattr(args, "level", None)
+    return level or "smoke"
+
+
 def _result_to_json(result) -> dict:
     """Serialize CheckResult to the CheckResponse shape used by ego-server / vscode-ego."""
     return {
         "task_id": result.task_id,
         "version": result.version,
         "status": result.status,
+        "level": getattr(result, "level", "smoke"),
         "passed_tests": result.passed_tests,
         "total_tests": result.total_tests,
         "solution_hash": result.solution_hash,
@@ -109,6 +119,7 @@ def _result_to_json(result) -> dict:
                 "expected_repr": r.expected_repr,
                 "actual_repr": r.actual_repr,
                 "error": r.error,
+                "level": getattr(r, "level", "smoke"),
             }
             for r in result.results
         ],

@@ -40,6 +40,17 @@ def main(argv=None):
         action="store_true",
         help="Print CheckResult as JSON on stdout (for VSCode extension / tooling)",
     )
+    p_check.add_argument(
+        "--level",
+        choices=("smoke", "full", "all"),
+        default=None,
+        help="Which test level to run (default: smoke). See docs/TESTS_DESIGN.md",
+    )
+    p_check.add_argument(
+        "--full",
+        action="store_true",
+        help="Run smoke + full cases (alias for --level all)",
+    )
 
     # pull — реализован в ego.cli.pull_cmd (задача 8bv.4)
     p_pull = sub.add_parser("pull", help="Pull tasks from server into tasks/ + .ego/cache/")
