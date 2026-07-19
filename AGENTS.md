@@ -8,10 +8,12 @@ This project uses **bd (beads)** for issue tracking. Run `bd onboard` to get sta
 Tasks are markdown files (.md) with statement + reference solution + tests. Students write
 solutions in .py stubs, run `check`, get test results. Server tracks progress.
 
-### Architecture (ADR-0001, ADR-0014)
+### Architecture (ADR-0001, ADR-0014, ADR-0016)
 
 ```
-docs/tasks/*.md          ← git canonical source of truth (D2)
+ego-tasks (separate git repo)       ← prod canonical content (ADR-0016)
+   ↓ sync (cron / manual): clone → parse → DB meta + cache
+docs/tasks/*.md                     ← monorepo fixture only (dev/tests)
    ↓ parser
 ego core (parser, runner, checker)  ← Python library
    ↓
@@ -133,15 +135,16 @@ bd search "keyword"                # Search issues by text
 | Epic | Status | Notes |
 |------|--------|-------|
 | 93h Foundation | done | Core library complete |
-| 8bv CLI | active | 8bv.9 (extension UI) — next |
+| 8bv CLI | done | Extension UI (8bv.9) shipped on feature tip |
 | bmh Server | done | FastAPI + SQLite + Docker |
 | x4f TUI | frozen | ADR-0014 — VSCode extension replaces TUI |
+| u4i Content Repo Sync | open | ADR-0016 — separate ego-tasks repo + sync |
 | 9u7 Hypothesis | deferred | Post-MVP |
 | bbe AI Assistant | deferred | Post-MVP |
-| bd2 Content | deferred | Post-MVP |
-| gdl Web Dashboard | deferred | Post-MVP |
+| bd2 Content blocks | deferred | Post-MVP |
+| gdl Mentor Ops Dashboard | deferred | Post-MVP — progress only, not CMS |
 
-**Next task:** `ego-trainer-8bv.9` — VSCode extension UI + Init wizard + Dashboard
+**Next:** implement `ego-trainer-u4i` (tasks-repo sync) per ADR-0016; `gdl` stays Ops.
 
 ### Rules
 
@@ -154,6 +157,7 @@ bd search "keyword"                # Search issues by text
 - **ADR-0001**: Platform architecture — .md as canonical, parser, sandbox runner, SQLite MVP
 - **ADR-0014**: VSCode extension = primary UI, TUI frozen, CLI secondary
 - **ADR-0015**: VSCode extension UI flow — welcome, init wizard, dashboard, task view, check flow
+- **ADR-0016**: Tasks content repo — separate git, server sync (cron/manual), configurable URL/auth/ref
 - **Task Format**: separate .solution.py + .tests.py with @case/@before/@after hooks (see docs/TESTS_DESIGN.md)
 
 See `docs/adr/` for full text.

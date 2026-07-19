@@ -33,6 +33,8 @@
 - БД canonical (TEXT-колонки) — двойной источник правды, нужна команда импорта.
 - Git canonical + БД cache — сложнее, разница с выбранной минимальна.
 
+> **Superseded (частично) by [ADR-0016](0016-tasks-content-repository.md):** canonical остаётся git, но prod-контент живёт в **отдельном** tasks-repo; `docs/tasks/` в monorepo — только fixture. Сервер делает sync (cron / manual) по конфигу URL + auth + `ref`.
+
 ### D3. Версионирование: SemVer
 
 **Decision:** Каждая задача имеет `version: "MAJOR.MINOR.PATCH"`. Major — breaking (изменился интерфейс функции, тесты, эталон). Minor — добавление тестов/уточнение условия. Patch — typo/форматирование.
