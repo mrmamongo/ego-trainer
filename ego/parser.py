@@ -1,13 +1,11 @@
-"""Markdown parser — .md -> Task.
+"""Markdown parser — .md (+ optional sidecars) -> Task.
 
-Формат .md описан в docs/adr/0001-platform-architecture.md и зафиксирован
-в docs/tasks/<block>/<task>.md. Парсер достаёт:
-- meta (id, block, slug, task_id, title, level, tags, version)
-- statement_md (весь markdown БЕЗ эталона и БЕЗ тестов)
-- stub_py (генерируется из названия основной функции эталона)
-- solution_py (эталон — код из <details><summary>Эталонное решение</summary>)
-- test_cases_raw (из секции ## Тесты, если есть)
-- content_hash (sha256(statement_md + stub_py + solution_py))
+Формат описан в docs/TESTS_DESIGN.md:
+- ``<task>.md`` — условие
+- ``<task>.solution.py`` — эталон (fallback: ``<details>`` в .md)
+- ``<task>.tests.py`` — ``@case`` / hooks (path → ``Task.tests_file``)
+
+Legacy: ``## Тесты`` literal → ``extra["tests_code"]`` (deprecated).
 """
 
 from __future__ import annotations
@@ -101,14 +99,18 @@ def parse_task_text(text: str, path: Path, default_version: str = "1.0.0") -> Ta
     # 4. statement_md = весь markdown КРОМЕ <details> (эталон) и ## Тесты
     statement_md = _build_statement_md(sections)
 
-    # 5. solution_py = код из <details><summary>Эталонное решение</summary>
-    solution_py = _extract_solution_code(text)
+    # 5. solution_py — sidecar <task>.solution.py, fallback <details> in .md
+    solution_py, from_sidecar = _load_solution(path, text)
     if not solution_py:
         raise ValueError(
-            f"Missing <details>Эталонное решение</summary> code block in {path}"
+            f"Missing solution: need {path.with_suffix('.solution.py').name} "
+            f"or <details>Эталонное решение</summary> in {path}"
         )
 
-    # 6. test_cases_raw = код из ## Тесты (если секция есть)
+    # 6. tests_file — sidecar <task>.tests.py; legacy ## Тесты → tests_code
+    tests_file = _sidecar_path(path, ".tests.py")
+    if tests_file is not None and not tests_file.is_file():
+        tests_file = None
     test_cases_raw = _extract_tests_code(sections.get("Тесты", []))
 
     # 7. stub_py = генерируется из сигнатуры основной функции эталона
@@ -118,6 +120,8 @@ def parse_task_text(text: str, path: Path, default_version: str = "1.0.0") -> Ta
     content_hash = _hash_content(statement_md, stub_py, solution_py)
 
     extra: dict = {"block_name": block_name}
+    if from_sidecar:
+        extra["solution_source"] = "sidecar"
     if test_cases_raw:
         extra["tests_code"] = test_cases_raw
 
@@ -135,6 +139,7 @@ def parse_task_text(text: str, path: Path, default_version: str = "1.0.0") -> Ta
         statement_md=statement_md,
         stub_py=stub_py,
         solution_py=solution_py,
+        tests_file=tests_file,
         extra=extra,
     )
 
@@ -223,6 +228,23 @@ def _build_statement_md(sections: dict[str, list[str]]) -> str:
             parts.append(content)
         parts.append("")  # blank line between sections
     return "\n".join(parts).strip()
+
+
+def _sidecar_path(md_path: Path, suffix: str) -> Path:
+    """``task_f1.md`` + ``.solution.py`` → ``task_f1.solution.py``."""
+    # path.with_suffix('.solution.py') on 'task_f1.md' → 'task_f1.solution.py'
+    return md_path.with_suffix(suffix)
+
+
+def _load_solution(md_path: Path, text: str) -> tuple[str, bool]:
+    """Load solution from sidecar or ``<details>``. Returns ``(code, from_sidecar)``."""
+    sidecar = _sidecar_path(md_path, ".solution.py")
+    if sidecar.is_file():
+        code = sidecar.read_text(encoding="utf-8")
+        if not code.endswith("\n"):
+            code += "\n"
+        return code, True
+    return _extract_solution_code(text), False
 
 
 def _extract_solution_code(text: str) -> str:
