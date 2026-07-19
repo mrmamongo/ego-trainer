@@ -10,11 +10,16 @@ export type ExtMessage =
 	| { type: 'dashboard.check'; taskId: string }
 	| { type: 'dashboard.hints'; taskId: string }
 	| { type: 'dashboard.pullAll' }
-	| { type: 'dashboard.push' };
+	| { type: 'dashboard.push' }
+	| { type: 'taskView.check' }
+	| { type: 'taskView.openPy' }
+	| { type: 'taskView.refresh' };
 
 export type HostMessage =
 	| { type: 'setResult'; payload: import('./types').CheckResult }
 	| { type: 'dashboard.setData'; payload: import('./types').DashboardData }
+	| { type: 'taskView.setData'; payload: import('./types').TaskViewData }
+	| { type: 'taskView.setResult'; payload: import('./types').CheckResult }
 	| { type: 'noop' };
 
 declare function acquireVsCodeApi(): {
