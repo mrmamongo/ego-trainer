@@ -12,11 +12,24 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class RegisterRequest(BaseModel):
+    username: str
+    password: str
+    role: str = Field(default="student", pattern="^(student|mentor|admin)$")
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     role: str
     username: str
+    user_id: str
+
+
+class MeResponse(BaseModel):
+    user_id: str
+    username: str
+    role: str
 
 
 class TaskMeta(BaseModel):
