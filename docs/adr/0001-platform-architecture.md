@@ -121,6 +121,44 @@ project/
 
 **Rationale:** Защита от зацикливания, сетевых exfil, file-system доступа.
 
+### D13. Разделение CLI (три entry-point'а)
+
+**Decision:** Три отдельных CLI-инструмента, каждый со своим entry-point в `pyproject.toml`:
+- `ego` — клиент (студент): `init`, `list`, `check`, `pull`, `push`. Точка входа `ego.cli.main:main`.
+- `ego-server` — сервер: `run` (uvicorn), `migrate` (init schema), `admin import` (залить .md в БД), `admin create-user`. Точка входа `ego_server.cli:main`.
+- `ego-tui` — TUI: `start` (запуск textual-приложения). Точка входа `ego_tui.cli:main`.
+
+**Rationale:** Роли разделены — студенту не нужны серверные команды, ментору не нужен TUI. Чистые интерфейсы, меньше путаницы. Каждый entry-point тянет только нужные extras.
+
+### D14. Сервер в Docker
+
+**Decision:** `ego_server` деплоится через Docker:
+- `Dockerfile` в корне (или `ego_server/Dockerfile`) — multi-stage: build wheels → runtime на slim Python.
+- `docker-compose.yml` — сервис `ego-server`, том для `.ego-server/` (SQLite), порт 8000.
+- `.dockerignore` — исключает `.venv/`, `.ego/`, `__pycache__/`, `.beads/`, `docs/` (кроме задач — сервер читает их через mount или COPY при build).
+- Базовый образ: `python:3.11-slim`.
+- WSGI/ASGI server: `uvicorn` (dev) или `gunicorn -k uvicorn.workers.UvicornWorker` (prod).
+
+**Rationale:** Воспроизводимый деплой, изоляция, легко переключиться на Postgres (добавить сервис в compose). Ментор/админ поднимает одной командой `docker compose up`.
+
+### D15. Тесты в .md (явные кейсы, Hypothesis — post-MVP)
+
+**Decision:** Формат .md расширен секцией `## Тесты` с явными кортежами:
+```python
+[
+    (input1, expected1, "happy path"),
+    (input2, expected2, "edge: пустой список"),
+    (input3, expected3, "edge: None"),
+]
+```
+Checker прогоняет все кейсы, считает `passed=2, total=3`, показывает diff. Hypothesis property-based testing — post-MVP (эпик `ego-trainer-9u7`), strategies в `ego/strategies/<block>/<task>.py`.
+
+**Rationale:** Явные кейсы — ментор контролирует edge cases, читаемо, просто. Hypothesis — мощно, но усложняет MVP. Существующие 33 .md остаются как reference (без тестов), новые задачи — по полному формату.
+
+**Alternatives rejected:**
+- Только Hypothesis — strategy для каждой задачи всё равно писать, сложнее для доменных задач.
+- Только явные кортежи навсегда — теряем автоматическое покрытие edge cases.
+
 ## Architecture (слои)
 
 ```
