@@ -1,6 +1,6 @@
 
-# Beads / Dolt files (added by bd init)
-.dolt/
+# Beads / Dolt files
+# .dolt/ removed — we track beads DB in git for project portability
 *.db
 .beads-credential-key
 

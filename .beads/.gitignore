@@ -1,5 +1,7 @@
-# Dolt database (managed by Dolt, not git)
-dolt/
+# Dolt database — tracked by git for project portability
+# (override: we want beads issues in git, not just in local Dolt)
+
+# Dolt runtime lock (not versioned)
 dolt-access.lock
 
 # Runtime files
