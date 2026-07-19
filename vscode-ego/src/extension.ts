@@ -10,13 +10,38 @@ import * as vscode from 'vscode';
 import { EgoApi, CheckResponse, TaskMeta, Hint } from './api';
 import { EgoTaskTreeProvider } from './treeProvider';
 import { TestResultsPanel } from './resultsPanel';
+import { WelcomeView } from './welcomeView';
+import { runOfflineInit, runServerInit } from './initWizard';
+import { pullTasksToWorkspace } from './pullTasks';
+import { showDashboard } from './dashboardView';
+import { hasEgoDir, readEgoConfig } from './egoWorkspace';
 
 const SECRET_KEY = 'ego.token';
-const STATUS_BAR_CMD = 'ego.check';
+const STATUS_BAR_CMD = 'ego.dashboard';
 
 let api: EgoApi;
 let treeProvider: EgoTaskTreeProvider;
 let statusBar: vscode.StatusBarItem;
+
+function initDeps() {
+    return {
+        onApiChanged: () => {
+            // Reload API from current config + secret is done by wizard callers
+            // via recreateApi; tree still needs the latest instance.
+            treeProvider.updateApi(api);
+        },
+        refreshTree: () => treeProvider.refresh(),
+    };
+}
+
+async function recreateApi(context: vscode.ExtensionContext): Promise<void> {
+    const serverUrl = vscode.workspace
+        .getConfiguration('ego')
+        .get<string>('serverUrl', 'http://localhost:8000');
+    const token = await context.secrets.get(SECRET_KEY);
+    api = new EgoApi(serverUrl, token);
+    treeProvider.updateApi(api);
+}
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
     // Load config.
@@ -38,11 +63,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     });
     context.subscriptions.push(treeView);
 
-    // Status bar.
+    // Status bar — click opens Dashboard (ADR-0015).
     statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
     statusBar.command = STATUS_BAR_CMD;
     statusBar.text = '$(circle-outline) Ego';
-    statusBar.tooltip = 'Ego: Check Current Task';
+    statusBar.tooltip = 'Ego: Dashboard';
     statusBar.show();
     context.subscriptions.push(statusBar);
 
@@ -61,6 +86,36 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('ego.push', () => cmdPush()),
         vscode.commands.registerCommand('ego.refreshTree', () => treeProvider.refresh()),
         vscode.commands.registerCommand('ego.openTask', (task: TaskMeta) => cmdOpenTask(task)),
+        vscode.commands.registerCommand('ego.showWelcome', () =>
+            WelcomeView.show(context, {
+                ...initDeps(),
+                onApiChanged: async () => {
+                    await recreateApi(context);
+                },
+            })
+        ),
+        vscode.commands.registerCommand('ego.init', async () => {
+            const mode = await vscode.window.showQuickPick(
+                [
+                    { label: 'Connect to Server', mode: 'server' as const },
+                    { label: 'Offline (local only)', mode: 'offline' as const },
+                ],
+                { placeHolder: 'How do you want to initialize Ego?' }
+            );
+            if (!mode) return;
+            const deps = {
+                onApiChanged: async () => {
+                    await recreateApi(context);
+                },
+                refreshTree: () => treeProvider.refresh(),
+            };
+            if (mode.mode === 'server') {
+                await runServerInit(context, deps);
+            } else {
+                await runOfflineInit(context, deps);
+            }
+        }),
+        vscode.commands.registerCommand('ego.dashboard', () => showDashboard()),
     );
 
     // Auto-check on save (if enabled).
@@ -80,14 +135,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         })
     );
 
-    // Check if logged in.
+    // Check if logged in / offline ready.
     if (token) {
         try {
             await api.me();
-            vscode.commands.executeCommand('setContext', 'ego.loggedIn', true);
+            await vscode.commands.executeCommand('setContext', 'ego.loggedIn', true);
+            await vscode.commands.executeCommand('setContext', 'ego.ready', true);
         } catch {
             // Token invalid — clear it.
             await context.secrets.delete(SECRET_KEY);
+        }
+    } else if (await hasEgoDir()) {
+        const egoCfg = await readEgoConfig();
+        if (egoCfg?.mode === 'offline') {
+            await vscode.commands.executeCommand('setContext', 'ego.offline', true);
+            await vscode.commands.executeCommand('setContext', 'ego.ready', true);
+            statusBar.text = '$(circle-outline) Ego: Offline';
+        } else if (egoCfg) {
+            await vscode.commands.executeCommand('setContext', 'ego.ready', true);
         }
     }
 
@@ -103,6 +168,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         })
     );
+
+    // First-launch welcome (no token OR no .ego/).
+    if (await WelcomeView.shouldAutoOpen(context)) {
+        WelcomeView.show(context, {
+            onApiChanged: async () => {
+                await recreateApi(context);
+            },
+            refreshTree: () => treeProvider.refresh(),
+        });
+    }
 }
 
 export function deactivate(): void {
@@ -217,7 +292,8 @@ async function cmdPull(): Promise<void> {
             return;
         }
 
-        await pullTasks(filtered);
+        await pullTasksToWorkspace(api, filtered);
+        treeProvider.refresh();
     } catch (e) {
         vscode.window.showErrorMessage(`Ego: Pull failed — ${(e as Error).message}`);
     }
@@ -226,61 +302,11 @@ async function cmdPull(): Promise<void> {
 async function cmdPullAll(): Promise<void> {
     try {
         const tasks = await api.listTasks();
-        await pullTasks(tasks);
+        await pullTasksToWorkspace(api, tasks);
+        treeProvider.refresh();
     } catch (e) {
         vscode.window.showErrorMessage(`Ego: Pull failed — ${(e as Error).message}`);
     }
-}
-
-async function pullTasks(tasks: TaskMeta[]): Promise<void> {
-    const wsFolder = vscode.workspace.workspaceFolders?.[0];
-    if (!wsFolder) {
-        vscode.window.showErrorMessage('Ego: No workspace folder open.');
-        return;
-    }
-
-    await vscode.window.withProgress(
-        {
-            location: vscode.ProgressLocation.Notification,
-            title: `Ego: Pulling ${tasks.length} tasks...`,
-            cancellable: false,
-        },
-        async (progress) => {
-            let pulled = 0;
-            let errors = 0;
-            for (const t of tasks) {
-                progress.report({ message: `${t.id}: ${t.title}`, increment: (pulled / tasks.length) * 100 });
-                try {
-                    const full = await api.getTask(t.id);
-                    const normalized = t.id.replace(/\./g, '_').toLowerCase();
-                    const filename = `task_${normalized}`;
-                    const taskDir = vscode.Uri.joinPath(wsFolder.uri, 'tasks', t.slug);
-
-                    // Create directory.
-                    await vscode.workspace.fs.createDirectory(taskDir);
-
-                    // Write .md (statement).
-                    const mdUri = vscode.Uri.joinPath(taskDir, `${filename}.md`);
-                    await vscode.workspace.fs.writeFile(mdUri, Buffer.from(full.statement_md, 'utf-8'));
-
-                    // Write .py (stub).
-                    const pyUri = vscode.Uri.joinPath(taskDir, `${filename}.py`);
-                    await vscode.workspace.fs.writeFile(pyUri, Buffer.from(full.stub_py, 'utf-8'));
-
-                    pulled++;
-                } catch (e) {
-                    errors++;
-                    console.error(`Pull ${t.id} failed:`, e);
-                }
-            }
-            if (errors === 0) {
-                vscode.window.showInformationMessage(`Ego: Pulled ${pulled} tasks.`);
-            } else {
-                vscode.window.showWarningMessage(`Ego: Pulled ${pulled}, ${errors} errors.`);
-            }
-            treeProvider.refresh();
-        }
-    );
 }
 
 async function cmdList(): Promise<void> {

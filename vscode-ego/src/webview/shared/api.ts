@@ -1,10 +1,14 @@
 /** postMessage wrapper for VSCode webview <-> extension host */
 export type ExtMessage =
 	| { type: 'setResult'; payload: import('./types').CheckResult }
-	| { type: 'ready' };
+	| { type: 'ready' }
+	| { type: 'welcome.connect' }
+	| { type: 'welcome.offline' }
+	| { type: 'welcome.skip' };
 
 export type HostMessage =
-	| { type: 'setResult'; payload: import('./types').CheckResult };
+	| { type: 'setResult'; payload: import('./types').CheckResult }
+	| { type: 'noop' };
 
 declare function acquireVsCodeApi(): {
 	postMessage(msg: ExtMessage): void;
