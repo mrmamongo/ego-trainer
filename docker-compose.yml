@@ -1,0 +1,39 @@
+# docker-compose for ego-server (MVP).
+# SQLite volume persists the database across container restarts.
+#
+# Usage:
+#   docker-compose up -d        # start server
+#   docker-compose logs -f      # view logs
+#   docker-compose down         # stop
+#
+# The server reads docs/tasks/ from the repo (baked into the image).
+# To update tasks: rebuild the image (docker-compose build).
+
+services:
+  ego-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist SQLite database across container restarts.
+      - ego-data:/app/.ego-server
+      # Optionally mount docs/tasks/ for live task updates (dev mode).
+      # Uncomment to override baked-in tasks:
+      # - ./docs/tasks:/app/docs/tasks:ro
+    environment:
+      - EGO_DB_PATH=/app/.ego-server/ego.db
+      - EGO_JWT_SECRET=${EGO_JWT_SECRET:-dev-secret-change-in-production}
+      - EGO_CORS_ORIGINS=["http://localhost:5173","http://localhost:8000"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+volumes:
+  ego-data:
+    driver: local

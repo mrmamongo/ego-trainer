@@ -60,16 +60,21 @@ def main(argv=None) -> int:
 
 
 def _cmd_start(args) -> int:
-    """Launch the textual TUI. Not yet implemented (beads x4f.1)."""
-    print(
-        "ego-tui: textual app is not yet implemented.\n"
-        "See beads task ego-trainer-x4f.1 (TUI skeleton).\n"
-        "For now, use:\n"
-        "  ego-tui list --local       — to list tasks\n"
-        "  ego-tui show <id> --local  — to view a task statement",
-        file=sys.stderr,
-    )
-    return 1
+    """Launch the textual TUI app (x4f.1 skeleton)."""
+    try:
+        from ego_tui.app import run as run_tui
+
+        return run_tui()
+    except ImportError:
+        print(
+            "ego-tui: textual app requires the `tui` extra.\n"
+            "Install with: uv pip install -e '.[tui]'\n"
+            "Or use:\n"
+            "  ego-tui list --local       — to list tasks\n"
+            "  ego-tui show <id> --local  — to view a task statement",
+            file=sys.stderr,
+        )
+        return 1
 
 
 def _cmd_list(args) -> int:

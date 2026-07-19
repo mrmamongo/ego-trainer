@@ -27,8 +27,17 @@ def main(argv=None):
         help="Scan docs/tasks/ offline (no .ego/ needed)",
     )
 
+    # check — реализован в ego.cli.check_cmd (задача 8bv.2)
+    p_check = sub.add_parser("check", help="Check a task solution against reference")
+    p_check.add_argument("task_id", help="Task id, e.g. F1 or 1.5")
+    p_check.add_argument(
+        "--local",
+        action="store_true",
+        help="Offline: parse docs/tasks/ directly, no .ego/ needed",
+    )
+
     # Заглушки для будущих команд (реализуются в других задачах)
-    for cmd in ("check", "pull", "push"):
+    for cmd in ("pull", "push"):
         sub.add_parser(cmd, help=f"{cmd} (not implemented yet)")
 
     args = parser.parse_args(argv)
@@ -49,7 +58,10 @@ def main(argv=None):
             )
             return 1
         return run_list(args)
-    if args.command in ("check", "pull", "push"):
+    if args.command == "check":
+        from ego.cli.check_cmd import run as run_check
+        return run_check(args)
+    if args.command in ("pull", "push"):
         print(f"ego {args.command} is not implemented yet (see beads roadmap)", file=sys.stderr)
         return 1
     parser.print_help()

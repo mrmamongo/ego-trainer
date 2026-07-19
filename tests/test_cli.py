@@ -72,14 +72,23 @@ def test_unknown_command_exits_nonzero(capsys):
     # argparse rejects unknown subcommands with SystemExit(2)
 
 
-# === Stub commands (check/pull/push) ===
+# === Stub commands (pull/push still stubs; check is implemented in 8bv.2) ===
 
 
-def test_check_not_implemented_returns_1(capsys):
-    rc = main(["check"])
+def test_check_requires_task_id(capsys):
+    """check without task_id should fail (argparse requires it)."""
+    with pytest.raises(SystemExit) as exc:
+        main(["check"])
+    assert exc.value.code == 2  # argparse error
+
+
+def test_check_no_ego_dir_returns_1(tmp_path, monkeypatch, capsys):
+    """check with task_id but no .ego/ should return 1."""
+    monkeypatch.chdir(tmp_path)
+    rc = main(["check", "F1"])
     assert rc == 1
     captured = capsys.readouterr()
-    assert "not implemented" in captured.err.lower()
+    assert ".ego/" in captured.err
 
 
 def test_pull_not_implemented_returns_1(capsys):

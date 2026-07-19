@@ -40,18 +40,41 @@ def test_no_args_prints_help(capsys):
 # === start ===
 
 
-def test_start_returns_1_with_helpful_message(capsys):
+def test_start_returns_1_without_textual(capsys, monkeypatch):
+    """start without textual installed should print helpful message."""
+    # Simulate ImportError by making textual unavailable.
+    import builtins
+
+    real_import = builtins.__import__
+
+    def mock_import(name, *args, **kwargs):
+        if name == "ego_tui.app" or name.startswith("ego_tui.app"):
+            raise ImportError("textual not installed")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", mock_import)
     rc = main(["start"])
     assert rc == 1
     captured = capsys.readouterr()
-    assert "not yet implemented" in captured.err.lower() or "x4f.1" in captured.err
+    assert "tui" in captured.err.lower() or "textual" in captured.err.lower()
 
 
-def test_start_with_task_arg(capsys):
+def test_start_with_task_arg(capsys, monkeypatch):
+    """start --task should also try to launch TUI (may fail without textual)."""
+    import builtins
+
+    real_import = builtins.__import__
+
+    def mock_import(name, *args, **kwargs):
+        if name == "ego_tui.app" or name.startswith("ego_tui.app"):
+            raise ImportError("textual not installed")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", mock_import)
     rc = main(["start", "--task", "F1"])
-    assert rc == 1  # not implemented
+    assert rc == 1  # can't launch without textual
     captured = capsys.readouterr()
-    assert "x4f.1" in captured.err or "not yet implemented" in captured.err.lower()
+    assert "tui" in captured.err.lower() or "textual" in captured.err.lower()
 
 
 # === list (delegates to ego.cli.list_cmd) ===

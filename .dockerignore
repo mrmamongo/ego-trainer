@@ -1,0 +1,19 @@
+# Docker
+.git
+.venv
+.ego
+.ego-server
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.ruff_cache
+*.egg-info
+build
+dist
+tests
+docs/adr
+docs/JUNIOR.md
+docs/MENTOR.md
+docs/TASKS.md
+.gitignore
