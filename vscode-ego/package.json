@@ -108,12 +108,14 @@
         "ego.serverUrl": {
           "type": "string",
           "default": "http://localhost:8000",
-          "description": "Ego server URL"
+          "description": "Ego server URL (e.g. http://localhost:8000 or https://ego.example.com)",
+          "scope": "resource"
         },
         "ego.autoCheckOnSave": {
           "type": "boolean",
           "default": false,
-          "description": "Automatically run check when saving a task .py file"
+          "description": "Automatically run check when saving a task .py file",
+          "scope": "resource"
         }
       }
     }

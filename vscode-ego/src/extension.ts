@@ -87,6 +87,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             await context.secrets.delete(SECRET_KEY);
         }
     }
+
+    // Auto-reload when serverUrl config changes (e.g. via Settings UI).
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeConfiguration(async (e) => {
+            if (e.affectsConfiguration('ego.serverUrl')) {
+                const newUrl = vscode.workspace.getConfiguration('ego').get<string>('serverUrl', 'http://localhost:8000');
+                const tok = await context.secrets.get(SECRET_KEY);
+                api = new EgoApi(newUrl, tok);
+                treeProvider.updateApi(api);
+                vscode.window.showInformationMessage(`Ego: Server URL changed to ${newUrl}`);
+            }
+        })
+    );
 }
 
 export function deactivate(): void {
@@ -141,13 +154,14 @@ async function cmdSetServer(context: vscode.ExtensionContext): Promise<void> {
     const url = await vscode.window.showInputBox({
         prompt: 'Server URL',
         value: vscode.workspace.getConfiguration('ego').get('serverUrl', 'http://localhost:8000'),
+        placeHolder: 'http://localhost:8000',
     });
     if (!url) return;
 
     await vscode.workspace.getConfiguration('ego').update('serverUrl', url, vscode.ConfigurationTarget.Global);
     const token = await context.secrets.get(SECRET_KEY);
     api = new EgoApi(url, token);
-    treeProvider.refresh();
+    treeProvider.updateApi(api);
     vscode.window.showInformationMessage(`Ego: Server set to ${url}`);
 }
 

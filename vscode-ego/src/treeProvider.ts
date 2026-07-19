@@ -84,6 +84,12 @@ export class EgoTaskTreeProvider implements vscode.TreeDataProvider<BlockItem | 
         this.api = api;
     }
 
+    updateApi(newApi: EgoApi): void {
+        this.api = newApi;
+        this.progressMap.clear();
+        this.refresh();
+    }
+
     refresh(): void {
         this._onDidChange.fire();
     }
