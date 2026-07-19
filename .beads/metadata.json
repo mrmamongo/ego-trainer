@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "server",
+  "dolt_database": "ego_trainer",
+  "project_id": "51e69118-b3a1-4f3a-9a50-2e002ea94b25"
+}
