@@ -23,6 +23,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const config = vscode.workspace.getConfiguration('ego');
     const serverUrl = config.get<string>('serverUrl', 'http://localhost:8000');
 
+    // Svelte webview bundles live under out/webview/ (ADR-0015).
+    TestResultsPanel.configure(context.extensionUri);
+
     // Load token from SecretStorage.
     const token = await context.secrets.get(SECRET_KEY);
     api = new EgoApi(serverUrl, token);
