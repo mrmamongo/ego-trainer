@@ -94,7 +94,10 @@
 						{#if hint}
 							<article class="hint">
 								<h3 class="hint-title">Hint {level}: {hint.title}</h3>
-								<p class="hint-content">{hint.content}</p>
+								<div class="hint-content statement">
+									<!-- Host-rendered hint markdown. -->
+									{@html hint.content}
+								</div>
 							</article>
 						{/if}
 					{/each}
@@ -328,8 +331,25 @@
 	.hint-content {
 		margin: 0;
 		opacity: 0.9;
-		white-space: pre-wrap;
 		line-height: 1.5;
+	}
+
+	.statement :global(.tok-kw) {
+		color: var(--vscode-symbolIcon-keywordForeground, #c586c0);
+		font-weight: 600;
+	}
+
+	.statement :global(.tok-string) {
+		color: var(--vscode-symbolIcon-stringForeground, #ce9178);
+	}
+
+	.statement :global(.tok-comment) {
+		color: var(--vscode-descriptionForeground, #6a9955);
+		font-style: italic;
+	}
+
+	.statement :global(.tok-num) {
+		color: var(--vscode-symbolIcon-numberForeground, #b5cea8);
 	}
 
 	.results :global(.waiting) {
