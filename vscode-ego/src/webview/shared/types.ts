@@ -50,3 +50,19 @@ export interface DashboardData {
 	rows: DashboardRow[];
 	error?: string;
 }
+
+export interface TaskHint {
+	level: number; // 1|2|3
+	title: string;
+	content: string;
+}
+
+export interface TaskViewData {
+	id: string;
+	title: string;
+	status: string; // passed|partial|new|failed|...
+	version: string;
+	statement_html: string; // pre-rendered markdown HTML from host
+	hints: TaskHint[];
+	mode: EgoMode;
+}
