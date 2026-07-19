@@ -5,6 +5,7 @@ import { EgoApi, TaskMeta } from './api';
 import { webviewHtml, webviewLocalRoots } from './webviewHost';
 import { loadDashboardData, type DashboardData, type DashboardRow } from './dashboardLoader';
 import { readEgoConfig } from './egoWorkspace';
+import { openTaskById } from './openTask';
 
 export interface DashboardDeps {
     getApi: () => EgoApi;
@@ -137,76 +138,19 @@ export class DashboardView {
     }
 
     private static async openRow(taskId: string): Promise<void> {
-        const deps = DashboardView.deps;
         const row = DashboardView.rowsById.get(taskId);
-        if (!deps || !row) {
+        if (!row) {
             vscode.window.showWarningMessage(`Ego: Unknown task ${taskId}`);
             return;
         }
-
-        const cfg = await readEgoConfig();
-        if (cfg?.mode === 'offline' && row.md_path) {
-            await openOfflineTask(row);
-            return;
-        }
-
-        const task: TaskMeta = {
+        await openTaskById({
             id: row.id,
-            block: row.block,
-            slug: row.slug,
-            task_id: row.id,
             title: row.title,
-            level: '',
-            tags: [],
+            slug: row.slug,
             version: row.version,
-            content_hash: '',
-            breaking: false,
-            md_path: row.md_path || '',
-        };
-        await deps.openTask(task);
-    }
-}
-
-/** Offline: open docs/tasks .md + sibling/generated .py if present. */
-async function openOfflineTask(row: DashboardRow): Promise<void> {
-    const root = vscode.workspace.workspaceFolders?.[0]?.uri;
-    if (!root || !row.md_path) return;
-
-    const mdUri = vscode.Uri.joinPath(root, ...row.md_path.split('/'));
-    const normalized = row.id.replace(/\./g, '_').toLowerCase();
-    const filename = `task_${normalized}`;
-
-    // Prefer workspace tasks/ stub if pulled earlier; else sibling .py under docs/tasks.
-    const candidates = [
-        vscode.Uri.joinPath(root, 'tasks', row.slug, `${filename}.py`),
-        vscode.Uri.joinPath(mdUri, '..', `${filename}.py`),
-    ];
-
-    let pyOpened = false;
-    for (const pyUri of candidates) {
-        try {
-            const doc = await vscode.workspace.openTextDocument(pyUri);
-            await vscode.window.showTextDocument(doc, vscode.ViewColumn.One);
-            pyOpened = true;
-            break;
-        } catch {
-            // try next
-        }
-    }
-
-    try {
-        const mdDoc = await vscode.workspace.openTextDocument(mdUri);
-        if (pyOpened) {
-            await vscode.commands.executeCommand('markdown.showPreviewToSide', mdDoc.uri);
-        } else {
-            await vscode.window.showTextDocument(mdDoc, vscode.ViewColumn.One);
-            await vscode.commands.executeCommand('markdown.showPreview', mdDoc.uri);
-            vscode.window.showInformationMessage(
-                `Ego: No .py stub for ${row.id} yet. Create tasks/${row.slug}/${filename}.py to solve.`
-            );
-        }
-    } catch (e) {
-        vscode.window.showErrorMessage(`Ego: Open failed — ${(e as Error).message}`);
+            status: row.status,
+            md_path: row.md_path,
+        });
     }
 }
 
