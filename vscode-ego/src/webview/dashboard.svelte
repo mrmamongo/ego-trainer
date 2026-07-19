@@ -213,7 +213,15 @@
 			<button type="button" class="btn primary" onclick={pullAll} disabled={offline} title={offline ? 'Unavailable offline' : 'Pull all tasks'}>
 				Pull All
 			</button>
-			<button type="button" class="btn primary" onclick={pushProgress}>Push Progress</button>
+			<button
+				type="button"
+				class="btn primary"
+				onclick={pushProgress}
+				disabled={offline}
+				title={offline ? 'Unavailable offline — switch to Server mode' : 'Push local progress to server'}
+			>
+				Push Progress
+			</button>
 			<button type="button" class="btn" onclick={refresh}>Refresh</button>
 		</footer>
 	{/if}

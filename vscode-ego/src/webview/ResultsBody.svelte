@@ -93,6 +93,13 @@
 			</div>
 		{/each}
 	{/if}
+
+	{#if result.log?.trim()}
+		<details class="log" open={result.status !== 'passed'}>
+			<summary>Log</summary>
+			<pre>{result.log}</pre>
+		</details>
+	{/if}
 {/if}
 
 <style>
@@ -179,5 +186,33 @@
 		padding: 24px;
 		text-align: center;
 		opacity: 0.6;
+	}
+
+	.log {
+		margin-top: 12px;
+		border-top: 1px solid color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
+		padding-top: 8px;
+	}
+
+	.log summary {
+		cursor: pointer;
+		font-size: 0.75rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		opacity: 0.7;
+		user-select: none;
+	}
+
+	.log pre {
+		margin: 8px 0 0;
+		padding: 8px 10px;
+		overflow-x: auto;
+		white-space: pre-wrap;
+		border-radius: 4px;
+		background: var(--vscode-textCodeBlock-background, color-mix(in srgb, var(--vscode-foreground) 8%, transparent));
+		font-family: var(--vscode-editor-font-family, ui-monospace, monospace);
+		font-size: 12px;
+		line-height: 1.45;
 	}
 </style>

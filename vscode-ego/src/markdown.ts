@@ -1,16 +1,55 @@
 /** Markdown → HTML for Task View (host-side, trusted task content). */
 
-import { marked } from 'marked';
+import { marked, type Tokens } from 'marked';
 
 marked.setOptions({
     gfm: true,
     breaks: false,
 });
 
+const PY_KEYWORDS =
+    /\b(and|as|assert|async|await|break|class|continue|def|del|elif|else|except|False|finally|for|from|global|if|import|in|is|lambda|None|nonlocal|not|or|pass|raise|return|True|try|while|with|yield)\b/g;
+
+/** Lightweight Python highlighter for statement/hint code blocks. */
+function highlightPython(code: string): string {
+    const escaped = escapeHtml(code);
+    return escaped
+        .replace(/(#.*)$/gm, '<span class="tok-comment">$1</span>')
+        .replace(
+            /("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|"""[\s\S]*?"""|'''[\s\S]*?''')/g,
+            '<span class="tok-string">$1</span>'
+        )
+        .replace(PY_KEYWORDS, '<span class="tok-kw">$1</span>')
+        .replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="tok-num">$1</span>');
+}
+
+function escapeHtml(s: string): string {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+marked.use({
+    renderer: {
+        code({ text, lang }: Tokens.Code): string {
+            const language = (lang || '').trim().toLowerCase();
+            const body =
+                language === 'python' || language === 'py'
+                    ? highlightPython(text)
+                    : escapeHtml(text);
+            const cls = language ? `language-${language}` : '';
+            return `<pre><code class="${cls}">${body}</code></pre>\n`;
+        },
+    },
+});
+
+/** Render arbitrary trusted markdown (hints, snippets) to HTML. */
+export function renderMarkdownHtml(md: string): string {
+    return marked.parse(md ?? '', { async: false }) as string;
+}
+
 /** Render task statement markdown to HTML. Strips reference-solution <details>. */
 export function renderStatementHtml(md: string): string {
     const cleaned = stripSolutionDetails(md);
-    return marked.parse(cleaned, { async: false }) as string;
+    return renderMarkdownHtml(cleaned);
 }
 
 /** Remove <details>…</details> blocks (etalon solution etc.). */
