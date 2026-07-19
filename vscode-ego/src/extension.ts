@@ -14,6 +14,8 @@ import { WelcomeView } from './welcomeView';
 import { runOfflineInit, runServerInit } from './initWizard';
 import { pullTasksToWorkspace } from './pullTasks';
 import { DashboardView } from './dashboardView';
+import { TaskViewPanel } from './taskViewPanel';
+import { openTaskPy, openTaskWithView } from './openTask';
 import { hasEgoDir, readEgoConfig } from './egoWorkspace';
 
 const SECRET_KEY = 'ego.token';
@@ -66,6 +68,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         showHints: (taskId) => cmdHintsForTask(taskId),
         pullAll: () => cmdPullAll(),
         pushProgress: () => cmdPush(),
+    });
+
+    TaskViewPanel.configure(context.extensionUri, {
+        getApi: () => api,
+        checkTask: (taskId) => cmdCheckTask(taskId),
+        openPy: (taskId, slug, mdPath) => openTaskPy(taskId, slug, mdPath).then(() => undefined),
     });
     const treeView = vscode.window.createTreeView('egoTaskTree', {
         treeDataProvider: treeProvider,
@@ -126,6 +134,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         }),
         vscode.commands.registerCommand('ego.dashboard', () => DashboardView.show()),
+        vscode.commands.registerCommand('ego.openTaskView', async () => {
+            const editor = vscode.window.activeTextEditor;
+            if (!editor) {
+                vscode.window.showWarningMessage('Ego: Open a task .py file first.');
+                return;
+            }
+            const fileName = vscode.workspace.asRelativePath(editor.document.fileName);
+            const match = fileName.match(/task_([a-z0-9_]+)\.py$/);
+            if (!match) {
+                vscode.window.showWarningMessage(`Ego: Not a task file: ${fileName}`);
+                return;
+            }
+            const taskId = match[1].replace(/_/g, '.').toUpperCase();
+            try {
+                const task = await api.getTask(taskId);
+                await TaskViewPanel.showFromMeta(task);
+            } catch {
+                // Offline / local: open from path hints
+                const parts = fileName.replace(/\\/g, '/').split('/');
+                const slug = parts.includes('tasks')
+                    ? parts[parts.indexOf('tasks') + 1]
+                    : parts.includes('docs')
+                      ? parts[parts.indexOf('tasks') + 1] || ''
+                      : '';
+                await TaskViewPanel.show({
+                    id: taskId,
+                    title: taskId,
+                    slug: slug || '',
+                    version: '0.0.0',
+                    status: 'new',
+                    md_path: fileName.replace(/\.py$/, '.md'),
+                });
+            }
+        }),
     );
 
     // Auto-check on save (if enabled).
@@ -415,30 +457,25 @@ async function cmdOpenTask(task: TaskMeta): Promise<void> {
     const pyUri = vscode.Uri.joinPath(wsFolder.uri, 'tasks', task.slug, `${filename}.py`);
     const mdUri = vscode.Uri.joinPath(wsFolder.uri, 'tasks', task.slug, `${filename}.md`);
 
+    // Ensure files exist (pull from server if missing).
     try {
-        // Open .py in editor.
-        const doc = await vscode.workspace.openTextDocument(pyUri);
-        await vscode.window.showTextDocument(doc, vscode.ViewColumn.One);
-
-        // Open .md in preview (second column).
+        await vscode.workspace.fs.stat(pyUri);
+    } catch {
         try {
-            const mdDoc = await vscode.workspace.openTextDocument(mdUri);
-            await vscode.commands.executeCommand('markdown.showPreview', mdDoc.uri);
-        } catch {
-            // .md might not exist yet — pull first.
             const full = await api.getTask(task.id);
-            await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(wsFolder.uri, 'tasks', task.slug));
+            await vscode.workspace.fs.createDirectory(
+                vscode.Uri.joinPath(wsFolder.uri, 'tasks', task.slug)
+            );
             await vscode.workspace.fs.writeFile(mdUri, Buffer.from(full.statement_md, 'utf-8'));
             await vscode.workspace.fs.writeFile(pyUri, Buffer.from(full.stub_py, 'utf-8'));
-            // Now open.
-            const newDoc = await vscode.workspace.openTextDocument(pyUri);
-            await vscode.window.showTextDocument(newDoc, vscode.ViewColumn.One);
-            const mdDoc = await vscode.workspace.openTextDocument(mdUri);
-            await vscode.commands.executeCommand('markdown.showPreview', mdDoc.uri);
+            task = { ...task, title: full.title, version: full.version, md_path: vscode.workspace.asRelativePath(mdUri) };
+        } catch (e) {
+            vscode.window.showErrorMessage(`Ego: Open task failed — ${(e as Error).message}`);
+            return;
         }
-    } catch (e) {
-        vscode.window.showErrorMessage(`Ego: Open task failed — ${(e as Error).message}`);
     }
+
+    await openTaskWithView(task);
 }
 
 // === Helpers ===
@@ -469,8 +506,12 @@ function showCheckResult(result: CheckResponse, taskId: string): void {
         );
     }
 
-    // Show results in webview panel.
-    TestResultsPanel.show(result);
+    // Prefer Task view if open; else standalone results panel.
+    if (TaskViewPanel.isOpen()) {
+        TaskViewPanel.postResult(result);
+    } else {
+        TestResultsPanel.show(result);
+    }
 }
 
 async function cmdHints(): Promise<void> {

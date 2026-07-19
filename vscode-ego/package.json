@@ -88,6 +88,11 @@
         "command": "ego.dashboard",
         "title": "Ego: Dashboard",
         "category": "Ego"
+      },
+      {
+        "command": "ego.openTaskView",
+        "title": "Ego: Open Task View",
+        "category": "Ego"
       }
     ],
     "views": {
@@ -156,5 +161,8 @@
     "esbuild-svelte": "^0.9.5",
     "svelte": "^5.56.6",
     "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "marked": "^18.0.6"
   }
 }
