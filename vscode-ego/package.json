@@ -73,6 +73,21 @@
         "command": "ego.openTask",
         "title": "Ego: Open Task",
         "category": "Ego"
+      },
+      {
+        "command": "ego.showWelcome",
+        "title": "Ego: Show Welcome",
+        "category": "Ego"
+      },
+      {
+        "command": "ego.init",
+        "title": "Ego: Init",
+        "category": "Ego"
+      },
+      {
+        "command": "ego.dashboard",
+        "title": "Ego: Dashboard",
+        "category": "Ego"
       }
     ],
     "views": {
@@ -80,7 +95,7 @@
         {
           "id": "egoTaskTree",
           "name": "Ego Tasks",
-          "when": "ego.loggedIn"
+          "when": "ego.ready || ego.loggedIn"
         }
       ]
     },
