@@ -206,6 +206,36 @@ Levels: 1 = Правила, 2 = Пример, 3 = Сигнатура функц�
 - **Status bar click → Dashboard** (не check) — dashboard = центральный
   hub.
 
+## UI Framework: Svelte
+
+Webview UI реализуется на **Svelte** (не vanilla JS, не React).
+
+- **Почему Svelte:** компилируется в vanilla JS (~10KB), реактивность из
+  коробки, простой синтаксис, маленький bundle.
+- **Bundler:** esbuild (через `svelte-preprocess` + `esbuild-svelte`).
+  Build шаг: `npm run compile` собирает .svelte → out/webview/.
+- **CSP:** VSCode webview требует nonce для scripts. Svelte bundle
+  подключается с nonce, inline styles разрешены.
+- **Communication:** webview ↔ extension через `acquireVsCodeApi()`
+  + `postMessage()`. Svelte store для state management.
+- **Структура:**
+  ```
+  vscode-ego/src/
+    extension.ts          # activate, commands
+    api.ts                # HTTP client
+    treeProvider.ts       # TreeView (native, не Svelte)
+    webview/
+      welcome.svelte      # Welcome screen
+      dashboard.svelte    # Dashboard
+      taskView.svelte     # Task view (condition + hints + results)
+      results.svelte      # Test results (embedded in taskView)
+      shared/
+        store.ts          # Svelte store (state from extension)
+        api.ts            # postMessage wrapper
+  ```
+- **Build:** `npm run compile` → tsc (extension) + esbuild (svelte)
+  → `out/extension.js` + `out/webview/*.js`
+
 ## Implementation tasks (beads 8bv.9)
 
 | Subtask | Priority | Description |
