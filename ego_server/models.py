@@ -74,3 +74,48 @@ class ProgressRow(BaseModel):
     passed_tests: int
     total_tests: int
     last_run_at: str | None = None
+
+
+class CheckRequest(BaseModel):
+    """Request body for POST /check — run checker server-side."""
+
+    task_id: str
+    student_code: str
+
+
+class TestResultDTO(BaseModel):
+    """One test result in a CheckResponse."""
+
+    description: str
+    passed: bool
+    expected_repr: str
+    actual_repr: str | None = None
+    error: str | None = None
+
+
+class CheckResponse(BaseModel):
+    """Response from POST /check — full check result."""
+
+    task_id: str
+    version: str
+    status: str  # passed | partial | failed | error | timeout | no_tests
+    passed_tests: int
+    total_tests: int
+    solution_hash: str
+    results: list[TestResultDTO] = Field(default_factory=list)
+    log: str  # human-readable summary
+
+
+class Hint(BaseModel):
+    """One progressive hint for a task."""
+
+    level: int
+    title: str
+    content: str
+
+
+class HintsResponse(BaseModel):
+    """Progressive hints for a task (rules → example → signature)."""
+
+    task_id: str
+    hints: list[Hint] = Field(default_factory=list)

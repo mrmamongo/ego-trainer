@@ -1,0 +1,128 @@
+{
+  "name": "ego-trainer",
+  "displayName": "Ego Trainer",
+  "description": "Practice tasks for junior developers — check, pull, push progress",
+  "version": "0.1.0",
+  "publisher": "ego-trainer",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Education", "Other"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "ego.login",
+        "title": "Ego: Login",
+        "category": "Ego"
+      },
+      {
+        "command": "ego.setServer",
+        "title": "Ego: Set Server URL",
+        "category": "Ego"
+      },
+      {
+        "command": "ego.check",
+        "title": "Ego: Check Current Task",
+        "category": "Ego"
+      },
+      {
+        "command": "ego.pull",
+        "title": "Ego: Pull Tasks",
+        "category": "Ego"
+      },
+      {
+        "command": "ego.pullAll",
+        "title": "Ego: Pull All Tasks",
+        "category": "Ego"
+      },
+      {
+        "command": "ego.list",
+        "title": "Ego: List Tasks",
+        "category": "Ego"
+      },
+      {
+        "command": "ego.showTask",
+        "title": "Ego: Show Task Statement",
+        "category": "Ego"
+      },
+      {
+        "command": "ego.hints",
+        "title": "Ego: Show Hints",
+        "category": "Ego"
+      },
+      {
+        "command": "ego.myProgress",
+        "title": "Ego: My Progress",
+        "category": "Ego"
+      },
+      {
+        "command": "ego.refreshTree",
+        "title": "Ego: Refresh Task List",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "ego.openTask",
+        "title": "Ego: Open Task",
+        "category": "Ego"
+      }
+    ],
+    "views": {
+      "explorer": [
+        {
+          "id": "egoTaskTree",
+          "name": "Ego Tasks",
+          "when": "ego.loggedIn"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "ego.refreshTree",
+          "when": "view == egoTaskTree",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "ego.openTask",
+          "when": "view == egoTaskTree && viewItem == task",
+          "group": "inline"
+        },
+        {
+          "command": "ego.check",
+          "when": "view == egoTaskTree && viewItem == task",
+          "group": "inline"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Ego",
+      "properties": {
+        "ego.serverUrl": {
+          "type": "string",
+          "default": "http://localhost:8000",
+          "description": "Ego server URL"
+        },
+        "ego.autoCheckOnSave": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically run check when saving a task .py file"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0"
+  }
+}

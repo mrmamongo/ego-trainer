@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from ego_server.db_helpers import get_task_meta
 from ego_server.deps import CurrentUser, DbDep, require_role
-from ego_server.models import TaskFull, TaskMeta
+from ego_server.models import Hint, HintsResponse, TaskFull, TaskMeta
 
 
 router = APIRouter()
@@ -130,7 +130,95 @@ async def get_task_solution(
     }
 
 
+@router.get("/{task_id}/hints", response_model=HintsResponse)
+async def get_task_hints(
+    task_id: str,
+    db: DbDep,
+    user: CurrentUser,
+    level: Annotated[int | None, Query(description="Max hint level (1=rules, 2=example, 3=signature)")] = None,
+) -> HintsResponse:
+    """Get progressive hints for a task.
+
+    Levels:
+        1. Rules (## Правила section from .md)
+        2. Example (## Пример section from .md)
+        3. Function signature (from stub_py)
+
+    Pass ?level=N to get only hints up to level N.
+    """
+    meta = get_task_meta(db, task_id)
+    if meta is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Task '{task_id}' not found",
+        )
+
+    path = _resolve_md_path(meta["md_path"])
+    if not path.exists():
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Task .md file not found at {meta['md_path']}",
+        )
+
+    from ego.parser import parse_task_file
+
+    task = parse_task_file(path)
+
+    hints: list[Hint] = []
+    max_level = level or 3
+
+    # Level 1: Rules from statement_md.
+    if max_level >= 1:
+        rules = _extract_section(task.statement_md, "Правила")
+        if rules:
+            hints.append(Hint(level=1, title="Правила", content=rules))
+
+    # Level 2: Example from statement_md.
+    if max_level >= 2:
+        example = _extract_section(task.statement_md, "Пример")
+        if example:
+            hints.append(Hint(level=2, title="Пример", content=example))
+
+    # Level 3: Function signature from stub.
+    if max_level >= 3:
+        sig = _extract_signature(task.stub_py)
+        if sig:
+            hints.append(
+                Hint(
+                    level=3,
+                    title="Сигнатура функции",
+                    content=f"```python\n{sig}\n```",
+                )
+            )
+
+    return HintsResponse(task_id=task_id, hints=hints)
+
+
 # === Helpers ===
+
+
+def _extract_section(md: str, section_name: str) -> str:
+    """Extract a ## section from markdown text."""
+    lines = md.split("\n")
+    capturing = False
+    result: list[str] = []
+    for line in lines:
+        if line.strip().startswith("## ") and section_name in line:
+            capturing = True
+            continue
+        if capturing and line.strip().startswith("## "):
+            break
+        if capturing:
+            result.append(line)
+    return "\n".join(result).strip()
+
+
+def _extract_signature(stub_py: str) -> str:
+    """Extract the function signature from stub code."""
+    for line in stub_py.split("\n"):
+        if line.strip().startswith("def task_"):
+            return line.strip().rstrip(":")
+    return ""
 
 
 def _resolve_md_path(md_path_str: str) -> Path:

@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from ego_server import __version__
 from ego_server.config import settings
 from ego_server.db import init_db
-from ego_server.routers import auth, progress, tasks
+from ego_server.routers import auth, check, progress, tasks
 
 
 @asynccontextmanager
@@ -35,6 +35,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
 app.include_router(progress.router, prefix="/progress", tags=["progress"])
+app.include_router(check.router, prefix="/check", tags=["check"])
 
 
 @app.get("/health", tags=["meta"])

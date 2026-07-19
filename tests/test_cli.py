@@ -91,11 +91,13 @@ def test_check_no_ego_dir_returns_1(tmp_path, monkeypatch, capsys):
     assert ".ego/" in captured.err
 
 
-def test_pull_not_implemented_returns_1(capsys):
-    rc = main(["pull"])
+def test_pull_no_ego_dir_returns_1(tmp_path, monkeypatch, capsys):
+    """pull without .ego/ should return 1."""
+    monkeypatch.chdir(tmp_path)
+    rc = main(["pull", "--all"])
     assert rc == 1
     captured = capsys.readouterr()
-    assert "not implemented" in captured.err.lower()
+    assert ".ego/" in captured.err
 
 
 def test_push_not_implemented_returns_1(capsys):

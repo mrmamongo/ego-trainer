@@ -362,3 +362,262 @@ def test_check_help(capsys):
     captured = capsys.readouterr()
     assert "task_id" in captured.out
     assert "--local" in captured.out
+
+
+# === --local mode (8bv.3) ===
+
+
+def test_check_local_no_ego_dir_needed(tmp_cwd, capsys):
+    """--local should work without .ego/ directory."""
+    # Create docs/tasks/ with a task.
+    docs = tmp_cwd / "docs" / "tasks" / "block_f_simple"
+    docs.mkdir(parents=True)
+    (docs / "task_f1.md").write_text(
+        """# Задача F1: Test
+
+**Блок:** F — Test
+**Сложность:** easy
+**Темы:** test
+
+## Условие
+
+Double a number.
+
+## Аргументы
+
+- `n` — int
+
+## Возвращает
+
+int — n * 2
+
+## Пример
+
+```python
+task_f1_double(5)  # -> 10
+```
+
+## Тесты
+
+```python
+[(5, 10, "double 5"), (0, 0, "zero")]
+```
+
+<details>
+<summary>Эталонное решение</summary>
+
+```python
+def task_f1_double(n):
+    return n * 2
+```
+
+</details>
+""",
+        encoding="utf-8",
+    )
+    # Create student solution.
+    tasks_dir = tmp_cwd / "tasks" / "block_f_simple"
+    tasks_dir.mkdir(parents=True)
+    (tasks_dir / "task_f1.py").write_text(
+        "def task_f1_double(n):\n    return n * 2\n",
+        encoding="utf-8",
+    )
+    # No .ego/ — should still work with --local.
+    rc = main(["check", "F1", "--local"])
+    assert rc == 0  # all passed
+    captured = capsys.readouterr()
+    assert "PASSED" in captured.out
+    assert "--local mode" in captured.err  # note about no progress
+
+
+def test_check_local_no_progress_written(tmp_cwd, capsys):
+    """--local without .ego/ should NOT create .ego/ or write progress."""
+    docs = tmp_cwd / "docs" / "tasks" / "block_f_simple"
+    docs.mkdir(parents=True)
+    (docs / "task_f1.md").write_text(
+        """# Задача F1: Test
+
+**Блок:** F — Test
+**Сложность:** easy
+**Темы:** test
+
+## Условие
+
+Double.
+
+## Аргументы
+
+- `n` — int
+
+## Возвращает
+
+int
+
+## Пример
+
+```python
+task_f1_double(5)
+```
+
+## Тесты
+
+```python
+[(5, 10, "test")]
+```
+
+<details>
+<summary>Эталонное решение</summary>
+
+```python
+def task_f1_double(n):
+    return n * 2
+```
+
+</details>
+""",
+        encoding="utf-8",
+    )
+    tasks_dir = tmp_cwd / "tasks" / "block_f_simple"
+    tasks_dir.mkdir(parents=True)
+    (tasks_dir / "task_f1.py").write_text(
+        "def task_f1_double(n):\n    return n * 2\n",
+        encoding="utf-8",
+    )
+    main(["check", "F1", "--local"])
+    # .ego/ should NOT be created.
+    assert not (tmp_cwd / ".ego").exists()
+
+
+def test_check_local_task_not_found(tmp_cwd, capsys):
+    """--local with nonexistent task should return 1."""
+    docs = tmp_cwd / "docs" / "tasks" / "block_f_simple"
+    docs.mkdir(parents=True)
+    (docs / "task_f1.md").write_text("# F1", encoding="utf-8")
+    rc = main(["check", "ZZZ", "--local"])
+    assert rc == 1
+    captured = capsys.readouterr()
+    assert "not found" in captured.err.lower()
+
+
+def test_check_local_wrong_solution(tmp_cwd, capsys):
+    """--local with wrong solution should return 1."""
+    docs = tmp_cwd / "docs" / "tasks" / "block_f_simple"
+    docs.mkdir(parents=True)
+    (docs / "task_f1.md").write_text(
+        """# Задача F1: Test
+
+**Блок:** F — Test
+**Сложность:** easy
+**Темы:** test
+
+## Условие
+
+Double.
+
+## Аргументы
+
+- `n` — int
+
+## Возвращает
+
+int
+
+## Пример
+
+```python
+task_f1_double(5)
+```
+
+## Тесты
+
+```python
+[(5, 10, "test")]
+```
+
+<details>
+<summary>Эталонное решение</summary>
+
+```python
+def task_f1_double(n):
+    return n * 2
+```
+
+</details>
+""",
+        encoding="utf-8",
+    )
+    tasks_dir = tmp_cwd / "tasks" / "block_f_simple"
+    tasks_dir.mkdir(parents=True)
+    (tasks_dir / "task_f1.py").write_text(
+        "def task_f1_double(n):\n    return n + 2\n",  # wrong
+        encoding="utf-8",
+    )
+    rc = main(["check", "F1", "--local"])
+    assert rc == 1
+    captured = capsys.readouterr()
+    assert "FAILED" in captured.out
+
+
+def test_check_local_with_ego_writes_progress(tmp_cwd, capsys):
+    """--local with .ego/ existing should still write progress."""
+    docs = tmp_cwd / "docs" / "tasks" / "block_f_simple"
+    docs.mkdir(parents=True)
+    (docs / "task_f1.md").write_text(
+        """# Задача F1: Test
+
+**Блок:** F — Test
+**Сложность:** easy
+**Темы:** test
+
+## Условие
+
+Double.
+
+## Аргументы
+
+- `n` — int
+
+## Возвращает
+
+int
+
+## Пример
+
+```python
+task_f1_double(5)
+```
+
+## Тесты
+
+```python
+[(5, 10, "test")]
+```
+
+<details>
+<summary>Эталонное решение</summary>
+
+```python
+def task_f1_double(n):
+    return n * 2
+```
+
+</details>
+""",
+        encoding="utf-8",
+    )
+    tasks_dir = tmp_cwd / "tasks" / "block_f_simple"
+    tasks_dir.mkdir(parents=True)
+    (tasks_dir / "task_f1.py").write_text(
+        "def task_f1_double(n):\n    return n * 2\n",
+        encoding="utf-8",
+    )
+    # Init .ego/ first.
+    main(["init", "--local"])
+    capsys.readouterr()  # clear init output
+    main(["check", "F1", "--local"])
+    # Progress should be written.
+    progress = json.loads(
+        (tmp_cwd / ".ego" / "progress.json").read_text("utf-8")
+    )
+    assert len(progress["entries"]) == 1
+    assert progress["entries"][0]["task_id"] == "F1"

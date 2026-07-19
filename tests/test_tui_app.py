@@ -1,6 +1,6 @@
-"""Tests for ego_tui.app — TUI skeleton (textual pilot tests).
+"""Tests for ego_tui.app — TUI with task editor and check button (textual pilot tests).
 
-Per beads ego-trainer-x4f.1: two-pane layout (task tree + content viewer).
+Per beads ego-trainer-x4f.1 (skeleton) and x4f.2 (task screen with editor).
 Uses textual's Pilot for headless testing.
 """
 
@@ -14,17 +14,56 @@ import pytest
 textual = pytest.importorskip("textual")
 
 from ego_tui.app import EgoTUIApp, TaskContent, TaskTree  # noqa: E402
-from textual.widgets import Tree  # noqa: E402
+from textual.widgets import Button, TextArea, Tree  # noqa: E402
 
 
 @pytest.fixture
 def docs_dir(tmp_path) -> Path:
-    """Create a fake docs/tasks/ with 2 tasks."""
+    """Create a fake docs/tasks/ with 2 tasks (with tests_code for checking)."""
     docs = tmp_path / "docs" / "tasks"
     f_dir = docs / "block_f_simple"
     f_dir.mkdir(parents=True)
     (f_dir / "task_f1.md").write_text(
-        "# Задача F1: Test\n\n## Условие\n\nDouble a number.\n",
+        """# Задача F1: Test
+
+**Блок:** F — Test
+**Сложность:** easy
+**Темы:** test
+
+## Условие
+
+Double a number.
+
+## Аргументы
+
+- `n` — int
+
+## Возвращает
+
+int — n * 2
+
+## Пример
+
+```python
+task_f1_double(5)  # -> 10
+```
+
+## Тесты
+
+```python
+[(5, 10, "double 5"), (0, 0, "zero")]
+```
+
+<details>
+<summary>Эталонное решение</summary>
+
+```python
+def task_f1_double(n):
+    return n * 2
+```
+
+</details>
+""",
         encoding="utf-8",
     )
     (f_dir / "task_f2.md").write_text(
@@ -34,19 +73,26 @@ def docs_dir(tmp_path) -> Path:
     return docs
 
 
+@pytest.fixture
+def docs_with_student_code(docs_dir):
+    """Add student .py files alongside the .md files."""
+    (docs_dir / "task_f1.py").write_text(
+        "def task_f1_double(n):\n    return n * 2\n",
+        encoding="utf-8",
+    )
+    return docs_dir
+
+
 @pytest.mark.anyio
 async def test_app_launches(docs_dir):
     """App should launch and have the expected widgets."""
     app = EgoTUIApp(docs_dir=docs_dir)
     async with app.run_test() as pilot:
         await pilot.pause()
-        # Header and Footer should be present.
         assert app.query("Header")
         assert app.query("Footer")
-        # Task tree should be present.
         tree = app.query_one("#task-tree", TaskTree)
         assert tree is not None
-        # Content pane should be present.
         content = app.query_one("#task-content", TaskContent)
         assert content is not None
 
@@ -58,12 +104,10 @@ async def test_task_tree_populated(docs_dir):
     async with app.run_test() as pilot:
         await pilot.pause()
         tree = app.query_one("#task-tree", TaskTree)
-        # Should have one block "F" with 2 tasks.
         assert len(tree.root.children) == 1
         block_node = tree.root.children[0]
         assert "F" in block_node.label.plain
         assert len(block_node.children) == 2
-        # Tasks should be F1 and F2.
         labels = [c.label.plain for c in block_node.children]
         assert "F1" in labels
         assert "F2" in labels
@@ -71,24 +115,21 @@ async def test_task_tree_populated(docs_dir):
 
 @pytest.mark.anyio
 async def test_selecting_task_shows_content(docs_dir):
-    """Clicking a task leaf should update the content pane."""
+    """Selecting a task leaf should update the content pane."""
     app = EgoTUIApp(docs_dir=docs_dir)
     async with app.run_test() as pilot:
         await pilot.pause()
         tree = app.query_one("#task-tree", TaskTree)
-        # Expand the first block.
         block_node = tree.root.children[0]
         block_node.expand()
         await pilot.pause()
-        # Select F1 (first leaf).
         f1_node = block_node.children[0]
         tree.select_node(f1_node)
-        # Trigger the NodeSelected event (NodeSelected takes just the node).
         tree.post_message(Tree.NodeSelected(f1_node))
         await pilot.pause()
-        # Content should be updated.
         content = app.query_one("#task-content", TaskContent)
         assert content is not None
+        assert content.current_task_id == "F1"
 
 
 @pytest.mark.anyio
@@ -98,11 +139,9 @@ async def test_empty_docs_dir(tmp_path):
     async with app.run_test() as pilot:
         await pilot.pause()
         tree = app.query_one("#task-tree", TaskTree)
-        # Should have a "not found" leaf.
         assert len(tree.root.children) >= 1
-        # The leaf should say "not found".
         first_child = tree.root.children[0]
-        assert "not found" in first_child.label.plain.lower() or "no" in first_child.label.plain.lower()
+        assert "not found" in first_child.label.plain.lower()
 
 
 @pytest.mark.anyio
@@ -129,8 +168,119 @@ async def test_task_tree_has_blocks_with_multiple_dirs(tmp_path):
     async with app.run_test() as pilot:
         await pilot.pause()
         tree = app.query_one("#task-tree", TaskTree)
-        # Two blocks: F and H.
         assert len(tree.root.children) == 2
         block_labels = [c.label.plain for c in tree.root.children]
         assert any("F" in l for l in block_labels)
         assert any("H" in l for l in block_labels)
+
+
+# === x4f.2: editor + check button (DEFERRED — TUI frozen per ADR-0014) ===
+
+# These tests are skipped because TUI is frozen (ADR-0014).
+# VSCode extension is the primary UI now.
+
+pytestmark_x4f2 = pytest.mark.skip(reason="TUI frozen per ADR-0014 — VSCode extension is primary UI")
+
+
+@pytestmark_x4f2
+@pytest.mark.anyio
+async def test_editor_widget_present(docs_dir):
+    """Code editor (TextArea) should be present in the content pane."""
+    app = EgoTUIApp(docs_dir=docs_dir)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        editor = app.query_one("#code-editor", TextArea)
+        assert editor is not None
+
+
+@pytestmark_x4f2
+@pytest.mark.anyio
+async def test_check_button_present(docs_dir):
+    """The 'Проверить' button should be present."""
+    app = EgoTUIApp(docs_dir=docs_dir)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        button = app.query_one("#check-button", Button)
+        assert button is not None
+        assert "Проверить" in button.label.plain or "Check" in button.label.plain
+
+
+@pytestmark_x4f2
+@pytest.mark.anyio
+async def test_selecting_task_loads_code_into_editor(docs_with_student_code):
+    """Selecting a task should load student code into the editor."""
+    app = EgoTUIApp(docs_dir=docs_with_student_code)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        tree = app.query_one("#task-tree", TaskTree)
+        block_node = tree.root.children[0]
+        block_node.expand()
+        await pilot.pause()
+        f1_node = block_node.children[0]
+        tree.select_node(f1_node)
+        tree.post_message(Tree.NodeSelected(f1_node))
+        await pilot.pause()
+        editor = app.query_one("#code-editor", TextArea)
+        assert "task_f1_double" in editor.text
+        assert "return n * 2" in editor.text
+
+
+@pytestmark_x4f2
+@pytest.mark.anyio
+async def test_check_button_runs_checker(docs_with_student_code):
+    """Pressing the check button should run the checker and show results."""
+    app = EgoTUIApp(docs_dir=docs_with_student_code)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        tree = app.query_one("#task-tree", TaskTree)
+        block_node = tree.root.children[0]
+        block_node.expand()
+        await pilot.pause()
+        f1_node = block_node.children[0]
+        tree.select_node(f1_node)
+        tree.post_message(Tree.NodeSelected(f1_node))
+        await pilot.pause()
+        button = app.query_one("#check-button", Button)
+        button.press()
+        await pilot.pause()
+        await pilot.pause()
+        result = app.query_one("#check-result")
+        result_text = str(result.renderable) if hasattr(result, "renderable") else ""
+        assert "PASSED" in result_text or "NO_TESTS" in result_text or "Checking" in result_text
+
+
+@pytestmark_x4f2
+@pytest.mark.anyio
+async def test_check_keyboard_shortcut(docs_with_student_code):
+    """Pressing 'c' should trigger the check action."""
+    app = EgoTUIApp(docs_dir=docs_with_student_code)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        tree = app.query_one("#task-tree", TaskTree)
+        block_node = tree.root.children[0]
+        block_node.expand()
+        await pilot.pause()
+        f1_node = block_node.children[0]
+        tree.select_node(f1_node)
+        tree.post_message(Tree.NodeSelected(f1_node))
+        await pilot.pause()
+        await pilot.press("c")
+        await pilot.pause()
+        await pilot.pause()
+        result = app.query_one("#check-result")
+        result_text = str(result.renderable) if hasattr(result, "renderable") else ""
+        assert "PASSED" in result_text or "NO_TESTS" in result_text or "Checking" in result_text
+
+
+@pytestmark_x4f2
+@pytest.mark.anyio
+async def test_editor_editable(docs_dir):
+    """Editor should be editable (user can type code)."""
+    app = EgoTUIApp(docs_dir=docs_dir)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        editor = app.query_one("#code-editor", TextArea)
+        editor.text = "def foo():\n    return 42\n"
+        await pilot.pause()
+        assert "def foo" in editor.text
+        assert "return 42" in editor.text

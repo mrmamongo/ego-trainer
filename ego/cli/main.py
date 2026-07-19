@@ -36,8 +36,14 @@ def main(argv=None):
         help="Offline: parse docs/tasks/ directly, no .ego/ needed",
     )
 
+    # pull — реализован в ego.cli.pull_cmd (задача 8bv.4)
+    p_pull = sub.add_parser("pull", help="Pull tasks from server into tasks/ + .ego/cache/")
+    p_pull.add_argument("--block", default=None, help="Pull only tasks from this block (e.g. F)")
+    p_pull.add_argument("--task", default=None, help="Pull only this task (e.g. F1)")
+    p_pull.add_argument("--all", action="store_true", help="Pull all tasks")
+
     # Заглушки для будущих команд (реализуются в других задачах)
-    for cmd in ("pull", "push"):
+    for cmd in ("push",):
         sub.add_parser(cmd, help=f"{cmd} (not implemented yet)")
 
     args = parser.parse_args(argv)
@@ -61,7 +67,10 @@ def main(argv=None):
     if args.command == "check":
         from ego.cli.check_cmd import run as run_check
         return run_check(args)
-    if args.command in ("pull", "push"):
+    if args.command == "pull":
+        from ego.cli.pull_cmd import run as run_pull
+        return run_pull(args)
+    if args.command in ("push",):
         print(f"ego {args.command} is not implemented yet (see beads roadmap)", file=sys.stderr)
         return 1
     parser.print_help()

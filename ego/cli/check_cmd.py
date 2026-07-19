@@ -1,15 +1,18 @@
 """ego check <task> — локальная проверка решения + write progress + runs/.
 
-Flow (per ADR-0001 D5, D9, D12):
+Flow (per ADR-0001 D5, D6, D9, D12):
   1. Найти .md задачи (через .ego/manifest.yaml или fallback в docs/tasks/)
   2. Найти student code в tasks/<block>/<task>.py
   3. Парсить .md → Task (через ego.parser)
   4. run_check(task, student_code) → CheckResult
-  5. Обновить .ego/progress.json (upsert ProgressEntry)
-  6. Записать лог в .ego/runs/<task_id>-<timestamp>.json
+  5. Обновить .ego/progress.json (upsert ProgressEntry) — если .ego/ есть
+  6. Записать лог в .ego/runs/<task_id>-<timestamp>.json — если .ego/ есть
   7. Напечатать результат
 
-See beads ego-trainer-8bv.2.
+`--local` mode (D6): парсит docs/tasks/ напрямую, не требует .ego/.
+Прогресс и логи не пишутся (некуда). Полезно для разработки и тестирования.
+
+See beads ego-trainer-8bv.2 (check) and ego-trainer-8bv.3 (--local).
 """
 
 from __future__ import annotations
@@ -29,8 +32,10 @@ from ego.progress import load_progress, save_progress
 def run(args) -> int:
     """Entry point for `ego check <task_id>`."""
     task_id = args.task_id
+    local = getattr(args, "local", False)
     ego_dir = Path(".ego")
-    if not ego_dir.exists():
+
+    if not local and not ego_dir.exists():
         print(
             ".ego/ not found. Run `ego init` first, or use `ego check --local`.",
             file=sys.stderr,
@@ -38,11 +43,12 @@ def run(args) -> int:
         return 1
 
     # 1. Find the .md file for this task.
-    md_path = _find_task_md(task_id)
+    md_path = _find_task_md(task_id, local=local)
     if md_path is None:
         print(f"Task '{task_id}' not found.", file=sys.stderr)
         print("Searched:", file=sys.stderr)
-        print("  .ego/manifest.yaml entries", file=sys.stderr)
+        if not local:
+            print("  .ego/manifest.yaml entries", file=sys.stderr)
         print("  docs/tasks/**/<task>.md", file=sys.stderr)
         return 1
 
@@ -64,46 +70,48 @@ def run(args) -> int:
     student_code = student_path.read_text(encoding="utf-8")
 
     # 4. Run the checker.
-    timeout = _load_timeout()
+    timeout = _load_timeout(local=local)
     result = run_check(task, student_code, timeout=timeout)
 
     # 5. Print result.
     print(format_check_result(result))
 
-    # 6. Update progress.
-    _update_progress(task_id, task.version, result)
-
-    # 7. Write run log.
-    run_log = _write_run_log(task_id, task.version, result, student_code)
-    print(f"\nRun logged: {run_log}", file=sys.stderr)
+    # 6. Update progress + write run log (only if .ego/ exists).
+    if ego_dir.exists():
+        _update_progress(task_id, task.version, result)
+        run_log = _write_run_log(task_id, task.version, result, student_code)
+        print(f"\nRun logged: {run_log}", file=sys.stderr)
+    elif local:
+        print("\n(--local mode: progress and run log not saved)", file=sys.stderr)
 
     # Exit code: 0 if all passed, 1 otherwise.
     return 0 if result.all_passed else 1
 
 
-def _find_task_md(task_id: str) -> Path | None:
+def _find_task_md(task_id: str, *, local: bool = False) -> Path | None:
     """Find the .md file for a task id.
 
     Search order:
-      1. .ego/manifest.yaml → entry.md_path (if it exists on disk)
+      1. .ego/manifest.yaml → entry.md_path (if it exists on disk, not --local)
       2. docs/tasks/<block>/task_<id>.md (dev/offline fallback)
     """
-    # 1. Manifest.
-    manifest_path = Path(".ego/manifest.yaml")
-    if manifest_path.exists():
-        try:
-            from ego.models import Manifest
+    # 1. Manifest (skip in --local mode).
+    if not local:
+        manifest_path = Path(".ego/manifest.yaml")
+        if manifest_path.exists():
+            try:
+                from ego.models import Manifest
 
-            manifest = Manifest.model_validate_json(
-                manifest_path.read_text(encoding="utf-8")
-            )
-            for entry in manifest.tasks:
-                if entry.id == task_id:
-                    p = Path(entry.md_path)
-                    if p.exists():
-                        return p
-        except Exception:  # noqa: BLE001
-            pass  # fall through to docs/tasks/
+                manifest = Manifest.model_validate_json(
+                    manifest_path.read_text(encoding="utf-8")
+                )
+                for entry in manifest.tasks:
+                    if entry.id == task_id:
+                        p = Path(entry.md_path)
+                        if p.exists():
+                            return p
+            except Exception:  # noqa: BLE001
+                pass  # fall through to docs/tasks/
 
     # 2. docs/tasks/ fallback.
     docs_dir = Path("docs/tasks")
@@ -142,8 +150,10 @@ def _find_student_code(task_id: str, task) -> Path | None:
     return None
 
 
-def _load_timeout() -> float:
-    """Load sandbox timeout from .ego/config.yaml."""
+def _load_timeout(*, local: bool = False) -> float:
+    """Load sandbox timeout from .ego/config.yaml. Default 5.0 in --local mode."""
+    if local and not Path(".ego/config.yaml").exists():
+        return 5.0
     try:
         from ego.models import Config
 
