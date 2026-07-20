@@ -63,29 +63,68 @@ def run(args) -> int:
     student_path = _find_student_code(task_id, task)
     if student_path is None:
         print(f"Student code not found for task '{task_id}'.", file=sys.stderr)
-        print(f"Expected: tasks/<block>/task_<id>.py", file=sys.stderr)
+        print("Expected: tasks/<block>/task_<id>.py", file=sys.stderr)
         print("Use `ego pull` to get the stub, or create the file manually.", file=sys.stderr)
         return 1
 
     student_code = student_path.read_text(encoding="utf-8")
 
-    # 4. Run the checker.
+    # 4. Run the checker (default level=smoke; --full → all).
     timeout = _load_timeout(local=local)
-    result = run_check(task, student_code, timeout=timeout)
+    level = _resolve_level(args)
+    result = run_check(task, student_code, timeout=timeout, level=level)
+    as_json = getattr(args, "json", False)
 
-    # 5. Print result.
-    print(format_check_result(result))
+    # 5. Print result (human text, or JSON for tooling / VSCode extension).
+    if as_json:
+        print(json.dumps(_result_to_json(result), ensure_ascii=False))
+    else:
+        print(format_check_result(result))
 
     # 6. Update progress + write run log (only if .ego/ exists).
     if ego_dir.exists():
         _update_progress(task_id, task.version, result)
         run_log = _write_run_log(task_id, task.version, result, student_code)
-        print(f"\nRun logged: {run_log}", file=sys.stderr)
-    elif local:
+        if not as_json:
+            print(f"\nRun logged: {run_log}", file=sys.stderr)
+    elif local and not as_json:
         print("\n(--local mode: progress and run log not saved)", file=sys.stderr)
 
     # Exit code: 0 if all passed, 1 otherwise.
     return 0 if result.all_passed else 1
+
+
+def _resolve_level(args) -> str:
+    """Map CLI flags to checker level filter."""
+    if getattr(args, "full", False):
+        return "all"
+    level = getattr(args, "level", None)
+    return level or "smoke"
+
+
+def _result_to_json(result) -> dict:
+    """Serialize CheckResult to the CheckResponse shape used by ego-server / vscode-ego."""
+    return {
+        "task_id": result.task_id,
+        "version": result.version,
+        "status": result.status,
+        "level": getattr(result, "level", "smoke"),
+        "passed_tests": result.passed_tests,
+        "total_tests": result.total_tests,
+        "solution_hash": result.solution_hash,
+        "results": [
+            {
+                "description": r.description,
+                "passed": r.passed,
+                "expected_repr": r.expected_repr,
+                "actual_repr": r.actual_repr,
+                "error": r.error,
+                "level": getattr(r, "level", "smoke"),
+            }
+            for r in result.results
+        ],
+        "log": format_check_result(result),
+    }
 
 
 def _find_task_md(task_id: str, *, local: bool = False) -> Path | None:

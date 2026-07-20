@@ -57,7 +57,10 @@ class Task(BaseModel):
     stub_py: str  # заготовка с `pass` для студента
     solution_py: str  # эталон (скрыт от TUI)
 
-    # Опц. — если в .md были тестовые данные (пока почти никогда)
+    # Sidecar tests (docs/TESTS_DESIGN.md): <task>.tests.py next to .md
+    tests_file: Path | None = None
+
+    # Опц. — legacy ## Тесты literal in extra["tests_code"] (deprecated)
     extra: dict = Field(default_factory=dict)
 
 

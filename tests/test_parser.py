@@ -295,5 +295,25 @@ def task_z(a):
 def test_tests_section_absent_means_no_tests_code(tasks_dir):
     path = _find_task(tasks_dir, "task_f1.md")
     task = parse_task_file(path)
-    # Существующие 33 файла НЕ имеют ## Тесты
+    # Tasks use sidecar .tests.py now; legacy ## Тесты still absent
     assert "tests_code" not in task.extra or not task.extra["tests_code"]
+
+
+def test_parse_sidecar_solution_and_tests(tasks_dir):
+    """Prefer <task>.solution.py + <task>.tests.py next to .md."""
+    path = _find_task(tasks_dir, "task_f1.md")
+    task = parse_task_file(path)
+    assert task.tests_file is not None
+    assert task.tests_file.name == "task_f1.tests.py"
+    assert task.tests_file.is_file()
+    assert task.extra.get("solution_source") == "sidecar"
+    assert "def task_f1_find_critical" in task.solution_py
+
+
+def test_parse_all_have_smoke_sidecars(task_files):
+    for path in task_files:
+        task = parse_task_file(path)
+        assert task.tests_file is not None, f"missing tests sidecar for {path}"
+        assert task.tests_file.is_file()
+        sol = path.with_suffix(".solution.py")
+        assert sol.is_file(), f"missing solution sidecar for {path}"

@@ -362,6 +362,22 @@ def test_check_help(capsys):
     captured = capsys.readouterr()
     assert "task_id" in captured.out
     assert "--local" in captured.out
+    assert "--json" in captured.out
+
+
+def test_check_json_output(repo_with_student_solution, capsys):
+    """--json prints CheckResponse-shaped JSON on stdout."""
+    import json
+
+    rc = main(["check", "F1", "--json"])
+    assert rc in (0, 1)
+    captured = capsys.readouterr()
+    data = json.loads(captured.out.strip().splitlines()[-1])
+    assert data["task_id"] == "F1"
+    assert "status" in data
+    assert "results" in data
+    assert "log" in data
+    assert isinstance(data["results"], list)
 
 
 # === --local mode (8bv.3) ===

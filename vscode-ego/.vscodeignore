@@ -5,4 +5,5 @@ node_modules/**
 out/**/*.map
 out/**/*.d.ts
 tsconfig.json
+esbuild.webview.mjs
 .gitignore
