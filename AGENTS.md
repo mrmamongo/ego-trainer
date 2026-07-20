@@ -212,3 +212,15 @@ cp -rf source dest          # NOT: cp -r source dest
 - `ssh` - use `-o BatchMode=yes` to fail instead of prompting
 - `apt-get` - use `-y` flag
 - `brew` - use `HOMEBREW_NO_AUTO_UPDATE=1` env var
+
+## Cursor Cloud specific instructions
+
+Dependencies are refreshed automatically on VM startup (`uv sync --all-extras` for Python, `npm install --prefix vscode-ego` for the extension). `uv` is preinstalled on `PATH`. Standard lint/test/build/run commands are in the "Common Commands" section above.
+
+Non-obvious caveats:
+
+- **No Docker/podman in this environment.** Ignore the `podman compose up -d` instructions. Run the server directly instead: `uv run ego-server migrate`, then `uv run ego-server admin import-tasks --docs-dir docs/tasks`, then `uv run uvicorn ego_server.main:app --host 0.0.0.0 --port 8000`. The `migrate` + `import-tasks` steps are required before the catalog is populated on a fresh DB (`.ego-server/ego.db`).
+- **`/check` returns `status: "no_tests"` (0/0) for every task.** The `docs/tasks/*.md` files ship only a statement + reference solution — they contain no `@case` tests. This is expected, not a bug. The checker's real pass/fail logic is exercised by the `pytest` suite (`tests/test_server_check.py`), which builds synthetic tasks with tests. Both the server `/check` and `ego check --local` still run end-to-end (parse task, run student code, record progress).
+- **VSCode is not installed**, so the `vscode-ego` extension can't be launched here. It is a thin HTTP client to the server; build/verify it with `npx tsc -p .` (compiles clean) and test its backend via the server API (curl/Swagger at `http://localhost:8000/docs`).
+- **`uv run ruff check .` reports pre-existing lint findings** (mostly `E741`/unused imports in `tests/`). These are not caused by environment setup.
+- `ego check --local <id>` needs the student solution at `tasks/<block-lower>/task_<id>.py` (e.g. `tasks/f/task_f1.py`); `ego pull` requires a running server, so create the file manually in offline mode.
