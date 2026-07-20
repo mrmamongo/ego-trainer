@@ -1,6 +1,24 @@
 {
   "head": "refs/heads/main",
-  "remotes": {},
-  "backups": {},
+  "remotes": {
+    "origin": {
+      "name": "origin",
+      "url": "git+https://x-access-token:ghs_1210556_eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOiJhdXRobmQiLCJjdHgiOiJGRE9BQm1aeUV4WTdrdjg0R1Q0ZmlGU1pDeEtpeGdWZDh0WjRGZ1N4ZDVwaHhmWnNpN0RBRlFxckNpR3Q3VmMiLCJleHAiOjE3ODQ0NDY1ODIsImlhdCI6MTc4NDQ0Mjk4MiwiaXNzIjoiZ2l0aHViIiwianRpIjoiMTUxM2RmMjUtOGJiYi00YTc2LTk4MzMtOGE3ZmQyMWY0YjRlIiwidmVyIjozfQ.Qc-31KwodmiozcTuc_9t9cU9R5G8ZxuyTMcn_tN9n0XZZiZktKRv9hwS-XzI3c59ywAtxjxtAWyupVUxdqQkwg@github.com/mrmamongo/ego-trainer",
+      "fetch_specs": [
+        "refs/heads/*:refs/remotes/origin/*"
+      ],
+      "params": {}
+    }
+  },
+  "backups": {
+    "backup_export": {
+      "name": "backup_export",
+      "url": "file:///workspace/.beads/backup",
+      "fetch_specs": [
+        "refs/heads/*:refs/remotes/backup_export/*"
+      ],
+      "params": {}
+    }
+  },
   "branches": {}
 }
