@@ -46,19 +46,25 @@ ego-trainer/
 │   ├── checker.py          # Compare student vs reference on test cases
 │   ├── models.py           # Pydantic: Task, Manifest, Progress, Run, Config
 │   ├── progress.py         # Progress upsert, run log write
+│   ├── catalog.py          # ADR-0016 D16.6: Project/Folder/Task YAML models
+│   ├── content_repo.py     # ADR-0016: content-repo walker (catalog + legacy)
 │   └── cli/                # ego CLI (init, check, pull, list)
 ├── ego_server/             # FastAPI server
 │   ├── main.py             # App + router registration
-│   ├── db.py               # SQLite schema + init
+│   ├── db.py               # SQLite schema + init + column migrations
+│   ├── schema.sql          # CREATE TABLE statements (projects/folders/tasks/sync_log)
 │   ├── auth.py             # JWT auth, roles (student/mentor/admin)
 │   ├── config.py           # Env-based settings (EGO_DB_PATH, EGO_JWT_SECRET)
+│   ├── content_config.py   # ADR-0016 D16.3: TasksRepoConfig (file:// in PR 1)
+│   ├── sync.py             # ADR-0016 D16.2: content-repo sync pipeline
 │   ├── deps.py             # FastAPI deps (CurrentUser, DbDep, require_role)
-│   ├── models.py           # API DTOs (TaskMeta, TaskFull, CheckRequest, etc.)
+│   ├── models.py           # API DTOs (TaskMeta, TaskFull, CheckRequest, SyncResultDTO, etc.)
 │   └── routers/
 │       ├── auth.py         # POST /auth/register, /auth/login, GET /auth/me
 │       ├── tasks.py        # GET /tasks, /tasks/<id>, /tasks/<id>/hints
 │       ├── check.py        # POST /check (server-side checker + progress)
-│       └── progress.py     # POST /progress/push, GET /progress/<student>
+│       ├── progress.py     # POST /progress/push, GET /progress/<student>
+│       └── admin.py        # ADR-0016: POST /admin/sync-tasks, GET /admin/sync/log
 ├── ego_tui/                # Textual TUI — FROZEN (ADR-0014)
 ├── vscode-ego/             # VSCode extension — primary UI
 │   ├── src/
@@ -90,7 +96,8 @@ ego-trainer/
 uv run pytest                          # Run all tests
 uv run pytest tests/test_server_check.py -v  # Run specific test file
 uv run ego-server migrate              # Init SQLite schema
-uv run ego-server admin import-tasks --docs-dir docs/tasks  # Import tasks to DB
+uv run ego-server admin import-tasks --docs-dir docs/tasks  # Import tasks to DB (legacy flat)
+uv run ego-server admin sync-tasks --from docs/tasks        # Sync catalog layout (ADR-0016, PR 1: local only)
 uv run uvicorn ego_server.main:app --reload  # Start server (dev)
 
 # Server (podman/docker)
@@ -138,13 +145,13 @@ bd search "keyword"                # Search issues by text
 | 8bv CLI | done | Extension UI (8bv.9) shipped on feature tip |
 | bmh Server | done | FastAPI + SQLite + Docker |
 | x4f TUI | frozen | ADR-0014 — VSCode extension replaces TUI |
-| u4i Content Repo Sync | open | ADR-0016 — separate ego-tasks repo + sync |
+| 8di Content Repo Sync | active | ADR-0016 — PR 1 (catalog + local sync) in review; PR 2 (git remote + cron) next |
 | 9u7 Hypothesis | deferred | Post-MVP |
 | bbe AI Assistant | deferred | Post-MVP |
 | bd2 Content blocks | deferred | Post-MVP |
 | gdl Mentor Ops Dashboard | deferred | Post-MVP — progress only, not CMS |
 
-**Next:** implement `ego-trainer-u4i` (tasks-repo sync) per ADR-0016; `gdl` stays Ops.
+**Next:** finish `ego-trainer-8di` (tasks-repo sync) per ADR-0016 — PR 2: git remote + cron + Docker; `gdl` stays Ops.
 
 ### Rules
 

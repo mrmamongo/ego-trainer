@@ -79,13 +79,24 @@ def parse_task_file(path: Path, default_version: str = "1.0.0") -> Task:
 
 def parse_task_text(text: str, path: Path, default_version: str = "1.0.0") -> Task:
     """Parse .md text into a Task. See :func:`parse_task_file`."""
+    # 0. Strip YAML frontmatter if present (ADR-0016 D16.6). Frontmatter
+    #    is the source of truth for sync meta, but the parser still reads
+    #    the body (statement/solution) the same way. Frontmatter fields
+    #    (id/title/version/level/tags/breaking) are applied by the sync
+    #    layer via :func:`ego.catalog.parse_task_frontmatter`; here we
+    #    only strip it so legacy H1/bold parsing works on the body.
+    text, _fm_consumed = _strip_frontmatter(text)
+
     lines = text.splitlines()
 
-    # 1. Front-matter: title + bold meta
+    # 1. Title from H1 + bold meta (Блок/Сложность/Темы). Bold meta is
+    #    optional — in the new catalog layout (ADR-0016 D16.6) these
+    #    fields come from YAML frontmatter + folder.yaml, not bold lines.
+    #    The sync layer applies frontmatter overrides after parsing.
     task_id, title = _parse_title(lines[0] if lines else "")
-    block, block_name = _parse_bold_meta(lines, "Блок")
-    level = _parse_bold_meta(lines, "Сложность")[0]
-    tags_str = _parse_bold_meta(lines, "Темы")[0]
+    block, block_name = _parse_bold_meta_optional(lines, "Блок", default=slug_first_char(path.parent.name))
+    level = _parse_bold_meta_optional(lines, "Сложность", default="easy")[0]
+    tags_str = _parse_bold_meta_optional(lines, "Темы", default="")[0]
     tags = [t.strip() for t in tags_str.split(",") if t.strip()]
 
     # 2. Slug = имя родительской директории (напр. "block_f_simple")
@@ -147,6 +158,28 @@ def parse_task_text(text: str, path: Path, default_version: str = "1.0.0") -> Ta
 # === Helpers ===
 
 
+def _strip_frontmatter(text: str) -> tuple[str, bool]:
+    """Strip a leading ``---\\n...\\n---\\n`` YAML frontmatter block.
+
+    Returns ``(body_text, had_frontmatter)``. If no frontmatter present,
+    returns ``(text, False)``. Does NOT parse the YAML — just removes it
+    so the legacy H1/bold parsing works on the body. Frontmatter meta is
+    applied separately by the sync layer (see :mod:`ego.catalog`).
+
+    Per ADR-0016 D16.6: frontmatter is the source of truth for sync,
+    but the parser still reads the body (statement/solution) the same way.
+    """
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return text, False
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            body = "\n".join(lines[i + 1 :]).lstrip("\n")
+            return body, True
+    # Unclosed frontmatter — leave text as is (let parser fail naturally).
+    return text, False
+
+
 def _parse_title(line: str) -> tuple[str, str]:
     """Parse ``# Задача <ID>: <Title>`` → ``(id, title)``."""
     m = _TITLE_RE.match(line)
@@ -159,6 +192,7 @@ def _parse_bold_meta(lines: list[str], key: str) -> tuple[str, str]:
     """Parse ``**<key>:** <value>`` (optionally ``— <rest>``).
 
     Ищет в первых 10 строках. Возвращает ``(value, rest)``.
+    Raises ``ValueError`` if not found (legacy strict mode).
     """
     pattern = re.compile(rf"^\*\*{re.escape(key)}:\*\*\s*(.+?)(?:\s*—\s*(.+))?$")
     for line in lines[:10]:
@@ -168,6 +202,32 @@ def _parse_bold_meta(lines: list[str], key: str) -> tuple[str, str]:
             rest = (m.group(2) or "").strip()
             return val, rest
     raise ValueError(f"Missing **{key}:** in front-matter")
+
+
+def _parse_bold_meta_optional(
+    lines: list[str], key: str, *, default: str = ""
+) -> tuple[str, str]:
+    """Like :func:`_parse_bold_meta` but returns ``(default, "")`` if absent.
+
+    Used for the new catalog layout (ADR-0016 D16.6) where bold meta may
+    be missing — fields come from YAML frontmatter + folder.yaml instead.
+    """
+    try:
+        return _parse_bold_meta(lines, key)
+    except ValueError:
+        return default, ""
+
+
+def slug_first_char(name: str) -> str:
+    """Derive a fallback block code from a directory slug.
+
+    ``block_f_simple`` → ``F``, ``block_1_logs`` → ``1``, ``foo`` → ``F``.
+    Used when ``**Блок:**`` is absent (new catalog layout).
+    """
+    parts = name.split("_")
+    if len(parts) >= 2 and parts[0] == "block":
+        return parts[1].upper()
+    return name[:1].upper() if name else "?"
 
 
 def _split_sections(lines: list[str]) -> dict[str, list[str]]:

@@ -214,7 +214,13 @@ def test_invalid_title_raises():
         parse_task_text(bad, path=Path("test.md"))
 
 
-def test_missing_block_meta_raises():
+def test_missing_block_meta_uses_fallback():
+    """Bold ``**Блок:**`` is optional (ADR-0016 D16.6) — falls back to slug.
+
+    In the new catalog layout, block/level/tags come from YAML frontmatter
+    + folder.yaml, not bold lines. The parser must not raise on missing
+    bold meta; it falls back to a slug-derived block code.
+    """
     bad = """# Задача X: Test
 
 **Сложность:** easy
@@ -227,9 +233,20 @@ x
 ## Аргументы
 
 - a
+
+<details><summary>Эталонное решение</summary>
+
+```python
+def task_x():
+    return 1
+```
+
+</details>
 """
-    with pytest.raises(ValueError, match="Блок"):
-        parse_task_text(bad, path=Path("test.md"))
+    task = parse_task_text(bad, path=Path("block_x/test.md"))
+    assert task.id == "X"
+    # block falls back to slug_first_char("block_x") = "X"
+    assert task.block == "X"
 
 
 # === Future: ## Тесты section ===
