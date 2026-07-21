@@ -73,6 +73,23 @@ def main(argv=None) -> int:
         help="Re-import even if content_hash matches",
     )
 
+    p_sync = admin_sub.add_parser(
+        "sync-tasks",
+        help="Sync content-repo (catalog layout) into DB (ADR-0016)",
+    )
+    p_sync.add_argument(
+        "--from",
+        dest="from_path",
+        required=True,
+        help="Path to content-repo root (file:// URL or local path)",
+    )
+    p_sync.add_argument(
+        "--source",
+        default="manual",
+        choices=["manual", "cron", "startup"],
+        help="Sync trigger source (for sync_log)",
+    )
+
     admin_sub.add_parser("list-users", help="List all users")
 
     args = parser.parse_args(argv)
@@ -92,6 +109,8 @@ def main(argv=None) -> int:
             return _cmd_create_user(args)
         if args.admin_command == "import-tasks":
             return _cmd_import_tasks(args)
+        if args.admin_command == "sync-tasks":
+            return _cmd_sync_tasks(args)
         if args.admin_command == "list-users":
             return _cmd_list_users(args)
 
@@ -225,6 +244,57 @@ def _cmd_list_users(args) -> int:
             )
         print(f"\n{len(rows)} users")
         return 0
+    finally:
+        conn.close()
+
+
+def _cmd_sync_tasks(args) -> int:
+    """Sync content-repo (catalog layout) into DB per ADR-0016.
+
+    Unlike ``import-tasks`` (legacy flat ``docs/tasks/``), this walks the
+    3-level Project/Folder/Task catalog and upserts ``projects`` /
+    ``folders`` / ``tasks`` / ``task_versions`` + writes a ``sync_log`` row.
+    """
+    from ego_server.db import get_connection
+    from ego_server.sync import sync_from_path
+
+    # Resolve path (file:// URL or bare local path).
+    path_str = args.from_path
+    if path_str.startswith("file://"):
+        from urllib.parse import urlparse
+
+        parsed = urlparse(path_str)
+        if parsed.netloc and sys.platform == "win32" and len(parsed.netloc) >= 2 and parsed.netloc[1] == ":":
+            p = parsed.netloc + parsed.path
+        else:
+            p = parsed.path
+            if sys.platform == "win32" and len(p) >= 3 and p[0] == "/" and p[2] == ":":
+                p = p[1:]
+        repo_path = Path(p)
+    else:
+        repo_path = Path(path_str)
+
+    if not repo_path.is_dir():
+        print(f"path not found: {repo_path.resolve()}", file=sys.stderr)
+        return 1
+
+    conn = get_connection()
+    try:
+        result = sync_from_path(
+            conn, repo_path, source=args.source, repo_url=str(repo_path)
+        )
+        conn.commit()
+        print(
+            f"Sync from {repo_path}: "
+            f"added={result.added}, updated={result.updated}, "
+            f"skipped={result.skipped}, errors={result.errors} "
+            f"(status={result.status}, log_id={result.log_id})"
+        )
+        if result.error_details:
+            print("\nErrors:", file=sys.stderr)
+            for line in result.error_details:
+                print(f"  {line}", file=sys.stderr)
+        return 0 if result.status != "failed" else 1
     finally:
         conn.close()
 

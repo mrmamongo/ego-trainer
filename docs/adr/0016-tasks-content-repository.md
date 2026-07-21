@@ -1,9 +1,9 @@
 # ADR-0016: Tasks Content Repository + Sync
 
-**Status:** Accepted
+**Status:** Accepted (PR 1 implemented: D16.6 catalog + D16.5 local sync; PR 2 pending: D16.2 git remote + D16.3 auth + cron)
 **Date:** 2026-07-19
 **Supersedes:** ADR-0001 D2 (частично — canonical остаётся git, но не monorepo `docs/tasks/`)
-**Related:** beads `ego-trainer-u4i` (Content Repo Sync), `ego-trainer-gdl` (Ops dashboard), ADR-0001 D3 (SemVer)
+**Related:** beads `ego-trainer-8di` (Content Repo Sync), `ego-trainer-gdl` (Ops dashboard), ADR-0001 D3 (SemVer)
 
 ## Context
 

@@ -25,9 +25,30 @@ def get_connection() -> sqlite3.Connection:
 
 
 def init_schema(conn: sqlite3.Connection) -> None:
-    """Apply schema.sql to the database (idempotent)."""
+    """Apply schema.sql to the database (idempotent).
+
+    Also runs ``_migrate_add_columns`` for forward-compatible schema
+    evolution (``CREATE TABLE IF NOT EXISTS`` does not add new columns
+    to existing tables).
+    """
     conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+    _migrate_add_columns(conn)
     conn.commit()
+
+
+def _migrate_add_columns(conn: sqlite3.Connection) -> None:
+    """Add columns introduced after the initial schema (idempotent).
+
+    ``CREATE TABLE IF NOT EXISTS`` won't add new columns to an existing
+    table, so we use ``ALTER TABLE ... ADD COLUMN`` guarded by a check
+    on ``PRAGMA table_info``.
+    """
+    # tasks.folder_id, tasks.project_id (ADR-0016 D16.6)
+    tasks_cols = {row["name"] for row in conn.execute("PRAGMA table_info(tasks)")}
+    if "folder_id" not in tasks_cols:
+        conn.execute("ALTER TABLE tasks ADD COLUMN folder_id TEXT")
+    if "project_id" not in tasks_cols:
+        conn.execute("ALTER TABLE tasks ADD COLUMN project_id TEXT")
 
 
 def init_db() -> None:

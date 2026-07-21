@@ -119,3 +119,46 @@ class HintsResponse(BaseModel):
 
     task_id: str
     hints: list[Hint] = Field(default_factory=list)
+
+
+# === Content-repo sync (ADR-0016) ===
+
+
+class SyncTasksRequest(BaseModel):
+    """Request body for POST /admin/sync-tasks (PR 1: local path only)."""
+
+    path: str  # local filesystem path or file:// URL
+    source: str = Field(default="manual", pattern="^(manual|cron|startup)$")
+
+
+class SyncResultDTO(BaseModel):
+    """Result of one sync run."""
+
+    log_id: int
+    status: str  # success | partial | failed
+    added: int
+    updated: int
+    skipped: int
+    errors: int
+    error_details: str = ""
+    started_at: str
+    finished_at: str = ""
+    git_sha: str | None = None
+    repo_url: str = ""
+
+
+class SyncLogRow(BaseModel):
+    """One row from sync_log (GET /admin/sync/log)."""
+
+    id: int
+    started_at: str
+    finished_at: str | None = None
+    source: str
+    repo_url: str = ""
+    git_sha: str | None = None
+    status: str
+    added: int
+    updated: int
+    skipped: int
+    errors: int
+    error_details: str = ""

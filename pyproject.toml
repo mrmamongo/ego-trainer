@@ -4,7 +4,10 @@ version = "0.1.0"
 description = "Ego — platform for practice tasks with auto-checking"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["pydantic>=2.6"]
+dependencies = [
+    "pydantic>=2.6",
+    "pyyaml>=6.0.3",
+]
 
 [project.scripts]
 ego = "ego.cli.main:main"
