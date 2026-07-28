@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Systems Complexity Ladder</title>
+  <style>
+    :root { --ink:#172033; --muted:#60708c; --paper:#f7f9fc; --line:#d9e1ed; --blue:#1d65d8; --teal:#007f7b; --gold:#e59219; --violet:#7756c9; --card:#fff; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:linear-gradient(135deg,#f7f9fc,#eef4ff); color:var(--ink); font-family:Inter,Segoe UI,Arial,sans-serif; }
+    main { max-width:1180px; margin:auto; padding:48px 28px 72px; }
+    h1 { font-size:clamp(32px,5vw,60px); line-height:1.02; max-width:800px; margin:0 0 16px; letter-spacing:-.045em; }
+    .lede { max-width:720px; color:var(--muted); font-size:18px; line-height:1.55; margin:0; }
+    .goal { margin:32px 0 42px; padding:22px 25px; border-left:5px solid var(--blue); background:var(--card); box-shadow:0 12px 32px #2638520f; }
+    .goal b { display:block; margin-bottom:7px; }
+    .legend { display:flex; flex-wrap:wrap; gap:10px 20px; margin:0 0 26px; color:var(--muted); font-size:14px; }
+    .legend span::before { content:""; display:inline-block; width:11px; height:11px; border-radius:50%; margin-right:7px; }
+    .done::before { background:var(--teal); } .next::before { background:var(--gold); } .future::before { background:var(--violet); }
+    .ladder { position:relative; display:grid; gap:13px; }
+    .ladder::before { content:""; position:absolute; left:29px; top:26px; bottom:26px; width:2px; background:var(--line); }
+    .stage { position:relative; display:grid; grid-template-columns:60px minmax(150px, 1.1fr) minmax(260px, 2fr) minmax(180px, 1.25fr); align-items:center; gap:16px; background:var(--card); padding:18px 20px 18px 0; border:1px solid var(--line); border-radius:14px; box-shadow:0 8px 20px #26385209; }
+    .stage::before { content:""; position:absolute; left:22px; width:16px; height:16px; border:5px solid var(--card); border-radius:50%; background:var(--violet); z-index:1; }
+    .stage.completed::before { background:var(--teal); } .stage.current { border:2px solid var(--gold); background:#fffaf0; } .stage.current::before { background:var(--gold); }
+    .number { padding-left:45px; color:var(--muted); font-weight:700; font-size:14px; }
+    .name { font-weight:700; font-size:17px; line-height:1.2; }
+    .ability { color:var(--muted); line-height:1.4; }
+    .checkpoint { font-size:14px; line-height:1.35; padding-left:15px; border-left:2px solid var(--line); }
+    .checkpoint b { display:block; margin-bottom:4px; color:var(--ink); }
+    .milestone { margin-top:48px; display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+    .panel { background:var(--card); padding:25px; border-radius:14px; border:1px solid var(--line); }
+    .panel h2 { margin:0 0 15px; font-size:20px; }
+    .flow { display:flex; flex-wrap:wrap; align-items:center; gap:8px; line-height:1.6; }
+    .chip { background:#edf3ff; color:#174b9f; border-radius:99px; padding:5px 10px; font-size:14px; }
+    .arrow { color:var(--muted); }
+    .rules { margin:0; padding-left:20px; color:var(--muted); line-height:1.7; }
+    footer { margin-top:32px; color:var(--muted); font-size:14px; }
+    @media (max-width:760px) { main{padding:32px 16px 48px} .stage{grid-template-columns:54px 1fr; gap:8px; padding:16px 16px 16px 0}.stage::before{left:19px}.ladder::before{left:27px}.number{padding-left:39px;grid-row:1/4}.name{grid-column:2}.ability,.checkpoint{grid-column:2}.checkpoint{border-left:0;padding-left:0;margin-top:3px}.milestone{grid-template-columns:1fr} }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Systems Complexity Ladder</h1>
+    <p class="lede">Роадмап не про список тем Python. Он последовательно добавляет по одному новому измерению сложности — пока ученик не сможет строить и безопасно менять небольшие системы.</p>
+    <section class="goal"><b>Целевой результат</b>Писать прикладные программы, работать с данными, тестировать и отлаживать код, собирать API-сервисы и понимать свою часть системы.</section>
+    <div class="legend"><span class="done">Уже пройдено с Егором</span><span class="next">Ближайшая зона роста</span><span class="future">Следующие уровни</span></div>
+    <section class="ladder" aria-label="Лестница развития">
+      <article class="stage"><div class="number">00</div><div class="name">Рабочая среда</div><div class="ability">Запускать код, читать traceback, делать коммиты, задавать хорошие вопросы.</div><div class="checkpoint"><b>Артефакт</b>Файл → запуск → исправление → коммит.</div></article>
+      <article class="stage"><div class="number">01</div><div class="name">Одно преобразование</div><div class="ability">Вход → действие → выход; простая функция с <code>return</code>.</div><div class="checkpoint"><b>Проверка</b>Самостоятельно пишет небольшую детерминированную функцию.</div></article>
+      <article class="stage completed"><div class="number">02</div><div class="name">Управление потоком</div><div class="ability">Условия, циклы, поиск, фильтрация и накопление результата.</div><div class="checkpoint"><b>Уже есть</b>Блок F: базовые паттерны.</div></article>
+      <article class="stage completed"><div class="number">03</div><div class="name">Плоские данные</div><div class="ability">Списки, словари, множества, агрегация, группировка и top-k.</div><div class="checkpoint"><b>Уже есть</b>Блоки F, G, 1 и D.</div></article>
+      <article class="stage completed"><div class="number">04</div><div class="name">Вложенные данные</div><div class="ability">JSON-подобные структуры, несколько правил и безопасное извлечение значений.</div><div class="checkpoint"><b>Уже есть</b>Блок H и часть G.</div></article>
+      <article class="stage current"><div class="number">05</div><div class="name">Композиция</div><div class="ability">Собирать программу из шагов; видеть поток данных и точку поломки.</div><div class="checkpoint"><b>Следующий фокус</b>Пайплайны: normalize → filter → group → aggregate → render.</div></article>
+      <article class="stage"><div class="number">06</div><div class="name">Состояние</div><div class="ability">Кэш, очередь, брони, корзина, lifecycle и инварианты.</div><div class="checkpoint"><b>Практика</b>LRU-кэш, registry броней, retry-очередь.</div></article>
+      <article class="stage"><div class="number">07</div><div class="name">Контракты</div><div class="ability">Валидация входа, ошибки, предусловия и целостность данных.</div><div class="checkpoint"><b>Практика</b>Валидатор бронирований и diff expected / actual.</div></article>
+      <article class="stage"><div class="number">08</div><div class="name">Модульность</div><div class="ability">Разделять storage, правила, валидацию, сервис и отчёты по ответственности.</div><div class="checkpoint"><b>Проверка</b>Может объяснить, где менять каждое новое правило.</div></article>
+      <article class="stage"><div class="number">09</div><div class="name">Внешний мир</div><div class="ability">Файлы, JSON, конфиги, HTTP API и SQLite как границы системы.</div><div class="checkpoint"><b>Практика</b>CRUD API: принять → проверить → сохранить → вернуть.</div></article>
+      <article class="stage"><div class="number">10</div><div class="name">Надёжность</div><div class="ability">Тесты, отладка, root cause, логи и безопасный рефакторинг.</div><div class="checkpoint"><b>Проверка</b>Чинит чужой код и доказывает исправление тестом.</div></article>
+      <article class="stage"><div class="number">11</div><div class="name">Интеграционный проект</div><div class="ability">Собрать, протестировать, объяснить и изменить небольшую систему.</div><div class="checkpoint"><b>Финал</b>Booking service, URL shortener или task queue dashboard.</div></article>
+    </section>
+    <section class="milestone">
+      <div class="panel"><h2>Главный переход</h2><div class="flow"><span class="chip">алгоритмы над данными</span><span class="arrow">↓</span><span class="chip">программа из алгоритмов</span></div></div>
+      <div class="panel"><h2>Правило нагрузки</h2><ul class="rules"><li>Один этап — одно новое измерение сложности.</li><li>Уровень пройден: задача + объяснение + артефакт + review.</li><li>Не смешивать вложенность, состояние и внешний мир в одной первой задаче.</li></ul></div>
+    </section>
+    <footer>Текущая точка Егора: уверенная база на уровнях 2–4; следующий осмысленный этап — композиция алгоритмов.</footer>
+  </main>
+</body>
+</html>
