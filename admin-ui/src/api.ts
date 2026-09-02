@@ -215,12 +215,15 @@ export interface TaskStudioDTO {
 	markdown: string;
 	solution_py: string;
 	tests_py: string;
+	content_etag: string;
+	version_policy: string | null;
 	writable: boolean;
 	read_only_reason: string;
 }
 
 export interface StudioCandidateBody {
 	expected_version: string;
+	expected_content_etag: string;
 	markdown: string; // full .md including YAML frontmatter
 	solution_py: string;
 	tests_py: string;
@@ -238,6 +241,7 @@ export interface StudioValidateResponse {
 export interface StudioSaveResponse {
 	task_id: string;
 	new_version: string;
+	content_etag: string;
 	sync: SyncResultDTO;
 }
 
