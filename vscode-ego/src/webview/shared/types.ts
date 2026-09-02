@@ -19,6 +19,15 @@ export interface CheckResult {
 
 export type EgoMode = 'server' | 'offline';
 
+export interface TaskRunSummary {
+	id: string;
+	started_at: string;
+	finished_at: string;
+	status: string;
+	passed_tests: number;
+	total_tests: number;
+}
+
 export type TaskStatusFilter = 'all' | 'passed' | 'partial' | 'new' | 'failed';
 
 export interface DashboardRow {
@@ -27,6 +36,7 @@ export interface DashboardRow {
 	block: string;
 	slug: string;
 	version: string;
+	stale: boolean;
 	status: string; // passed | partial | new | failed | error | ...
 	passed_tests: number;
 	total_tests: number;
@@ -64,5 +74,6 @@ export interface TaskViewData {
 	version: string;
 	statement_html: string; // pre-rendered markdown HTML from host
 	hints: TaskHint[];
+	history: TaskRunSummary[];
 	mode: EgoMode;
 }

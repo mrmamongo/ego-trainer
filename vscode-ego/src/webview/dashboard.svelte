@@ -171,6 +171,7 @@
 						<th>Task</th>
 						<th>Title</th>
 						<th>Status</th>
+						<th>Version</th>
 						<th>Tests</th>
 						<th>Attempts</th>
 						<th>Last run</th>
@@ -180,7 +181,7 @@
 				<tbody>
 					{#if filteredRows.length === 0}
 						<tr>
-							<td colspan="7" class="empty">No tasks match the current filters.</td>
+							<td colspan="8" class="empty">No tasks match the current filters.</td>
 						</tr>
 					{:else}
 						{#each filteredRows as row (row.id)}
@@ -193,6 +194,10 @@
 										<span class="status-icon" aria-hidden="true">{statusIcon(status)}</span>
 										{statusLabel(status)}
 									</span>
+								</td>
+								<td class="mono">
+									v{row.version}
+									{#if row.stale}<span class="stale" title="Progress is from an older task version">stale progress</span>{/if}
 								</td>
 								<td class="mono">{row.passed_tests}/{row.total_tests}</td>
 								<td class="mono">{row.attempts}</td>
@@ -450,6 +455,16 @@
 
 	.muted {
 		opacity: 0.75;
+	}
+
+	.stale {
+		display: inline-block;
+		margin-left: 0.35rem;
+		font-family: var(--vscode-font-family, sans-serif);
+		font-size: 0.68rem;
+		font-weight: 500;
+		color: var(--vscode-descriptionForeground, var(--vscode-foreground));
+		opacity: 0.8;
 	}
 
 	.empty {

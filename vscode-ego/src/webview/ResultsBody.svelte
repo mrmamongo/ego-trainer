@@ -1,11 +1,13 @@
 <script lang="ts">
-	import type { CheckResult } from './shared/types';
+	import type { CheckResult, TaskRunSummary } from './shared/types';
 
 	let {
 		result = null,
+	history = [],
 		emptyMessage = 'No results yet.'
 	}: {
 		result?: CheckResult | null;
+		history?: TaskRunSummary[];
 		emptyMessage?: string;
 	} = $props();
 
@@ -34,7 +36,26 @@
 	function statusIcon(status: string): string {
 		return STATUS_ICONS[status] ?? '?';
 	}
+
+	function formatRunTime(run: TaskRunSummary): string {
+		const date = new Date(run.finished_at || run.started_at);
+		return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
+	}
 </script>
+
+{#if history && history.length > 0}
+	<section class="history" aria-label="Previous attempts">
+		<h3>Previous attempts</h3>
+		<table>
+			<thead><tr><th>Time</th><th>Status</th><th>Score</th></tr></thead>
+			<tbody>
+				{#each history as run (run.id)}
+					<tr><td>{formatRunTime(run)}</td><td>{run.status}</td><td>{run.passed_tests}/{run.total_tests}</td></tr>
+				{/each}
+			</tbody>
+		</table>
+	</section>
+{/if}
 
 {#if result === null}
 	<div class="waiting">{emptyMessage}</div>
@@ -103,6 +124,45 @@
 {/if}
 
 <style>
+	.history {
+		margin-bottom: 0.85rem;
+		border-top: 1px solid color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
+		border-bottom: 1px solid color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
+	}
+
+	.history h3 {
+		margin: 0;
+		padding: 0.45rem 0;
+		font-size: 0.75rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.04em;
+		opacity: 0.75;
+	}
+
+	.history table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 0.8rem;
+	}
+
+	.history th,
+	.history td {
+		padding: 0.3rem 0.4rem;
+		text-align: left;
+		border-top: 1px solid color-mix(in srgb, var(--vscode-foreground) 8%, transparent);
+	}
+
+	.history th {
+		font-size: 0.7rem;
+		font-weight: 600;
+		opacity: 0.65;
+	}
+
+	.history td:last-child {
+		font-variant-numeric: tabular-nums;
+	}
+
 	.waiting {
 		display: flex;
 		align-items: center;
