@@ -16,7 +16,7 @@ import { pullTasksToWorkspace } from './pullTasks';
 import { DashboardView } from './dashboardView';
 import { TaskViewPanel } from './taskViewPanel';
 import { openTaskPy, openTaskWithView } from './openTask';
-import { hasEgoDir, readEgoConfig, type EgoMode } from './egoWorkspace';
+import { hasEgoDir, readEgoConfig, readManifest, type EgoMode } from './egoWorkspace';
 import { EgoStatusBar } from './statusBar';
 import { runOfflineCheck } from './offlineCheck';
 import { switchMode } from './modeSwitch';
@@ -189,6 +189,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
                 const taskId = match[1].replace(/_/g, '.').toUpperCase();
                 statusBar.setTask(taskId);
+                const cfg = await readEgoConfig();
+                if (cfg?.mode === 'offline') {
+                    const relativeMdPath = fileName.replace(/\.py$/, '.md').replace(/\\/g, '/');
+                    const parts = relativeMdPath.split('/');
+                    const tasksIndex = parts.indexOf('tasks');
+                    const slug = tasksIndex >= 0 ? parts[tasksIndex + 1] || '' : '';
+                    await TaskViewPanel.show({
+                        id: taskId,
+                        title: taskId,
+                        slug,
+                        version: '0.0.0',
+                        status: 'new',
+                        md_path: relativeMdPath,
+                    });
+                    return;
+                }
                 try {
                     const task = await api.getTask(taskId);
                     await TaskViewPanel.showFromMeta(task);
@@ -197,7 +213,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     const slug = parts.includes('tasks')
                         ? parts[parts.indexOf('tasks') + 1]
                         : parts.includes('docs')
-                          ? parts[parts.indexOf('tasks') + 1] || ''
+                          ? parts[parts.indexOf('docs') + 1] || ''
                           : '';
                     await TaskViewPanel.show({
                         id: taskId,
@@ -512,14 +528,35 @@ async function cmdShowTask(): Promise<void> {
     const editor = vscode.window.activeTextEditor;
     if (!editor) return;
 
-    const fileName = vscode.workspace.asRelativePath(editor.document.fileName);
+    const fileName = vscode.workspace.asRelativePath(editor.document.fileName).replace(/\\/g, '/');
     const match = fileName.match(/task_([a-z0-9_]+)\.py$/);
     if (!match) return;
     const taskId = match[1].replace(/_/g, '.').toUpperCase();
+    const cfg = await readEgoConfig();
+
+    if (cfg?.mode === 'offline') {
+        const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+        if (!root) {
+            vscode.window.showWarningMessage('Ego: Open a workspace to show the task statement.');
+            return;
+        }
+        const filename = `task_${match[1]}.md`;
+        const candidates = [
+            ...(await vscode.workspace.findFiles(new vscode.RelativePattern(root, `tasks/**/${filename}`), '**/{node_modules,.ego,out}/**', 20)),
+            ...(await vscode.workspace.findFiles(new vscode.RelativePattern(root, `docs/tasks/**/${filename}`), '**/{node_modules,.ego,out}/**', 20)),
+        ];
+        const mdUri = candidates[0];
+        if (!mdUri) {
+            vscode.window.showWarningMessage(`Ego: Local statement for ${taskId} not found. Expected ${filename} under tasks/ or docs/tasks/.`);
+            return;
+        }
+        const doc = await vscode.workspace.openTextDocument(mdUri);
+        await vscode.commands.executeCommand('markdown.showPreview', doc.uri);
+        return;
+    }
 
     try {
         const task = await api.getTask(taskId);
-        // Show statement as markdown preview.
         const doc = await vscode.workspace.openTextDocument({
             content: task.statement_md,
             language: 'markdown',
@@ -627,12 +664,14 @@ function showCheckResult(result: CheckResponse, taskId: string): void {
         );
     }
 
-    // Prefer Task view if open; else standalone results panel.
+    // Prefer the matching Task view; otherwise keep results visible in a standalone panel.
+    if (TaskViewPanel.isOpen() && TaskViewPanel.postResult(result)) return;
     if (TaskViewPanel.isOpen()) {
-        TaskViewPanel.postResult(result);
-    } else {
-        TestResultsPanel.show(result);
+        vscode.window.showInformationMessage(
+            `Ego: Check finished for ${result.task_id}; showing results separately.`
+        );
     }
+    TestResultsPanel.show(result);
 }
 
 async function cmdHints(): Promise<void> {
@@ -650,9 +689,12 @@ async function cmdHints(): Promise<void> {
     if (!taskId) {
         // Ask user to pick a task.
         try {
-            const tasks = await api.listTasks();
+            const cfg = await readEgoConfig();
+            const tasks = cfg?.mode === 'offline'
+                ? (await readManifest())?.tasks || []
+                : await api.listTasks();
             const picked = await vscode.window.showQuickPick(
-                tasks.map(t => ({ label: `${t.id}: ${t.title}`, taskId: t.id })),
+                tasks.map(t => ({ label: `${t.id}: ${'title' in t ? t.title : t.slug}`, taskId: t.id })),
                 { placeHolder: 'Select a task for hints' }
             );
             if (!picked) return;
@@ -760,11 +802,8 @@ async function cmdPush(): Promise<void> {
         async (progress) => {
             let pushed = 0;
             let errors = 0;
-            for (const entry of entries) {
-                progress.report({
-                    message: `${entry.task_id}: ${entry.status}`,
-                    increment: (pushed / entries.length) * 100,
-                });
+            for (const [index, entry] of entries.entries()) {
+                progress.report({ message: `${entry.task_id}: ${entry.status}` });
                 try {
                     // Find the latest run log for this task.
                     let log = '';
@@ -798,6 +837,8 @@ async function cmdPush(): Promise<void> {
                 } catch (e) {
                     errors++;
                     console.error(`Push ${entry.task_id} failed:`, e);
+                } finally {
+                    progress.report({ increment: ((index + 1) / entries.length) * 100 - (index / entries.length) * 100 });
                 }
             }
             if (errors === 0) {
