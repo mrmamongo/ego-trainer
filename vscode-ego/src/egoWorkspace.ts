@@ -1,6 +1,7 @@
 /** Workspace helpers for .ego/ layout and mode detection. */
 
 import * as vscode from 'vscode';
+import { studentStubFromSolution } from './studentStub';
 
 export type EgoMode = 'server' | 'offline';
 
@@ -136,6 +137,144 @@ export async function writeManifest(
     );
 }
 
+export interface ImportTasksResult {
+    imported: number;
+    skipped: number;
+}
+
+export async function importTasksFolder(
+    source: vscode.Uri,
+    root?: vscode.Uri
+): Promise<ImportTasksResult> {
+    const base = root ?? workspaceRoot();
+    if (!base) throw new Error('No workspace folder open.');
+
+    const destination = vscode.Uri.joinPath(base, 'docs', 'tasks');
+    const normalize = (uri: vscode.Uri) => uri.fsPath.replace(/[\\/]+$/, '').toLowerCase();
+    const sourcePath = normalize(source);
+    const rootPath = normalize(base);
+    const destinationPath = normalize(destination);
+    if (
+        sourcePath === rootPath ||
+        sourcePath === destinationPath ||
+        sourcePath.startsWith(`${destinationPath}\\`) ||
+        sourcePath.startsWith(`${destinationPath}/`)
+    ) {
+        throw new Error('Select a tasks folder outside this workspace docs/tasks folder.');
+    }
+
+    const files: Array<{ relative: string; uri: vscode.Uri }> = [];
+    const visit = async (directory: vscode.Uri, relative: string): Promise<void> => {
+        for (const [name, type] of await vscode.workspace.fs.readDirectory(directory)) {
+            if ((type & vscode.FileType.SymbolicLink) !== 0) continue;
+            const uri = vscode.Uri.joinPath(directory, name);
+            const childRelative = relative ? `${relative}/${name}` : name;
+            if ((type & vscode.FileType.Directory) !== 0) {
+                await visit(uri, childRelative);
+            } else if (/^task_.+\.md$/i.test(name)) {
+                files.push({ relative: childRelative, uri });
+            }
+        }
+    };
+    await visit(source, '');
+
+    let imported = 0;
+    let skipped = 0;
+    for (const file of files) {
+        const relativeMd = file.relative.replace(/\\/g, '/');
+        const solution = relativeMd.replace(/\.md$/i, '.solution.py');
+        const tests = relativeMd.replace(/\.md$/i, '.tests.py');
+        const candidates = [
+            { relative: relativeMd, uri: file.uri },
+            { relative: solution, uri: vscode.Uri.joinPath(source, ...solution.split('/')) },
+            { relative: tests, uri: vscode.Uri.joinPath(source, ...tests.split('/')) },
+        ];
+        for (const candidate of candidates) {
+            let exists = true;
+            try {
+                await vscode.workspace.fs.stat(candidate.uri);
+            } catch {
+                exists = false;
+            }
+            if (!exists) continue;
+
+            const relativeParts = candidate.relative.split('/');
+            const target = vscode.Uri.joinPath(destination, ...relativeParts);
+            try {
+                await vscode.workspace.fs.stat(target);
+                skipped += 1;
+                continue;
+            } catch {
+            }
+            await vscode.workspace.fs.createDirectory(
+                vscode.Uri.joinPath(destination, ...relativeParts.slice(0, -1))
+            );
+            await vscode.workspace.fs.copy(candidate.uri, target, { overwrite: false });
+            imported += 1;
+        }
+    }
+    return { imported, skipped };
+}
+
+export interface StudentStubResult {
+    generated: number;
+    skipped: number;
+    errors: number;
+}
+
+export async function generateStudentStubs(
+    scanned: Array<{ id: string; block: string; slug: string; md_path: string }>,
+    root?: vscode.Uri
+): Promise<StudentStubResult> {
+    const base = root ?? workspaceRoot();
+    if (!base) throw new Error('No workspace folder open.');
+
+    let generated = 0;
+    let skipped = 0;
+    let errors = 0;
+    for (const task of scanned) {
+        const mdUri = vscode.Uri.joinPath(base, ...task.md_path.replace(/\\/g, '/').split('/'));
+        const solutionUri = vscode.Uri.joinPath(
+            mdUri,
+            '..',
+            `${mdUri.path.split('/').pop()?.replace(/\.md$/i, '')}.solution.py`
+        );
+        const stubUri = vscode.Uri.joinPath(
+            base,
+            'tasks',
+            task.slug,
+            `${mdUri.path.split('/').pop()?.replace(/\.md$/i, '')}.py`
+        );
+        try {
+            await vscode.workspace.fs.stat(solutionUri);
+        } catch {
+            continue;
+        }
+        try {
+            await vscode.workspace.fs.stat(stubUri);
+            skipped += 1;
+            continue;
+        } catch {
+        }
+        try {
+            const source = Buffer.from(
+                await vscode.workspace.fs.readFile(solutionUri)
+            ).toString('utf-8');
+            const stub = studentStubFromSolution(source);
+            await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(base, 'tasks', task.slug));
+            await vscode.workspace.fs.writeFile(stubUri, Buffer.from(stub, 'utf-8'));
+            generated += 1;
+        } catch (error) {
+            errors += 1;
+            const detail = error instanceof Error ? error.message : 'unknown error';
+            void vscode.window.showWarningMessage(
+                `Ego: Could not generate a student stub for ${task.id}: ${detail}`
+            );
+        }
+    }
+    return { generated, skipped, errors };
+}
+
 /** Scan docs/tasks for .md files → lightweight task descriptors for offline init. */
 export async function scanDocsTasks(root?: vscode.Uri): Promise<
     Array<{ id: string; block: string; slug: string; md_path: string }>
@@ -157,11 +296,11 @@ export async function scanDocsTasks(root?: vscode.Uri): Promise<
 
     const out: Array<{ id: string; block: string; slug: string; md_path: string }> = [];
     for (const uri of mdFiles) {
-        const rel = vscode.workspace.asRelativePath(uri);
+        const rel = vscode.workspace.asRelativePath(uri, false);
         // docs/tasks/block_f_simple/task_f1.md
         const parts = rel.replace(/\\/g, '/').split('/');
-        if (parts.length < 4) continue;
-        const slug = parts[2]; // block_f_simple
+        if (parts.length < 3 || parts[0] !== 'docs' || parts[1] !== 'tasks') continue;
+        const slug = parts.length >= 4 ? parts[2] : 'imported';
         const file = parts[parts.length - 1]; // task_f1.md
         const m = file.match(/^task_(.+)\.md$/);
         if (!m) continue;

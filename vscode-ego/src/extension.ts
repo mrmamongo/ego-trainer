@@ -20,6 +20,7 @@ import { hasEgoDir, readEgoConfig, type EgoMode } from './egoWorkspace';
 import { EgoStatusBar } from './statusBar';
 import { runOfflineCheck } from './offlineCheck';
 import { switchMode } from './modeSwitch';
+import { setupPythonEnv } from './pythonSetup';
 
 const SECRET_KEY = 'ego.token';
 
@@ -96,6 +97,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // Setup / auth — no .ego/ required.
         vscode.commands.registerCommand('ego.login', () => cmdLogin(context)),
         vscode.commands.registerCommand('ego.setServer', () => cmdSetServer(context)),
+        vscode.commands.registerCommand('ego.setupPython', () => cmdSetupPython()),
         vscode.commands.registerCommand('ego.showWelcome', () =>
             WelcomeView.show(context, welcomeDeps())
         ),
@@ -313,6 +315,38 @@ async function cmdLogin(context: vscode.ExtensionContext): Promise<void> {
             vscode.window.showErrorMessage(`Ego: Login failed — ${(e2 as Error).message}`);
         }
     }
+}
+
+async function cmdSetupPython(): Promise<void> {
+    const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!workspacePath) {
+        vscode.window.showErrorMessage('Ego: Open a workspace folder before setting up Python.');
+        return;
+    }
+
+    await vscode.window.withProgress(
+        {
+            location: vscode.ProgressLocation.Notification,
+            title: 'Ego: Setting up Python…',
+            cancellable: false,
+        },
+        async (progress) => {
+            try {
+                const packageSpec = vscode.workspace
+                    .getConfiguration('ego', vscode.Uri.file(workspacePath))
+                    .get<string>('pythonPackageSpec', 'ego-trainer');
+                progress.report({ message: `Installing ${packageSpec}…` });
+                await setupPythonEnv(workspacePath);
+                vscode.window.showInformationMessage(
+                    `Ego: Python environment is ready using ${packageSpec}.`
+                );
+            } catch (error) {
+                vscode.window.showErrorMessage(
+                    `Ego: Python setup failed — ${(error as Error).message}`
+                );
+            }
+        }
+    );
 }
 
 async function cmdSetServer(context: vscode.ExtensionContext): Promise<void> {
