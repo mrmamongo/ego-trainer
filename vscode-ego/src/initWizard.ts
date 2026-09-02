@@ -6,6 +6,7 @@ import {
     createEgoSkeleton,
     generateStudentStubs,
     importTasksFolder,
+    manifestFileExists,
     scanDocsTasks,
     writeManifest,
     type EgoMode,
@@ -129,8 +130,7 @@ export async function runServerInit(
                         student_username: auth.username,
                         role: auth.role,
                         mode: 'server' satisfies EgoMode,
-                    },
-                    { force: true }
+                    }
                 );
             } catch (e) {
                 vscode.window.showErrorMessage(
@@ -149,6 +149,7 @@ export async function runServerInit(
                 );
             }
 
+            await vscode.commands.executeCommand('setContext', 'ego.offline', false);
             await vscode.commands.executeCommand('setContext', 'ego.loggedIn', true);
             await vscode.commands.executeCommand('setContext', 'ego.ready', true);
             deps.onApiChanged();
@@ -247,7 +248,9 @@ export async function runOfflineInit(
             }
 
             progress.report({ message: 'Creating .ego/…' });
+            let manifestExisted = false;
             try {
+                manifestExisted = await manifestFileExists(root);
                 await createEgoSkeleton(
                     {
                         server_url: '',
@@ -257,7 +260,7 @@ export async function runOfflineInit(
                         role: 'student',
                         mode: 'offline',
                     },
-                    { force: true, root }
+                    { root }
                 );
             } catch (error) {
                 vscode.window.showErrorMessage(
@@ -266,26 +269,29 @@ export async function runOfflineInit(
                 return false;
             }
 
-            const now = new Date().toISOString();
-            await writeManifest({
-                tasks: scanned.map((t) => ({
-                    id: t.id,
-                    block: t.block,
-                    slug: t.slug,
-                    version: '0.0.0',
-                    content_hash: '',
-                    pulled_at: now,
-                    md_path: t.md_path,
-                })),
-                server_version: '',
-                last_pull_at: now,
-            }, root);
+            if (!manifestExisted) {
+                const now = new Date().toISOString();
+                await writeManifest({
+                    tasks: scanned.map((t) => ({
+                        id: t.id,
+                        block: t.block,
+                        slug: t.slug,
+                        version: '0.0.0',
+                        content_hash: '',
+                        pulled_at: now,
+                        md_path: t.md_path,
+                    })),
+                    server_version: '',
+                    last_pull_at: now,
+                }, root);
+            }
 
             progress.report({ message: 'Generating student stubs…' });
             const stubs = await generateStudentStubs(scanned, root);
             await vscode.commands.executeCommand('setContext', 'ego.loggedIn', false);
             await vscode.commands.executeCommand('setContext', 'ego.ready', true);
             await vscode.commands.executeCommand('setContext', 'ego.offline', true);
+            await deps.onApiChanged();
             deps.refreshTree();
 
             const warning = stubs.errors > 0

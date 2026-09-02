@@ -5,6 +5,7 @@ import { EgoApi } from './api';
 import {
     createEgoSkeleton,
     hasEgoDir,
+    manifestFileExists,
     readEgoConfig,
     scanDocsTasks,
     writeEgoConfig,
@@ -110,6 +111,8 @@ async function applyOfflineMode(deps: ModeSwitchDeps): Promise<EgoMode> {
     if (!cfg || !(await hasEgoDir())) {
         // Minimal offline skeleton if missing.
         const scanned = await scanDocsTasks();
+        const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+        const manifestExisted = root ? await manifestFileExists(root) : false;
         await createEgoSkeleton(
             {
                 server_url: vscode.workspace
@@ -120,22 +123,23 @@ async function applyOfflineMode(deps: ModeSwitchDeps): Promise<EgoMode> {
                 student_username: 'local',
                 role: 'student',
                 mode: 'offline',
-            },
-            { force: false }
+            }
         );
-        await writeManifest({
-            tasks: scanned.map((t) => ({
-                id: t.id,
-                block: t.block,
-                slug: t.slug,
-                version: '0.0.0',
-                content_hash: '',
-                pulled_at: new Date().toISOString(),
-                md_path: t.md_path,
-            })),
-            server_version: '',
-            last_pull_at: null,
-        });
+        if (root && !manifestExisted) {
+            await writeManifest({
+                tasks: scanned.map((t) => ({
+                    id: t.id,
+                    block: t.block,
+                    slug: t.slug,
+                    version: '0.0.0',
+                    content_hash: '',
+                    pulled_at: new Date().toISOString(),
+                    md_path: t.md_path,
+                })),
+                server_version: '',
+                last_pull_at: null,
+            }, root);
+        }
         cfg = await readEgoConfig();
     } else {
         await writeEgoConfig({ ...cfg, mode: 'offline', token: '' });
@@ -149,6 +153,7 @@ async function applyOfflineMode(deps: ModeSwitchDeps): Promise<EgoMode> {
     vscode.window.showInformationMessage('Ego: Switched to Offline mode.');
     return 'offline';
 }
+
 
 /** Auto-fallback when server health fails during normal use. */
 export async function maybeFallbackOffline(
