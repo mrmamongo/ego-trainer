@@ -1,9 +1,9 @@
 (() => {
-  // ../vscode-ego/node_modules/esm-env/dev-fallback.js
+  // node_modules/esm-env/dev-fallback.js
   var node_env = globalThis.process?.env?.NODE_ENV;
   var dev_fallback_default = node_env && !node_env.toLowerCase().startsWith("prod");
 
-  // ../vscode-ego/node_modules/svelte/src/internal/shared/utils.js
+  // node_modules/svelte/src/internal/shared/utils.js
   var is_array = Array.isArray;
   var index_of = Array.prototype.indexOf;
   var includes = Array.prototype.includes;
@@ -33,7 +33,7 @@
     return { promise, resolve, reject };
   }
 
-  // ../vscode-ego/node_modules/svelte/src/internal/client/constants.js
+  // node_modules/svelte/src/internal/client/constants.js
   var DERIVED = 1 << 1;
   var EFFECT = 1 << 2;
   var RENDER_EFFECT = 1 << 3;
@@ -42,6 +42,7 @@
   var BRANCH_EFFECT = 1 << 5;
   var ROOT_EFFECT = 1 << 6;
   var BOUNDARY_EFFECT = 1 << 7;
+  var PAUSED = 1 << 8;
   var CONNECTED = 1 << 9;
   var CLEAN = 1 << 10;
   var DIRTY = 1 << 11;
@@ -61,6 +62,7 @@
   var ASYNC = 1 << 22;
   var ERROR_VALUE = 1 << 23;
   var STATE_SYMBOL = /* @__PURE__ */ Symbol("$state");
+  var COMPONENT_SYMBOL = /* @__PURE__ */ Symbol("component");
   var LEGACY_PROPS = /* @__PURE__ */ Symbol("legacy props");
   var LOADING_ATTR_SYMBOL = /* @__PURE__ */ Symbol("");
   var PROXY_PATH_SYMBOL = /* @__PURE__ */ Symbol("proxy path");
@@ -81,7 +83,205 @@
   var TEXT_NODE = 3;
   var COMMENT_NODE = 8;
 
-  // ../vscode-ego/node_modules/svelte/src/internal/shared/errors.js
+  // node_modules/svelte/src/constants.js
+  var EACH_ITEM_REACTIVE = 1;
+  var EACH_INDEX_REACTIVE = 1 << 1;
+  var EACH_IS_CONTROLLED = 1 << 2;
+  var EACH_IS_ANIMATED = 1 << 3;
+  var EACH_ITEM_IMMUTABLE = 1 << 4;
+  var PROPS_IS_RUNES = 1 << 1;
+  var PROPS_IS_UPDATED = 1 << 2;
+  var PROPS_IS_BINDABLE = 1 << 3;
+  var PROPS_IS_LAZY_INITIAL = 1 << 4;
+  var TRANSITION_OUT = 1 << 1;
+  var TRANSITION_GLOBAL = 1 << 2;
+  var TEMPLATE_FRAGMENT = 1;
+  var TEMPLATE_USE_IMPORT_NODE = 1 << 1;
+  var TEMPLATE_USE_SVG = 1 << 2;
+  var TEMPLATE_USE_MATHML = 1 << 3;
+  var HYDRATION_START = "[";
+  var HYDRATION_START_ELSE = "[!";
+  var HYDRATION_START_FAILED = "[?";
+  var HYDRATION_END = "]";
+  var HYDRATION_ERROR = {};
+  var ELEMENT_PRESERVE_ATTRIBUTE_CASE = 1 << 1;
+  var ELEMENT_IS_INPUT = 1 << 2;
+  var UNINITIALIZED = /* @__PURE__ */ Symbol("uninitialized");
+  var FILENAME = /* @__PURE__ */ Symbol("filename");
+  var NAMESPACE_HTML = "http://www.w3.org/1999/xhtml";
+
+  // node_modules/svelte/src/internal/client/warnings.js
+  var bold = "font-weight: bold";
+  var normal = "font-weight: normal";
+  function await_reactivity_loss(name) {
+    if (dev_fallback_default) {
+      console.warn(`%c[svelte] await_reactivity_loss
+%cDetected reactivity loss when reading \`${name}\`. This happens when state is read in an async function after an earlier \`await\`
+https://svelte.dev/e/await_reactivity_loss`, bold, normal);
+    } else {
+      console.warn(`https://svelte.dev/e/await_reactivity_loss`);
+    }
+  }
+  function await_waterfall(name, location) {
+    if (dev_fallback_default) {
+      console.warn(`%c[svelte] await_waterfall
+%cAn async derived, \`${name}\` (${location}) was not read immediately after it resolved. This often indicates an unnecessary waterfall, which can slow down your app
+https://svelte.dev/e/await_waterfall`, bold, normal);
+    } else {
+      console.warn(`https://svelte.dev/e/await_waterfall`);
+    }
+  }
+  function derived_inert() {
+    if (dev_fallback_default) {
+      console.warn(`%c[svelte] derived_inert
+%cReading a derived belonging to a now-destroyed effect may result in stale values
+https://svelte.dev/e/derived_inert`, bold, normal);
+    } else {
+      console.warn(`https://svelte.dev/e/derived_inert`);
+    }
+  }
+  function hydration_attribute_changed(attribute, html2, value) {
+    if (dev_fallback_default) {
+      console.warn(`%c[svelte] hydration_attribute_changed
+%cThe \`${attribute}\` attribute on \`${html2}\` changed its value between server and client renders. The client value, \`${value}\`, will be ignored in favour of the server value
+https://svelte.dev/e/hydration_attribute_changed`, bold, normal);
+    } else {
+      console.warn(`https://svelte.dev/e/hydration_attribute_changed`);
+    }
+  }
+  function hydration_mismatch(location) {
+    if (dev_fallback_default) {
+      console.warn(
+        `%c[svelte] hydration_mismatch
+%c${location ? `Hydration failed because the initial UI does not match what was rendered on the server. The error occurred near ${location}` : "Hydration failed because the initial UI does not match what was rendered on the server"}
+https://svelte.dev/e/hydration_mismatch`,
+        bold,
+        normal
+      );
+    } else {
+      console.warn(`https://svelte.dev/e/hydration_mismatch`);
+    }
+  }
+  function lifecycle_double_unmount() {
+    if (dev_fallback_default) {
+      console.warn(`%c[svelte] lifecycle_double_unmount
+%cTried to unmount a component that was not mounted
+https://svelte.dev/e/lifecycle_double_unmount`, bold, normal);
+    } else {
+      console.warn(`https://svelte.dev/e/lifecycle_double_unmount`);
+    }
+  }
+  function select_multiple_invalid_value() {
+    if (dev_fallback_default) {
+      console.warn(`%c[svelte] select_multiple_invalid_value
+%cThe \`value\` property of a \`<select multiple>\` element should be an array, but it received a non-array value. The selection will be kept as is.
+https://svelte.dev/e/select_multiple_invalid_value`, bold, normal);
+    } else {
+      console.warn(`https://svelte.dev/e/select_multiple_invalid_value`);
+    }
+  }
+  function state_proxy_equality_mismatch(operator) {
+    if (dev_fallback_default) {
+      console.warn(`%c[svelte] state_proxy_equality_mismatch
+%cReactive \`$state(...)\` proxies and the values they proxy have different identities. Because of this, comparisons with \`${operator}\` will produce unexpected results
+https://svelte.dev/e/state_proxy_equality_mismatch`, bold, normal);
+    } else {
+      console.warn(`https://svelte.dev/e/state_proxy_equality_mismatch`);
+    }
+  }
+  function svelte_boundary_reset_noop() {
+    if (dev_fallback_default) {
+      console.warn(`%c[svelte] svelte_boundary_reset_noop
+%cA \`<svelte:boundary>\` \`reset\` function only resets the boundary the first time it is called
+https://svelte.dev/e/svelte_boundary_reset_noop`, bold, normal);
+    } else {
+      console.warn(`https://svelte.dev/e/svelte_boundary_reset_noop`);
+    }
+  }
+
+  // node_modules/svelte/src/internal/client/dom/hydration.js
+  var hydrating = false;
+  function set_hydrating(value) {
+    hydrating = value;
+  }
+  var hydrate_node;
+  function set_hydrate_node(node) {
+    if (node === null) {
+      hydration_mismatch();
+      throw HYDRATION_ERROR;
+    }
+    return hydrate_node = node;
+  }
+  function hydrate_next() {
+    return set_hydrate_node(get_next_sibling(hydrate_node));
+  }
+  function reset(node) {
+    if (!hydrating) return;
+    if (get_next_sibling(hydrate_node) !== null) {
+      hydration_mismatch();
+      throw HYDRATION_ERROR;
+    }
+    hydrate_node = node;
+  }
+  function next(count = 1) {
+    if (hydrating) {
+      var i = count;
+      var node = hydrate_node;
+      while (i--) {
+        node = /** @type {TemplateNode} */
+        get_next_sibling(node);
+      }
+      hydrate_node = node;
+    }
+  }
+  function skip_nodes(remove = true) {
+    var depth = 0;
+    var node = hydrate_node;
+    while (true) {
+      if (node.nodeType === COMMENT_NODE) {
+        var data = (
+          /** @type {Comment} */
+          node.data
+        );
+        if (data === HYDRATION_END) {
+          if (depth === 0) return node;
+          depth -= 1;
+        } else if (data === HYDRATION_START || data === HYDRATION_START_ELSE || // "[1", "[2", etc. for if blocks
+        data[0] === "[" && !isNaN(Number(data.slice(1)))) {
+          depth += 1;
+        }
+      }
+      var next2 = (
+        /** @type {TemplateNode} */
+        get_next_sibling(node)
+      );
+      if (remove) node.remove();
+      node = next2;
+    }
+  }
+  function read_hydration_instruction(node) {
+    if (!node || node.nodeType !== COMMENT_NODE) {
+      hydration_mismatch();
+      throw HYDRATION_ERROR;
+    }
+    return (
+      /** @type {Comment} */
+      node.data
+    );
+  }
+
+  // node_modules/svelte/src/internal/client/reactivity/equality.js
+  function equals(value) {
+    return value === this.v;
+  }
+  function safe_not_equal(a, b) {
+    return a != a ? b == b : a !== b || a !== null && typeof a === "object" || typeof a === "function";
+  }
+  function safe_equals(value) {
+    return !safe_not_equal(value, this.v);
+  }
+
+  // node_modules/svelte/src/internal/shared/errors.js
   function invariant_violation(message) {
     if (dev_fallback_default) {
       const error = new Error(`invariant_violation
@@ -105,7 +305,7 @@ https://svelte.dev/e/lifecycle_outside_component`);
     }
   }
 
-  // ../vscode-ego/node_modules/svelte/src/internal/client/errors.js
+  // node_modules/svelte/src/internal/client/errors.js
   function async_derived_orphan() {
     if (dev_fallback_default) {
       const error = new Error(`async_derived_orphan
@@ -272,219 +472,12 @@ https://svelte.dev/e/svelte_boundary_reset_onerror`);
     }
   }
 
-  // ../vscode-ego/node_modules/svelte/src/constants.js
-  var EACH_ITEM_REACTIVE = 1;
-  var EACH_INDEX_REACTIVE = 1 << 1;
-  var EACH_IS_CONTROLLED = 1 << 2;
-  var EACH_IS_ANIMATED = 1 << 3;
-  var EACH_ITEM_IMMUTABLE = 1 << 4;
-  var PROPS_IS_RUNES = 1 << 1;
-  var PROPS_IS_UPDATED = 1 << 2;
-  var PROPS_IS_BINDABLE = 1 << 3;
-  var PROPS_IS_LAZY_INITIAL = 1 << 4;
-  var TRANSITION_OUT = 1 << 1;
-  var TRANSITION_GLOBAL = 1 << 2;
-  var TEMPLATE_FRAGMENT = 1;
-  var TEMPLATE_USE_IMPORT_NODE = 1 << 1;
-  var TEMPLATE_USE_SVG = 1 << 2;
-  var TEMPLATE_USE_MATHML = 1 << 3;
-  var HYDRATION_START = "[";
-  var HYDRATION_START_ELSE = "[!";
-  var HYDRATION_START_FAILED = "[?";
-  var HYDRATION_END = "]";
-  var HYDRATION_ERROR = {};
-  var ELEMENT_PRESERVE_ATTRIBUTE_CASE = 1 << 1;
-  var ELEMENT_IS_INPUT = 1 << 2;
-  var UNINITIALIZED = /* @__PURE__ */ Symbol("uninitialized");
-  var FILENAME = /* @__PURE__ */ Symbol("filename");
-  var NAMESPACE_HTML = "http://www.w3.org/1999/xhtml";
-
-  // ../vscode-ego/node_modules/svelte/src/internal/client/warnings.js
-  var bold = "font-weight: bold";
-  var normal = "font-weight: normal";
-  function await_reactivity_loss(name) {
-    if (dev_fallback_default) {
-      console.warn(`%c[svelte] await_reactivity_loss
-%cDetected reactivity loss when reading \`${name}\`. This happens when state is read in an async function after an earlier \`await\`
-https://svelte.dev/e/await_reactivity_loss`, bold, normal);
-    } else {
-      console.warn(`https://svelte.dev/e/await_reactivity_loss`);
-    }
-  }
-  function await_waterfall(name, location) {
-    if (dev_fallback_default) {
-      console.warn(`%c[svelte] await_waterfall
-%cAn async derived, \`${name}\` (${location}) was not read immediately after it resolved. This often indicates an unnecessary waterfall, which can slow down your app
-https://svelte.dev/e/await_waterfall`, bold, normal);
-    } else {
-      console.warn(`https://svelte.dev/e/await_waterfall`);
-    }
-  }
-  function derived_inert() {
-    if (dev_fallback_default) {
-      console.warn(`%c[svelte] derived_inert
-%cReading a derived belonging to a now-destroyed effect may result in stale values
-https://svelte.dev/e/derived_inert`, bold, normal);
-    } else {
-      console.warn(`https://svelte.dev/e/derived_inert`);
-    }
-  }
-  function hydration_attribute_changed(attribute, html2, value) {
-    if (dev_fallback_default) {
-      console.warn(`%c[svelte] hydration_attribute_changed
-%cThe \`${attribute}\` attribute on \`${html2}\` changed its value between server and client renders. The client value, \`${value}\`, will be ignored in favour of the server value
-https://svelte.dev/e/hydration_attribute_changed`, bold, normal);
-    } else {
-      console.warn(`https://svelte.dev/e/hydration_attribute_changed`);
-    }
-  }
-  function hydration_mismatch(location) {
-    if (dev_fallback_default) {
-      console.warn(
-        `%c[svelte] hydration_mismatch
-%c${location ? `Hydration failed because the initial UI does not match what was rendered on the server. The error occurred near ${location}` : "Hydration failed because the initial UI does not match what was rendered on the server"}
-https://svelte.dev/e/hydration_mismatch`,
-        bold,
-        normal
-      );
-    } else {
-      console.warn(`https://svelte.dev/e/hydration_mismatch`);
-    }
-  }
-  function lifecycle_double_unmount() {
-    if (dev_fallback_default) {
-      console.warn(`%c[svelte] lifecycle_double_unmount
-%cTried to unmount a component that was not mounted
-https://svelte.dev/e/lifecycle_double_unmount`, bold, normal);
-    } else {
-      console.warn(`https://svelte.dev/e/lifecycle_double_unmount`);
-    }
-  }
-  function select_multiple_invalid_value() {
-    if (dev_fallback_default) {
-      console.warn(`%c[svelte] select_multiple_invalid_value
-%cThe \`value\` property of a \`<select multiple>\` element should be an array, but it received a non-array value. The selection will be kept as is.
-https://svelte.dev/e/select_multiple_invalid_value`, bold, normal);
-    } else {
-      console.warn(`https://svelte.dev/e/select_multiple_invalid_value`);
-    }
-  }
-  function state_proxy_equality_mismatch(operator) {
-    if (dev_fallback_default) {
-      console.warn(`%c[svelte] state_proxy_equality_mismatch
-%cReactive \`$state(...)\` proxies and the values they proxy have different identities. Because of this, comparisons with \`${operator}\` will produce unexpected results
-https://svelte.dev/e/state_proxy_equality_mismatch`, bold, normal);
-    } else {
-      console.warn(`https://svelte.dev/e/state_proxy_equality_mismatch`);
-    }
-  }
-  function state_proxy_unmount() {
-    if (dev_fallback_default) {
-      console.warn(`%c[svelte] state_proxy_unmount
-%cTried to unmount a state proxy, rather than a component
-https://svelte.dev/e/state_proxy_unmount`, bold, normal);
-    } else {
-      console.warn(`https://svelte.dev/e/state_proxy_unmount`);
-    }
-  }
-  function svelte_boundary_reset_noop() {
-    if (dev_fallback_default) {
-      console.warn(`%c[svelte] svelte_boundary_reset_noop
-%cA \`<svelte:boundary>\` \`reset\` function only resets the boundary the first time it is called
-https://svelte.dev/e/svelte_boundary_reset_noop`, bold, normal);
-    } else {
-      console.warn(`https://svelte.dev/e/svelte_boundary_reset_noop`);
-    }
-  }
-
-  // ../vscode-ego/node_modules/svelte/src/internal/client/dom/hydration.js
-  var hydrating = false;
-  function set_hydrating(value) {
-    hydrating = value;
-  }
-  var hydrate_node;
-  function set_hydrate_node(node) {
-    if (node === null) {
-      hydration_mismatch();
-      throw HYDRATION_ERROR;
-    }
-    return hydrate_node = node;
-  }
-  function hydrate_next() {
-    return set_hydrate_node(get_next_sibling(hydrate_node));
-  }
-  function reset(node) {
-    if (!hydrating) return;
-    if (get_next_sibling(hydrate_node) !== null) {
-      hydration_mismatch();
-      throw HYDRATION_ERROR;
-    }
-    hydrate_node = node;
-  }
-  function next(count = 1) {
-    if (hydrating) {
-      var i = count;
-      var node = hydrate_node;
-      while (i--) {
-        node = /** @type {TemplateNode} */
-        get_next_sibling(node);
-      }
-      hydrate_node = node;
-    }
-  }
-  function skip_nodes(remove = true) {
-    var depth = 0;
-    var node = hydrate_node;
-    while (true) {
-      if (node.nodeType === COMMENT_NODE) {
-        var data = (
-          /** @type {Comment} */
-          node.data
-        );
-        if (data === HYDRATION_END) {
-          if (depth === 0) return node;
-          depth -= 1;
-        } else if (data === HYDRATION_START || data === HYDRATION_START_ELSE || // "[1", "[2", etc. for if blocks
-        data[0] === "[" && !isNaN(Number(data.slice(1)))) {
-          depth += 1;
-        }
-      }
-      var next2 = (
-        /** @type {TemplateNode} */
-        get_next_sibling(node)
-      );
-      if (remove) node.remove();
-      node = next2;
-    }
-  }
-  function read_hydration_instruction(node) {
-    if (!node || node.nodeType !== COMMENT_NODE) {
-      hydration_mismatch();
-      throw HYDRATION_ERROR;
-    }
-    return (
-      /** @type {Comment} */
-      node.data
-    );
-  }
-
-  // ../vscode-ego/node_modules/svelte/src/internal/client/reactivity/equality.js
-  function equals(value) {
-    return value === this.v;
-  }
-  function safe_not_equal(a, b) {
-    return a != a ? b == b : a !== b || a !== null && typeof a === "object" || typeof a === "function";
-  }
-  function safe_equals(value) {
-    return !safe_not_equal(value, this.v);
-  }
-
-  // ../vscode-ego/node_modules/svelte/src/internal/flags/index.js
+  // node_modules/svelte/src/internal/flags/index.js
   var async_mode_flag = false;
   var legacy_mode_flag = false;
   var tracing_mode_flag = false;
 
-  // ../vscode-ego/node_modules/svelte/src/internal/client/dev/tracing.js
+  // node_modules/svelte/src/internal/client/dev/tracing.js
   var tracing_expressions = null;
   function tag(source2, label) {
     source2.label = label;
@@ -496,7 +489,7 @@ https://svelte.dev/e/svelte_boundary_reset_noop`, bold, normal);
     return value;
   }
 
-  // ../vscode-ego/node_modules/svelte/src/internal/shared/dev.js
+  // node_modules/svelte/src/internal/shared/dev.js
   function get_error(label) {
     const error = new Error();
     const stack2 = get_stack();
@@ -546,7 +539,7 @@ https://svelte.dev/e/svelte_boundary_reset_noop`, bold, normal);
     if (!condition) invariant_violation(message);
   }
 
-  // ../vscode-ego/node_modules/svelte/src/internal/client/context.js
+  // node_modules/svelte/src/internal/client/context.js
   var component_context = null;
   function set_component_context(context) {
     component_context = context;
@@ -598,14 +591,17 @@ https://svelte.dev/e/svelte_boundary_reset_noop`, bold, normal);
     if (dev_fallback_default) {
       dev_current_component_function = component_context?.function ?? null;
     }
-    return component2 ?? /** @type {T} */
-    {};
+    return mark_as_component(component2);
+  }
+  function mark_as_component(component2 = {}) {
+    define_property(component2, COMPONENT_SYMBOL, { value: true });
+    return component2;
   }
   function is_runes() {
     return !legacy_mode_flag || component_context !== null && component_context.l === null;
   }
 
-  // ../vscode-ego/node_modules/svelte/src/internal/client/dom/task.js
+  // node_modules/svelte/src/internal/client/dom/task.js
   var micro_tasks = [];
   function run_micro_tasks() {
     var tasks = micro_tasks;
@@ -627,80 +623,7 @@ https://svelte.dev/e/svelte_boundary_reset_noop`, bold, normal);
     }
   }
 
-  // ../vscode-ego/node_modules/svelte/src/internal/client/error-handling.js
-  var adjustments = /* @__PURE__ */ new WeakMap();
-  function handle_error(error) {
-    var effect2 = active_effect;
-    if (effect2 === null) {
-      active_reaction.f |= ERROR_VALUE;
-      return error;
-    }
-    if (dev_fallback_default && error instanceof Error && !adjustments.has(error)) {
-      adjustments.set(error, get_adjustments(error, effect2));
-    }
-    if ((effect2.f & REACTION_RAN) === 0 && (effect2.f & EFFECT) === 0) {
-      if (dev_fallback_default && !effect2.parent && error instanceof Error) {
-        apply_adjustments(error);
-      }
-      throw error;
-    }
-    invoke_error_boundary(error, effect2);
-  }
-  function invoke_error_boundary(error, effect2) {
-    if (effect2 !== null && (effect2.f & DESTROYED) !== 0) {
-      return;
-    }
-    while (effect2 !== null) {
-      if ((effect2.f & BOUNDARY_EFFECT) !== 0) {
-        if ((effect2.f & REACTION_RAN) === 0) {
-          throw error;
-        }
-        try {
-          effect2.b.error(error);
-          return;
-        } catch (e) {
-          error = e;
-        }
-      }
-      effect2 = effect2.parent;
-    }
-    if (dev_fallback_default && error instanceof Error) {
-      apply_adjustments(error);
-    }
-    throw error;
-  }
-  function get_adjustments(error, effect2) {
-    const message_descriptor = get_descriptor(error, "message");
-    if (message_descriptor && !message_descriptor.configurable) return;
-    var indent = is_firefox ? "  " : "	";
-    var component_stack = `
-${indent}in ${effect2.fn?.name || "<unknown>"}`;
-    var context = effect2.ctx;
-    while (context !== null) {
-      component_stack += `
-${indent}in ${context.function?.[FILENAME].split("/").pop()}`;
-      context = context.p;
-    }
-    return {
-      message: error.message + `
-${component_stack}
-`,
-      stack: error.stack?.split("\n").filter((line) => !line.includes("svelte/src/internal")).join("\n")
-    };
-  }
-  function apply_adjustments(error) {
-    const adjusted = adjustments.get(error);
-    if (adjusted) {
-      define_property(error, "message", {
-        value: adjusted.message
-      });
-      define_property(error, "stack", {
-        value: adjusted.stack
-      });
-    }
-  }
-
-  // ../vscode-ego/node_modules/svelte/src/internal/client/reactivity/status.js
+  // node_modules/svelte/src/internal/client/reactivity/status.js
   var STATUS_MASK = ~(DIRTY | MAYBE_DIRTY | CLEAN);
   function set_signal_status(signal, status) {
     signal.f = signal.f & STATUS_MASK | status;
@@ -713,7 +636,7 @@ ${component_stack}
     }
   }
 
-  // ../vscode-ego/node_modules/svelte/src/internal/client/reactivity/utils.js
+  // node_modules/svelte/src/internal/client/reactivity/utils.js
   function clear_marked(deps) {
     if (deps === null) return;
     for (const dep of deps) {
@@ -737,10 +660,10 @@ ${component_stack}
     set_signal_status(effect2, CLEAN);
   }
 
-  // ../vscode-ego/node_modules/svelte/src/internal/client/reactivity/store.js
+  // node_modules/svelte/src/internal/client/reactivity/store.js
   var legacy_is_updating_store = false;
 
-  // ../vscode-ego/node_modules/svelte/src/internal/client/dom/elements/misc.js
+  // node_modules/svelte/src/internal/client/dom/elements/misc.js
   var listening_to_form_reset = false;
   function add_form_reset_listener() {
     if (!listening_to_form_reset) {
@@ -766,7 +689,7 @@ ${component_stack}
     }
   }
 
-  // ../vscode-ego/node_modules/svelte/src/internal/client/dom/elements/bindings/shared.js
+  // node_modules/svelte/src/internal/client/dom/elements/bindings/shared.js
   function without_reactive_context(fn) {
     var previous_reaction = active_reaction;
     var previous_effect = active_effect;
@@ -796,437 +719,7 @@ ${component_stack}
     add_form_reset_listener();
   }
 
-  // ../vscode-ego/node_modules/svelte/src/reactivity/create-subscriber.js
-  function createSubscriber(start) {
-    let subscribers = 0;
-    let version = source(0);
-    let stop;
-    if (dev_fallback_default) {
-      tag(version, "createSubscriber version");
-    }
-    return () => {
-      if (effect_tracking()) {
-        get2(version);
-        render_effect(() => {
-          if (subscribers === 0) {
-            stop = untrack(() => start(() => increment(version)));
-          }
-          subscribers += 1;
-          return () => {
-            queue_micro_task(() => {
-              subscribers -= 1;
-              if (subscribers === 0) {
-                stop?.();
-                stop = void 0;
-                increment(version);
-              }
-            });
-          };
-        });
-      }
-    };
-  }
-
-  // ../vscode-ego/node_modules/svelte/src/internal/client/dom/blocks/boundary.js
-  var flags = EFFECT_TRANSPARENT | EFFECT_PRESERVED;
-  function boundary(node, props, children, transform_error) {
-    new Boundary(node, props, children, transform_error);
-  }
-  var Boundary = class {
-    /** @type {Boundary | null} */
-    parent;
-    is_pending = false;
-    /**
-     * API-level transformError transform function. Transforms errors before they reach the `failed` snippet.
-     * Inherited from parent boundary, or defaults to identity.
-     * @type {(error: unknown) => unknown}
-     */
-    transform_error;
-    /** @type {TemplateNode} */
-    #anchor;
-    /** @type {TemplateNode | null} */
-    #hydrate_open = hydrating ? hydrate_node : null;
-    /** @type {BoundaryProps} */
-    #props;
-    /** @type {((anchor: Node) => void)} */
-    #children;
-    /** @type {Effect} */
-    #effect;
-    /** @type {Effect | null} */
-    #main_effect = null;
-    /** @type {Effect | null} */
-    #pending_effect = null;
-    /** @type {Effect | null} */
-    #failed_effect = null;
-    /** @type {DocumentFragment | null} */
-    #offscreen_fragment = null;
-    #local_pending_count = 0;
-    #pending_count = 0;
-    #pending_count_update_queued = false;
-    /** @type {Set<Effect>} */
-    #dirty_effects = /* @__PURE__ */ new Set();
-    /** @type {Set<Effect>} */
-    #maybe_dirty_effects = /* @__PURE__ */ new Set();
-    /**
-     * A source containing the number of pending async deriveds/expressions.
-     * Only created if `$effect.pending()` is used inside the boundary,
-     * otherwise updating the source results in needless `Batch.ensure()`
-     * calls followed by no-op flushes
-     * @type {Source<number> | null}
-     */
-    #effect_pending = null;
-    #effect_pending_subscriber = createSubscriber(() => {
-      this.#effect_pending = source(this.#local_pending_count);
-      if (dev_fallback_default) {
-        tag(this.#effect_pending, "$effect.pending()");
-      }
-      return () => {
-        this.#effect_pending = null;
-      };
-    });
-    /**
-     * @param {TemplateNode} node
-     * @param {BoundaryProps} props
-     * @param {((anchor: Node) => void)} children
-     * @param {((error: unknown) => unknown) | undefined} [transform_error]
-     */
-    constructor(node, props, children, transform_error) {
-      this.#anchor = node;
-      this.#props = props;
-      this.#children = (anchor) => {
-        var effect2 = (
-          /** @type {Effect} */
-          active_effect
-        );
-        effect2.b = this;
-        effect2.f |= BOUNDARY_EFFECT;
-        children(anchor);
-      };
-      this.parent = /** @type {Effect} */
-      active_effect.b;
-      this.transform_error = transform_error ?? this.parent?.transform_error ?? ((e) => e);
-      this.#effect = block(() => {
-        if (hydrating) {
-          const comment2 = (
-            /** @type {Comment} */
-            this.#hydrate_open
-          );
-          hydrate_next();
-          const server_rendered_pending = comment2.data === HYDRATION_START_ELSE;
-          const server_rendered_failed = comment2.data.startsWith(HYDRATION_START_FAILED);
-          if (server_rendered_failed) {
-            const serialized_error = JSON.parse(comment2.data.slice(HYDRATION_START_FAILED.length));
-            this.#hydrate_failed_content(serialized_error);
-          } else if (server_rendered_pending) {
-            this.#hydrate_pending_content();
-          } else {
-            this.#hydrate_resolved_content();
-          }
-        } else {
-          this.#render();
-        }
-      }, flags);
-      if (hydrating) {
-        this.#anchor = hydrate_node;
-      }
-    }
-    #hydrate_resolved_content() {
-      try {
-        this.#main_effect = branch(() => this.#children(this.#anchor));
-      } catch (error) {
-        this.error(error);
-      }
-    }
-    /**
-     * @param {unknown} error The deserialized error from the server's hydration comment
-     */
-    #hydrate_failed_content(error) {
-      const failed = this.#props.failed;
-      if (!failed) return;
-      this.#failed_effect = branch(() => {
-        failed(
-          this.#anchor,
-          () => error,
-          () => () => {
-          }
-        );
-      });
-    }
-    #hydrate_pending_content() {
-      const pending2 = this.#props.pending;
-      if (!pending2) return;
-      this.is_pending = true;
-      this.#pending_effect = branch(() => pending2(this.#anchor));
-      queue_micro_task(() => {
-        var fragment = this.#offscreen_fragment = document.createDocumentFragment();
-        var anchor = create_text();
-        fragment.append(anchor);
-        this.#main_effect = this.#run(() => {
-          return branch(() => this.#children(anchor));
-        });
-        if (this.#pending_count === 0) {
-          this.#anchor.before(fragment);
-          this.#offscreen_fragment = null;
-          pause_effect(
-            /** @type {Effect} */
-            this.#pending_effect,
-            () => {
-              this.#pending_effect = null;
-            }
-          );
-          this.#resolve(
-            /** @type {Batch} */
-            current_batch
-          );
-        }
-      });
-    }
-    #render() {
-      try {
-        this.is_pending = this.has_pending_snippet();
-        this.#pending_count = 0;
-        this.#local_pending_count = 0;
-        this.#main_effect = branch(() => {
-          this.#children(this.#anchor);
-        });
-        if (this.#pending_count > 0) {
-          var fragment = this.#offscreen_fragment = document.createDocumentFragment();
-          move_effect(this.#main_effect, fragment);
-          const pending2 = (
-            /** @type {(anchor: Node) => void} */
-            this.#props.pending
-          );
-          this.#pending_effect = branch(() => pending2(this.#anchor));
-        } else {
-          this.#resolve(
-            /** @type {Batch} */
-            current_batch
-          );
-        }
-      } catch (error) {
-        this.error(error);
-      }
-    }
-    /**
-     * @param {Batch} batch
-     */
-    #resolve(batch) {
-      this.is_pending = false;
-      batch.transfer_effects(this.#dirty_effects, this.#maybe_dirty_effects);
-    }
-    /**
-     * Defer an effect inside a pending boundary until the boundary resolves
-     * @param {Effect} effect
-     */
-    defer_effect(effect2) {
-      defer_effect(effect2, this.#dirty_effects, this.#maybe_dirty_effects);
-    }
-    /**
-     * Returns `false` if the effect exists inside a boundary whose pending snippet is shown
-     * @returns {boolean}
-     */
-    is_rendered() {
-      return !this.is_pending && (!this.parent || this.parent.is_rendered());
-    }
-    has_pending_snippet() {
-      return !!this.#props.pending;
-    }
-    /**
-     * @template T
-     * @param {() => T} fn
-     */
-    #run(fn) {
-      var previous_effect = active_effect;
-      var previous_reaction = active_reaction;
-      var previous_ctx = component_context;
-      set_active_effect(this.#effect);
-      set_active_reaction(this.#effect);
-      set_component_context(this.#effect.ctx);
-      try {
-        Batch.ensure();
-        return fn();
-      } catch (e) {
-        handle_error(e);
-        return null;
-      } finally {
-        set_active_effect(previous_effect);
-        set_active_reaction(previous_reaction);
-        set_component_context(previous_ctx);
-      }
-    }
-    /**
-     * Updates the pending count associated with the currently visible pending snippet,
-     * if any, such that we can replace the snippet with content once work is done
-     * @param {1 | -1} d
-     * @param {Batch} batch
-     */
-    #update_pending_count(d, batch) {
-      if (!this.has_pending_snippet()) {
-        if (this.parent) {
-          this.parent.#update_pending_count(d, batch);
-        }
-        return;
-      }
-      this.#pending_count += d;
-      if (this.#pending_count === 0) {
-        this.#resolve(batch);
-        if (this.#pending_effect) {
-          pause_effect(this.#pending_effect, () => {
-            this.#pending_effect = null;
-          });
-        }
-        if (this.#offscreen_fragment) {
-          this.#anchor.before(this.#offscreen_fragment);
-          this.#offscreen_fragment = null;
-        }
-      }
-    }
-    /**
-     * Update the source that powers `$effect.pending()` inside this boundary,
-     * and controls when the current `pending` snippet (if any) is removed.
-     * Do not call from inside the class
-     * @param {1 | -1} d
-     * @param {Batch} batch
-     */
-    update_pending_count(d, batch) {
-      this.#update_pending_count(d, batch);
-      this.#local_pending_count += d;
-      if (!this.#effect_pending || this.#pending_count_update_queued) return;
-      this.#pending_count_update_queued = true;
-      queue_micro_task(() => {
-        this.#pending_count_update_queued = false;
-        if (this.#effect_pending) {
-          internal_set(this.#effect_pending, this.#local_pending_count);
-        }
-      });
-    }
-    get_effect_pending() {
-      this.#effect_pending_subscriber();
-      return get2(
-        /** @type {Source<number>} */
-        this.#effect_pending
-      );
-    }
-    /** @param {unknown} error */
-    error(error) {
-      if (!this.#props.onerror && !this.#props.failed) {
-        throw error;
-      }
-      if (current_batch?.is_fork) {
-        if (this.#main_effect) current_batch.skip_effect(this.#main_effect);
-        if (this.#pending_effect) current_batch.skip_effect(this.#pending_effect);
-        if (this.#failed_effect) current_batch.skip_effect(this.#failed_effect);
-        current_batch.oncommit(() => {
-          this.#handle_error(error);
-        });
-      } else {
-        this.#handle_error(error);
-      }
-    }
-    /**
-     * @param {unknown} error
-     */
-    #handle_error(error) {
-      if (this.#main_effect) {
-        destroy_effect(this.#main_effect);
-        this.#main_effect = null;
-      }
-      if (this.#pending_effect) {
-        destroy_effect(this.#pending_effect);
-        this.#pending_effect = null;
-      }
-      if (this.#failed_effect) {
-        destroy_effect(this.#failed_effect);
-        this.#failed_effect = null;
-      }
-      if (hydrating) {
-        set_hydrate_node(
-          /** @type {TemplateNode} */
-          this.#hydrate_open
-        );
-        next();
-        set_hydrate_node(skip_nodes());
-      }
-      var onerror = this.#props.onerror;
-      let failed = this.#props.failed;
-      var did_reset = false;
-      var calling_on_error = false;
-      const reset2 = () => {
-        if (did_reset) {
-          svelte_boundary_reset_noop();
-          return;
-        }
-        did_reset = true;
-        if (calling_on_error) {
-          svelte_boundary_reset_onerror();
-        }
-        if (this.#failed_effect !== null) {
-          pause_effect(this.#failed_effect, () => {
-            this.#failed_effect = null;
-          });
-        }
-        this.#run(() => {
-          this.#render();
-        });
-      };
-      const handle_error_result = (transformed_error) => {
-        try {
-          calling_on_error = true;
-          onerror?.(transformed_error, reset2);
-          calling_on_error = false;
-        } catch (error2) {
-          invoke_error_boundary(error2, this.#effect && this.#effect.parent);
-        }
-        if (failed) {
-          this.#failed_effect = this.#run(() => {
-            try {
-              return branch(() => {
-                var effect2 = (
-                  /** @type {Effect} */
-                  active_effect
-                );
-                effect2.b = this;
-                effect2.f |= BOUNDARY_EFFECT;
-                failed(
-                  this.#anchor,
-                  () => transformed_error,
-                  () => reset2
-                );
-              });
-            } catch (error2) {
-              invoke_error_boundary(
-                error2,
-                /** @type {Effect} */
-                this.#effect.parent
-              );
-              return null;
-            }
-          });
-        }
-      };
-      queue_micro_task(() => {
-        var result;
-        try {
-          result = this.transform_error(error);
-        } catch (e) {
-          invoke_error_boundary(e, this.#effect && this.#effect.parent);
-          return;
-        }
-        if (result !== null && typeof result === "object" && typeof /** @type {any} */
-        result.then === "function") {
-          result.then(
-            handle_error_result,
-            /** @param {unknown} e */
-            (e) => invoke_error_boundary(e, this.#effect && this.#effect.parent)
-          );
-        } else {
-          handle_error_result(result);
-        }
-      });
-    }
-  };
-
-  // ../vscode-ego/node_modules/svelte/src/internal/client/reactivity/async.js
+  // node_modules/svelte/src/internal/client/reactivity/async.js
   function flatten(blockers, sync, async2, fn) {
     const d = is_runes() ? derived : derived_safe_equal;
     var pending2 = blockers.filter((b) => !b.settled);
@@ -1304,7 +797,9 @@ ${component_stack}
       }
     };
   }
+  var restored = false;
   function unset_context(deactivate_batch = true) {
+    restored = false;
     set_active_effect(null);
     set_active_reaction(null);
     set_component_context(null);
@@ -1333,7 +828,7 @@ ${component_stack}
     };
   }
 
-  // ../vscode-ego/node_modules/svelte/src/internal/client/reactivity/deriveds.js
+  // node_modules/svelte/src/internal/client/reactivity/deriveds.js
   var reactivity_loss_tracker = null;
   function set_reactivity_loss_tracker(v) {
     reactivity_loss_tracker = v;
@@ -1615,7 +1110,7 @@ ${component_stack}
     }
   }
 
-  // ../vscode-ego/node_modules/svelte/src/internal/client/reactivity/batch.js
+  // node_modules/svelte/src/internal/client/reactivity/batch.js
   var first_batch = null;
   var last_batch = null;
   var current_batch = null;
@@ -1798,11 +1293,11 @@ ${component_stack}
       var effects = collected_effects = [];
       var render_effects = [];
       var updates = legacy_updates = [];
-      for (const root5 of roots) {
+      for (const root7 of roots) {
         try {
-          this.#traverse(root5, effects, render_effects);
+          this.#traverse(root7, effects, render_effects);
         } catch (e) {
-          reset_all(root5);
+          reset_all(root7);
           if (!this.#is_deferred()) this.discard();
           throw e;
         }
@@ -1865,6 +1360,7 @@ ${component_stack}
         }
       }
       if (next_batch !== null) {
+        old_values.clear();
         next_batch.#process();
       }
     }
@@ -1875,9 +1371,9 @@ ${component_stack}
      * @param {Effect[]} effects
      * @param {Effect[]} render_effects
      */
-    #traverse(root5, effects, render_effects) {
-      root5.f ^= CLEAN;
-      var effect2 = root5.first;
+    #traverse(root7, effects, render_effects) {
+      root7.f ^= CLEAN;
+      var effect2 = root7.first;
       while (effect2 !== null) {
         var flags2 = effect2.f;
         var is_branch = (flags2 & (BRANCH_EFFECT | ROOT_EFFECT)) !== 0;
@@ -2122,8 +1618,8 @@ ${component_stack}
           }
           if (batch.#roots.length > 0 && !batch.#decrement_queued) {
             batch.apply();
-            for (var root5 of batch.#roots) {
-              batch.#traverse(root5, [], []);
+            for (var root7 of batch.#roots) {
+              batch.#traverse(root7, [], []);
             }
             batch.#roots = [];
           }
@@ -2452,7 +1948,7 @@ ${component_stack}
     }
   }
 
-  // ../vscode-ego/node_modules/svelte/src/internal/client/reactivity/sources.js
+  // node_modules/svelte/src/internal/client/reactivity/sources.js
   var eager_effects = /* @__PURE__ */ new Set();
   var old_values = /* @__PURE__ */ new Map();
   function set_eager_effects(v) {
@@ -2515,7 +2011,11 @@ ${component_stack}
   }
   function internal_set(source2, value, updated_during_traversal = null) {
     if (!source2.equals(value)) {
-      old_values.set(source2, is_destroying_effect ? value : source2.v);
+      if (is_destroying_effect) {
+        old_values.set(source2, value);
+      } else if (!old_values.has(source2)) {
+        old_values.set(source2, source2.v);
+      }
       var batch = Batch.ensure();
       batch.capture(source2, value);
       if (dev_fallback_default) {
@@ -2637,10 +2137,10 @@ ${component_stack}
     }
   }
 
-  // ../vscode-ego/node_modules/svelte/src/internal/client/proxy.js
+  // node_modules/svelte/src/internal/client/proxy.js
   var regex_is_valid_identifier = /^[a-zA-Z_$][a-zA-Z_$0-9]*$/;
   function proxy(value) {
-    if (typeof value !== "object" || value === null || STATE_SYMBOL in value) {
+    if (typeof value !== "object" || value === null || STATE_SYMBOL in value || COMPONENT_SYMBOL in value) {
       return value;
     }
     const prototype = get_prototype_of(value);
@@ -2919,7 +2419,7 @@ ${component_stack}
     });
   }
 
-  // ../vscode-ego/node_modules/svelte/src/internal/client/dev/equality.js
+  // node_modules/svelte/src/internal/client/dev/equality.js
   function init_array_prototype_warnings() {
     const array_prototype2 = Array.prototype;
     const cleanup = Array.__svelte_cleanup;
@@ -2970,7 +2470,7 @@ ${component_stack}
     };
   }
 
-  // ../vscode-ego/node_modules/svelte/src/internal/client/dom/operations.js
+  // node_modules/svelte/src/internal/client/dom/operations.js
   var $window;
   var $document;
   var is_firefox;
@@ -3061,6 +2561,14 @@ ${component_stack}
     }
     return hydrate_node;
   }
+  function only_child(node, is_text = false) {
+    if (!hydrating) {
+      return /* @__PURE__ */ get_first_child(node);
+    }
+    var first = child(node, is_text);
+    reset(node);
+    return first;
+  }
   function sibling(node, count = 1, is_text = false) {
     let next_sibling = hydrating ? hydrate_node : node;
     var last_sibling;
@@ -3131,7 +2639,80 @@ ${component_stack}
     }
   }
 
-  // ../vscode-ego/node_modules/svelte/src/internal/client/reactivity/effects.js
+  // node_modules/svelte/src/internal/client/error-handling.js
+  var adjustments = /* @__PURE__ */ new WeakMap();
+  function handle_error(error) {
+    var effect2 = active_effect;
+    if (effect2 === null) {
+      active_reaction.f |= ERROR_VALUE;
+      return error;
+    }
+    if (dev_fallback_default && error instanceof Error && !adjustments.has(error)) {
+      adjustments.set(error, get_adjustments(error, effect2));
+    }
+    if ((effect2.f & REACTION_RAN) === 0 && (effect2.f & EFFECT) === 0) {
+      if (dev_fallback_default && !effect2.parent && error instanceof Error) {
+        apply_adjustments(error);
+      }
+      throw error;
+    }
+    invoke_error_boundary(error, effect2);
+  }
+  function invoke_error_boundary(error, effect2) {
+    if (effect2 !== null && (effect2.f & DESTROYED) !== 0) {
+      return;
+    }
+    while (effect2 !== null) {
+      if ((effect2.f & BOUNDARY_EFFECT) !== 0 && (effect2.f & (DESTROYED | DESTROYING)) === 0) {
+        if ((effect2.f & REACTION_RAN) === 0) {
+          throw error;
+        }
+        try {
+          effect2.b.error(error);
+          return;
+        } catch (e) {
+          error = e;
+        }
+      }
+      effect2 = effect2.parent;
+    }
+    if (dev_fallback_default && error instanceof Error) {
+      apply_adjustments(error);
+    }
+    throw error;
+  }
+  function get_adjustments(error, effect2) {
+    const message_descriptor = get_descriptor(error, "message");
+    if (message_descriptor && !message_descriptor.configurable) return;
+    var indent = is_firefox ? "  " : "	";
+    var component_stack = `
+${indent}in ${effect2.fn?.name || "<unknown>"}`;
+    var context = effect2.ctx;
+    while (context !== null) {
+      component_stack += `
+${indent}in ${context.function?.[FILENAME].split("/").pop()}`;
+      context = context.p;
+    }
+    return {
+      message: error.message + `
+${component_stack}
+`,
+      stack: error.stack?.split("\n").filter((line) => !line.includes("svelte/src/internal")).join("\n")
+    };
+  }
+  function apply_adjustments(error) {
+    const adjusted = adjustments.get(error);
+    if (adjusted) {
+      define_property(error, "message", {
+        value: adjusted.message
+      });
+      define_property(error, "stack", {
+        value: adjusted.stack
+      });
+    }
+  }
+
+  // node_modules/svelte/src/internal/client/reactivity/effects.js
   function validate_effect(rune) {
     if (active_effect === null) {
       if (active_reaction === null) {
@@ -3313,6 +2894,8 @@ ${component_stack}
       set_active_reaction(null);
       try {
         teardown2.call(null);
+      } catch (error) {
+        invoke_error_boundary(error, effect2.parent);
       } finally {
         set_is_destroying_effect(previously_destroying_effect);
         set_active_reaction(previous_reaction);
@@ -3399,6 +2982,7 @@ ${component_stack}
   }
   function pause_effect(effect2, callback, destroy = true) {
     var transitions = [];
+    effect2.f |= PAUSED;
     pause_children(effect2, transitions, true);
     var fn = () => {
       if (destroy) destroy_effect(effect2);
@@ -3439,9 +3023,11 @@ ${component_stack}
     }
   }
   function resume_effect(effect2) {
+    effect2.f &= ~PAUSED;
     resume_children(effect2, true);
   }
   function resume_children(effect2, local) {
+    if ((effect2.f & PAUSED) !== 0) return;
     if ((effect2.f & INERT) === 0) return;
     effect2.f ^= INERT;
     if ((effect2.f & CLEAN) === 0) {
@@ -3475,10 +3061,10 @@ ${component_stack}
     }
   }
 
-  // ../vscode-ego/node_modules/svelte/src/internal/client/legacy.js
+  // node_modules/svelte/src/internal/client/legacy.js
   var captured_signals = null;
 
-  // ../vscode-ego/node_modules/svelte/src/internal/client/runtime.js
+  // node_modules/svelte/src/internal/client/runtime.js
   var is_updating_effect = false;
   var is_destroying_effect = false;
   function set_is_destroying_effect(value) {
@@ -3551,7 +3137,7 @@ ${component_stack}
     }
     return false;
   }
-  function schedule_possible_effect_self_invalidation(signal, effect2, root5 = true) {
+  function schedule_possible_effect_self_invalidation(signal, effect2, root7 = true) {
     var reactions = signal.reactions;
     if (reactions === null) return;
     if (!async_mode_flag && current_sources !== null && current_sources.has(signal)) {
@@ -3567,7 +3153,7 @@ ${component_stack}
           false
         );
       } else if (effect2 === reaction) {
-        if (root5) {
+        if (root7) {
           set_signal_status(reaction, DIRTY);
         } else if ((reaction.f & CLEAN) !== 0) {
           set_signal_status(reaction, MAYBE_DIRTY);
@@ -3612,32 +3198,9 @@ ${component_stack}
       );
       var result = fn();
       reaction.f |= REACTION_RAN;
-      var deps = reaction.deps;
-      var is_fork = current_batch?.is_fork;
-      if (new_deps !== null) {
-        var i;
-        if (!is_fork) {
-          remove_reactions(reaction, skipped_deps);
-        }
-        if (deps !== null && skipped_deps > 0) {
-          deps.length = skipped_deps + new_deps.length;
-          for (i = 0; i < new_deps.length; i++) {
-            deps[skipped_deps + i] = new_deps[i];
-          }
-        } else {
-          reaction.deps = deps = new_deps;
-        }
-        if (effect_tracking() && (reaction.f & CONNECTED) !== 0) {
-          for (i = skipped_deps; i < deps.length; i++) {
-            (deps[i].reactions ??= []).push(reaction);
-          }
-        }
-      } else if (!is_fork && deps !== null && skipped_deps < deps.length) {
-        remove_reactions(reaction, skipped_deps);
-        deps.length = skipped_deps;
-      }
+      var deps = update_dependencies(reaction);
       if (is_runes() && untracked_writes !== null && !untracking && deps !== null && (reaction.f & (DERIVED | MAYBE_DIRTY | DIRTY)) === 0) {
-        for (i = 0; i < /** @type {Source[]} */
+        for (var i = 0; i < /** @type {Source[]} */
         untracked_writes.length; i++) {
           schedule_possible_effect_self_invalidation(
             untracked_writes[i],
@@ -3672,6 +3235,7 @@ ${component_stack}
       }
       return result;
     } catch (error) {
+      update_dependencies(reaction);
       return handle_error(error);
     } finally {
       reaction.f ^= REACTION_IS_UPDATING;
@@ -3684,6 +3248,33 @@ ${component_stack}
       untracking = previous_untracking;
       update_version = previous_update_version;
     }
+  }
+  function update_dependencies(reaction) {
+    var deps = reaction.deps;
+    var is_fork = current_batch?.is_fork;
+    if (new_deps !== null) {
+      var i;
+      if (!is_fork) {
+        remove_reactions(reaction, skipped_deps);
+      }
+      if (deps !== null && skipped_deps > 0) {
+        deps.length = skipped_deps + new_deps.length;
+        for (i = 0; i < new_deps.length; i++) {
+          deps[skipped_deps + i] = new_deps[i];
+        }
+      } else {
+        reaction.deps = deps = new_deps;
+      }
+      if (effect_tracking() && (reaction.f & CONNECTED) !== 0) {
+        for (i = skipped_deps; i < deps.length; i++) {
+          (deps[i].reactions ??= []).push(reaction);
+        }
+      }
+    } else if (!is_fork && deps !== null && skipped_deps < deps.length) {
+      remove_reactions(reaction, skipped_deps);
+      deps.length = skipped_deps;
+    }
+    return deps;
   }
   function remove_reaction(signal, dependency) {
     let reactions = dependency.reactions;
@@ -3934,7 +3525,7 @@ ${component_stack}
     }
   }
 
-  // ../vscode-ego/node_modules/svelte/src/utils.js
+  // node_modules/svelte/src/utils.js
   var DOM_BOOLEAN_ATTRIBUTES = [
     "allowfullscreen",
     "async",
@@ -4016,7 +3607,7 @@ ${component_stack}
     ]
   );
 
-  // ../vscode-ego/node_modules/svelte/src/internal/client/dev/css.js
+  // node_modules/svelte/src/internal/client/dev/css.js
   var all_styles = /* @__PURE__ */ new Map();
   function register_style(hash2, style) {
     var styles = all_styles.get(hash2);
@@ -4027,7 +3618,7 @@ ${component_stack}
     styles.add(style);
   }
 
-  // ../vscode-ego/node_modules/svelte/src/internal/client/dom/elements/events.js
+  // node_modules/svelte/src/internal/client/dom/elements/events.js
   var event_symbol = /* @__PURE__ */ Symbol("events");
   var all_registered_events = /* @__PURE__ */ new Set();
   var root_event_handles = /* @__PURE__ */ new Set();
@@ -4075,6 +3666,7 @@ ${component_stack}
     }
   }
   var last_propagated_event = null;
+  var last_propagated_event_clear_scheduled = false;
   function handle_event_propagation(event2) {
     var handler_element = this;
     var owner_document = (
@@ -4088,6 +3680,13 @@ ${component_stack}
       path[0] || event2.target
     );
     last_propagated_event = event2;
+    if (!last_propagated_event_clear_scheduled) {
+      last_propagated_event_clear_scheduled = true;
+      setTimeout(() => {
+        last_propagated_event_clear_scheduled = false;
+        last_propagated_event = null;
+      });
+    }
     var path_idx = 0;
     var handled_at = last_propagated_event === event2 && event2[event_symbol];
     if (handled_at) {
@@ -4161,7 +3760,7 @@ ${component_stack}
     }
   }
 
-  // ../vscode-ego/node_modules/svelte/src/internal/client/dom/reconciler.js
+  // node_modules/svelte/src/internal/client/dom/reconciler.js
   var policy = (
     // We gotta write it like this because after downleveling the pure comment may end up in the wrong location
     globalThis?.window?.trustedTypes && /* @__PURE__ */ globalThis.window.trustedTypes.createPolicy("svelte-trusted-html", {
@@ -4183,7 +3782,7 @@ ${component_stack}
     return elem.content;
   }
 
-  // ../vscode-ego/node_modules/svelte/src/internal/client/dom/template.js
+  // node_modules/svelte/src/internal/client/dom/template.js
   function assign_nodes(start, end) {
     var effect2 = (
       /** @type {Effect} */
@@ -4281,7 +3880,466 @@ ${component_stack}
     );
   }
 
-  // ../vscode-ego/node_modules/svelte/src/internal/client/render.js
+  // node_modules/svelte/src/reactivity/create-subscriber.js
+  function createSubscriber(start) {
+    let subscribers = 0;
+    let version = source(0);
+    let stop;
+    if (dev_fallback_default) {
+      tag(version, "createSubscriber version");
+    }
+    return () => {
+      if (effect_tracking()) {
+        get2(version);
+        render_effect(() => {
+          if (subscribers === 0) {
+            stop = untrack(() => start(() => increment(version)));
+          }
+          subscribers += 1;
+          return () => {
+            queue_micro_task(() => {
+              subscribers -= 1;
+              if (subscribers === 0) {
+                stop?.();
+                stop = void 0;
+                increment(version);
+              }
+            });
+          };
+        });
+      }
+    };
+  }
+
+  // node_modules/svelte/src/internal/client/dom/blocks/boundary.js
+  var flags = EFFECT_TRANSPARENT | EFFECT_PRESERVED;
+  function boundary(node, props, children, transform_error) {
+    new Boundary(node, props, children, transform_error);
+  }
+  var Boundary = class {
+    /** @type {Boundary | null} */
+    parent;
+    is_pending = false;
+    /**
+     * API-level transformError transform function. Transforms errors before they reach the `failed` snippet.
+     * Inherited from parent boundary, or defaults to identity.
+     * @type {(error: unknown) => unknown}
+     */
+    transform_error;
+    /** @type {TemplateNode} */
+    #anchor;
+    /** @type {TemplateNode | null} */
+    #hydrate_open = hydrating ? hydrate_node : null;
+    /** @type {BoundaryProps} */
+    #props;
+    /** @type {((anchor: Node) => void)} */
+    #children;
+    /** @type {Effect} */
+    #effect;
+    /** @type {Effect | null} */
+    #main_effect = null;
+    /** @type {Effect | null} */
+    #pending_effect = null;
+    /** @type {Effect | null} */
+    #failed_effect = null;
+    /** @type {DocumentFragment | null} */
+    #offscreen_fragment = null;
+    #local_pending_count = 0;
+    #pending_count = 0;
+    #pending_count_update_queued = false;
+    /** @type {Set<Effect>} */
+    #dirty_effects = /* @__PURE__ */ new Set();
+    /** @type {Set<Effect>} */
+    #maybe_dirty_effects = /* @__PURE__ */ new Set();
+    /**
+     * A source containing the number of pending async deriveds/expressions.
+     * Only created if `$effect.pending()` is used inside the boundary,
+     * otherwise updating the source results in needless `Batch.ensure()`
+     * calls followed by no-op flushes
+     * @type {Source<number> | null}
+     */
+    #effect_pending = null;
+    #effect_pending_subscriber = createSubscriber(() => {
+      this.#effect_pending = source(this.#local_pending_count);
+      if (dev_fallback_default) {
+        tag(this.#effect_pending, "$effect.pending()");
+      }
+      return () => {
+        this.#effect_pending = null;
+      };
+    });
+    /**
+     * @param {TemplateNode} node
+     * @param {BoundaryProps} props
+     * @param {((anchor: Node) => void)} children
+     * @param {((error: unknown) => unknown) | undefined} [transform_error]
+     */
+    constructor(node, props, children, transform_error) {
+      this.#anchor = node;
+      this.#props = props;
+      this.#children = (anchor) => {
+        var effect2 = (
+          /** @type {Effect} */
+          active_effect
+        );
+        effect2.b = this;
+        effect2.f |= BOUNDARY_EFFECT;
+        children(anchor);
+      };
+      this.parent = /** @type {Effect} */
+      active_effect.b;
+      this.transform_error = transform_error ?? this.parent?.transform_error ?? ((e) => e);
+      this.#effect = block(() => {
+        if (hydrating) {
+          const comment2 = (
+            /** @type {Comment} */
+            this.#hydrate_open
+          );
+          hydrate_next();
+          const server_rendered_pending = comment2.data === HYDRATION_START_ELSE;
+          const server_rendered_failed = comment2.data.startsWith(HYDRATION_START_FAILED);
+          if (server_rendered_failed) {
+            const serialized_error = JSON.parse(comment2.data.slice(HYDRATION_START_FAILED.length));
+            this.#hydrate_failed_content(serialized_error);
+          } else if (server_rendered_pending) {
+            this.#hydrate_pending_content();
+          } else {
+            this.#hydrate_resolved_content();
+          }
+        } else {
+          this.#render();
+        }
+      }, flags);
+      if (hydrating) {
+        this.#anchor = hydrate_node;
+      }
+    }
+    #hydrate_resolved_content() {
+      try {
+        this.#main_effect = branch(() => this.#children(this.#anchor));
+      } catch (error) {
+        this.error(error);
+      }
+    }
+    /**
+     * @param {unknown} error The deserialized error from the server's hydration comment
+     */
+    #hydrate_failed_content(error) {
+      const failed = this.#props.failed;
+      const { reset: reset2, invoke_onerror } = this.#create_reset(error);
+      queue_micro_task(invoke_onerror);
+      if (!failed) return;
+      this.#failed_effect = branch(() => {
+        failed(
+          this.#anchor,
+          () => error,
+          () => reset2
+        );
+      });
+    }
+    /**
+     * Creates the `reset` function for a failed boundary, along with a function
+     * that invokes `onerror` with it (if provided)
+     * @param {unknown} error
+     * @returns {{ reset: () => void, invoke_onerror: () => void }}
+     */
+    #create_reset(error) {
+      var did_reset = false;
+      var calling_on_error = false;
+      const reset2 = () => {
+        if (did_reset) {
+          svelte_boundary_reset_noop();
+          return;
+        }
+        did_reset = true;
+        if (calling_on_error) {
+          svelte_boundary_reset_onerror();
+        }
+        if (this.#failed_effect !== null) {
+          pause_effect(this.#failed_effect, () => {
+            this.#failed_effect = null;
+          });
+        }
+        this.#run(() => {
+          this.#render();
+        });
+      };
+      const invoke_onerror = () => {
+        try {
+          calling_on_error = true;
+          this.#props.onerror?.(error, reset2);
+          calling_on_error = false;
+        } catch (err) {
+          invoke_error_boundary(err, this.#effect && this.#effect.parent);
+        }
+      };
+      return { reset: reset2, invoke_onerror };
+    }
+    #hydrate_pending_content() {
+      const pending2 = this.#props.pending;
+      if (!pending2) return;
+      this.is_pending = true;
+      this.#pending_effect = branch(() => pending2(this.#anchor));
+      queue_micro_task(() => {
+        var fragment = this.#offscreen_fragment = document.createDocumentFragment();
+        var anchor = create_text();
+        var handled = false;
+        fragment.append(anchor);
+        this.#main_effect = this.#run(() => {
+          try {
+            return branch(() => this.#children(anchor));
+          } catch (error) {
+            try {
+              this.error(error);
+              handled = true;
+            } catch (error2) {
+              invoke_error_boundary(error2, this.#effect.parent);
+            }
+            return null;
+          }
+        });
+        if (this.#main_effect === null) {
+          this.#offscreen_fragment = null;
+          if (handled) this.#resolve(
+            /** @type {Batch} */
+            current_batch
+          );
+          return;
+        }
+        if (this.#pending_count === 0) {
+          this.#anchor.before(fragment);
+          this.#offscreen_fragment = null;
+          pause_effect(
+            /** @type {Effect} */
+            this.#pending_effect,
+            () => {
+              this.#pending_effect = null;
+            }
+          );
+          this.#resolve(
+            /** @type {Batch} */
+            current_batch
+          );
+        }
+      });
+    }
+    #render() {
+      try {
+        this.is_pending = this.has_pending_snippet();
+        this.#pending_count = 0;
+        this.#local_pending_count = 0;
+        this.#main_effect = branch(() => {
+          this.#children(this.#anchor);
+        });
+        if (this.#pending_count > 0) {
+          var fragment = this.#offscreen_fragment = document.createDocumentFragment();
+          move_effect(this.#main_effect, fragment);
+          const pending2 = (
+            /** @type {(anchor: Node) => void} */
+            this.#props.pending
+          );
+          this.#pending_effect = branch(() => pending2(this.#anchor));
+        } else {
+          this.#resolve(
+            /** @type {Batch} */
+            current_batch
+          );
+        }
+      } catch (error) {
+        this.error(error);
+      }
+    }
+    /**
+     * @param {Batch} batch
+     */
+    #resolve(batch) {
+      this.is_pending = false;
+      batch.transfer_effects(this.#dirty_effects, this.#maybe_dirty_effects);
+    }
+    /**
+     * Defer an effect inside a pending boundary until the boundary resolves
+     * @param {Effect} effect
+     */
+    defer_effect(effect2) {
+      defer_effect(effect2, this.#dirty_effects, this.#maybe_dirty_effects);
+    }
+    /**
+     * Returns `false` if the effect exists inside a boundary whose pending snippet is shown
+     * @returns {boolean}
+     */
+    is_rendered() {
+      return !this.is_pending && (!this.parent || this.parent.is_rendered());
+    }
+    has_pending_snippet() {
+      return !!this.#props.pending;
+    }
+    /**
+     * @template T
+     * @param {() => T} fn
+     */
+    #run(fn) {
+      var previous_effect = active_effect;
+      var previous_reaction = active_reaction;
+      var previous_ctx = component_context;
+      set_active_effect(this.#effect);
+      set_active_reaction(this.#effect);
+      set_component_context(this.#effect.ctx);
+      try {
+        Batch.ensure();
+        return fn();
+      } finally {
+        set_active_effect(previous_effect);
+        set_active_reaction(previous_reaction);
+        set_component_context(previous_ctx);
+      }
+    }
+    /**
+     * Updates the pending count associated with the currently visible pending snippet,
+     * if any, such that we can replace the snippet with content once work is done
+     * @param {1 | -1} d
+     * @param {Batch} batch
+     */
+    #update_pending_count(d, batch) {
+      if (!this.has_pending_snippet()) {
+        if (this.parent) {
+          this.parent.#update_pending_count(d, batch);
+        }
+        return;
+      }
+      this.#pending_count += d;
+      if (this.#pending_count === 0) {
+        this.#resolve(batch);
+        if (this.#pending_effect) {
+          pause_effect(this.#pending_effect, () => {
+            this.#pending_effect = null;
+          });
+        }
+        if (this.#offscreen_fragment) {
+          this.#anchor.before(this.#offscreen_fragment);
+          this.#offscreen_fragment = null;
+        }
+      }
+    }
+    /**
+     * Update the source that powers `$effect.pending()` inside this boundary,
+     * and controls when the current `pending` snippet (if any) is removed.
+     * Do not call from inside the class
+     * @param {1 | -1} d
+     * @param {Batch} batch
+     */
+    update_pending_count(d, batch) {
+      this.#update_pending_count(d, batch);
+      this.#local_pending_count += d;
+      if (!this.#effect_pending || this.#pending_count_update_queued) return;
+      this.#pending_count_update_queued = true;
+      queue_micro_task(() => {
+        this.#pending_count_update_queued = false;
+        if (this.#effect_pending) {
+          internal_set(this.#effect_pending, this.#local_pending_count);
+        }
+      });
+    }
+    get_effect_pending() {
+      this.#effect_pending_subscriber();
+      return get2(
+        /** @type {Source<number>} */
+        this.#effect_pending
+      );
+    }
+    /** @param {unknown} error */
+    error(error) {
+      if (!this.#props.onerror && !this.#props.failed) {
+        throw error;
+      }
+      if (current_batch?.is_fork) {
+        if (this.#main_effect) current_batch.skip_effect(this.#main_effect);
+        if (this.#pending_effect) current_batch.skip_effect(this.#pending_effect);
+        if (this.#failed_effect) current_batch.skip_effect(this.#failed_effect);
+        current_batch.oncommit(() => {
+          this.#handle_error(error);
+        });
+      } else {
+        this.#handle_error(error);
+      }
+    }
+    /**
+     * @param {unknown} error
+     */
+    #handle_error(error) {
+      if (this.#main_effect) {
+        destroy_effect(this.#main_effect);
+        this.#main_effect = null;
+      }
+      if (this.#pending_effect) {
+        destroy_effect(this.#pending_effect);
+        this.#pending_effect = null;
+      }
+      if (this.#failed_effect) {
+        destroy_effect(this.#failed_effect);
+        this.#failed_effect = null;
+      }
+      if (hydrating) {
+        set_hydrate_node(
+          /** @type {TemplateNode} */
+          this.#hydrate_open
+        );
+        next();
+        set_hydrate_node(skip_nodes());
+      }
+      let failed = this.#props.failed;
+      const handle_error_result = (transformed_error) => {
+        const { reset: reset2, invoke_onerror } = this.#create_reset(transformed_error);
+        invoke_onerror();
+        if (failed) {
+          this.#failed_effect = this.#run(() => {
+            try {
+              return branch(() => {
+                var effect2 = (
+                  /** @type {Effect} */
+                  active_effect
+                );
+                effect2.b = this;
+                effect2.f |= BOUNDARY_EFFECT;
+                failed(
+                  this.#anchor,
+                  () => transformed_error,
+                  () => reset2
+                );
+              });
+            } catch (error2) {
+              invoke_error_boundary(
+                error2,
+                /** @type {Effect} */
+                this.#effect.parent
+              );
+              return null;
+            }
+          });
+        }
+      };
+      queue_micro_task(() => {
+        var result;
+        try {
+          result = this.transform_error(error);
+        } catch (e) {
+          invoke_error_boundary(e, this.#effect && this.#effect.parent);
+          return;
+        }
+        if (result !== null && typeof result === "object" && typeof /** @type {any} */
+        result.then === "function") {
+          result.then(
+            handle_error_result,
+            /** @param {unknown} e */
+            (e) => invoke_error_boundary(e, this.#effect && this.#effect.parent)
+          );
+        } else {
+          handle_error_result(result);
+        }
+      });
+    }
+  };
+
+  // node_modules/svelte/src/internal/client/render.js
   var should_intro = true;
   function set_text(text2, value) {
     var str = value == null ? "" : typeof value === "object" ? `${value}` : value;
@@ -4370,7 +4428,7 @@ ${component_stack}
             );
           }
           should_intro = intro;
-          component2 = Component(anchor_node2, props) || {};
+          component2 = Component(anchor_node2, props) || mark_as_component();
           should_intro = true;
           if (hydrating) {
             active_effect.nodes.end = hydrate_node;
@@ -4448,16 +4506,12 @@ ${component_stack}
       return fn(options);
     }
     if (dev_fallback_default) {
-      if (STATE_SYMBOL in component2) {
-        state_proxy_unmount();
-      } else {
-        lifecycle_double_unmount();
-      }
+      lifecycle_double_unmount();
     }
     return Promise.resolve();
   }
 
-  // ../vscode-ego/node_modules/svelte/src/internal/client/dom/blocks/branches.js
+  // node_modules/svelte/src/internal/client/dom/blocks/branches.js
   var BranchManager = class {
     /** @type {TemplateNode} */
     anchor;
@@ -4630,7 +4684,7 @@ ${component_stack}
     }
   };
 
-  // ../vscode-ego/node_modules/svelte/src/internal/client/dom/blocks/if.js
+  // node_modules/svelte/src/internal/client/dom/blocks/if.js
   function if_block(node, fn, elseif = false) {
     var marker;
     if (hydrating) {
@@ -4669,7 +4723,7 @@ ${component_stack}
     }, flags2);
   }
 
-  // ../vscode-ego/node_modules/svelte/src/internal/client/dom/blocks/each.js
+  // node_modules/svelte/src/internal/client/dom/blocks/each.js
   function pause_effects(state2, to_destroy, controlled_anchor) {
     var transitions = [];
     var length = to_destroy.length;
@@ -4702,7 +4756,7 @@ ${component_stack}
       );
     }
     if (remaining === 0) {
-      var fast_path = transitions.length === 0 && controlled_anchor !== null;
+      var fast_path = transitions.length === 0 && controlled_anchor !== null && state2.pending.size === 0;
       if (fast_path) {
         var anchor = (
           /** @type {Element} */
@@ -5143,19 +5197,20 @@ ${component_stack}
     }
   }
 
-  // ../vscode-ego/node_modules/svelte/src/internal/client/dom/css.js
+  // node_modules/svelte/src/internal/client/dom/css.js
   function append_styles(anchor, css) {
     effect(() => {
-      var root5 = anchor.getRootNode();
+      anchor = active_effect?.parent?.nodes?.start ?? anchor;
+      var root7 = anchor.getRootNode();
       var target2 = (
         /** @type {ShadowRoot} */
-        root5.host ? (
+        root7.host ? (
           /** @type {ShadowRoot} */
-          root5
+          root7
         ) : (
           /** @type {Document} */
-          root5.head ?? /** @type {Document} */
-          root5.ownerDocument.head
+          root7.head ?? /** @type {Document} */
+          root7.ownerDocument.head
         )
       );
       if (!target2.querySelector("#" + css.hash)) {
@@ -5170,7 +5225,7 @@ ${component_stack}
     });
   }
 
-  // ../vscode-ego/node_modules/svelte/src/internal/shared/attributes.js
+  // node_modules/svelte/src/internal/shared/attributes.js
   var whitespace = [..." 	\n\r\f\xA0\v\uFEFF"];
   function to_class(value, hash2, directives) {
     var classname = value == null ? "" : "" + value;
@@ -5198,7 +5253,7 @@ ${component_stack}
     return classname === "" ? null : classname;
   }
 
-  // ../vscode-ego/node_modules/svelte/src/internal/client/dom/elements/class.js
+  // node_modules/svelte/src/internal/client/dom/elements/class.js
   function set_class(dom, is_html, value, hash2, prev_classes, next_classes) {
     var prev = (
       /** @type {any} */
@@ -5227,7 +5282,41 @@ ${component_stack}
     return next_classes;
   }
 
-  // ../vscode-ego/node_modules/svelte/src/internal/client/dom/elements/bindings/select.js
+  // node_modules/svelte/src/internal/client/dom/elements/bindings/select.js
+  function set_selected(option, selected) {
+    if (selected) {
+      if (!option.hasAttribute("selected")) option.setAttribute("selected", "");
+    } else {
+      option.removeAttribute("selected");
+    }
+  }
+  function apply_default_select_value(select, preserve) {
+    var value = select.__defaultValue;
+    var multiple = select.multiple;
+    var values = multiple ? value ?? [] : null;
+    if (multiple && !is_array(values)) return;
+    var index2 = select.selectedIndex;
+    var selected = preserve && multiple ? new Set(select.selectedOptions) : null;
+    for (var option of select.options) {
+      var option_value = get_option_value(option);
+      set_selected(
+        option,
+        multiple ? (
+          /** @type {any[]} */
+          values.includes(option_value)
+        ) : is(option_value, value)
+      );
+    }
+    if (!preserve) return;
+    if (selected !== null) {
+      for (option of select.options) {
+        var was_selected = selected.has(option);
+        if (option.selected !== was_selected) option.selected = was_selected;
+      }
+    } else if (select.selectedIndex !== index2) {
+      select.selectedIndex = index2;
+    }
+  }
   function select_option(select, value, mounting = false) {
     if (select.multiple) {
       if (value == void 0) {
@@ -5253,8 +5342,14 @@ ${component_stack}
     }
   }
   function init_select(select) {
-    var observer = new MutationObserver(() => {
-      select_option(select, select.__value);
+    var observer = new MutationObserver((entries) => {
+      if (entries.every(is_selectedcontent_mutation)) return;
+      if ("__defaultValue" in select) {
+        apply_default_select_value(select, false);
+      }
+      if ("__value" in select) {
+        select_option(select, select.__value);
+      }
     });
     observer.observe(select, {
       // Listen to option element changes
@@ -5278,11 +5373,25 @@ ${component_stack}
       return option.value;
     }
   }
+  function is_selectedcontent_mutation(entry) {
+    if (
+      /** @type {Element} */
+      entry.target.closest("selectedcontent") !== null
+    ) {
+      return true;
+    }
+    if (entry.type === "childList") {
+      var nodes = [...entry.addedNodes, ...entry.removedNodes];
+      return nodes.length > 0 && nodes.every((node) => node.nodeName === "SELECTEDCONTENT");
+    }
+    return false;
+  }
 
-  // ../vscode-ego/node_modules/svelte/src/internal/client/dom/elements/attributes.js
+  // node_modules/svelte/src/internal/client/dom/elements/attributes.js
   var IS_CUSTOM_ELEMENT = /* @__PURE__ */ Symbol("is custom element");
   var IS_HTML = /* @__PURE__ */ Symbol("is html");
   var LINK_TAG = IS_XHTML ? "link" : "LINK";
+  var PROGRESS_TAG = IS_XHTML ? "progress" : "PROGRESS";
   function remove_input_defaults(input) {
     if (!hydrating) return;
     var already_removed = false;
@@ -5304,6 +5413,16 @@ ${component_stack}
     queue_micro_task(remove_defaults);
     add_form_reset_listener();
   }
+  function set_value(element2, value) {
+    var attributes = get_attributes(element2);
+    if (attributes.value === (attributes.value = // treat null and undefined the same for the initial value
+    value ?? void 0) || // @ts-expect-error
+    // `progress` elements always need their value set when it's `0`
+    element2.value === value && (value !== 0 || element2.nodeName !== PROGRESS_TAG)) {
+      return;
+    }
+    element2.value = value ?? "";
+  }
   function set_attribute2(element2, attribute, value, skip_warning) {
     var attributes = get_attributes(element2);
     if (hydrating) {
@@ -5321,7 +5440,7 @@ ${component_stack}
     }
     if (value == null) {
       element2.removeAttribute(attribute);
-    } else if (typeof value !== "string" && get_setters(element2).includes(attribute)) {
+    } else if (typeof value !== "string" && get_setters(element2).has(attribute)) {
       element2[attribute] = value;
     } else {
       element2.setAttribute(attribute, value);
@@ -5342,7 +5461,7 @@ ${component_stack}
     var cache_key = element2.getAttribute("is") || element2.nodeName;
     var setters = setters_cache.get(cache_key);
     if (setters) return setters;
-    setters_cache.set(cache_key, setters = []);
+    setters_cache.set(cache_key, setters = /* @__PURE__ */ new Set());
     var descriptors;
     var proto = element2;
     var element_proto = Element.prototype;
@@ -5351,7 +5470,7 @@ ${component_stack}
       for (var key2 in descriptors) {
         if (descriptors[key2].set && // better safe than sorry, we don't want spread attributes to mess with HTML content
         key2 !== "innerHTML" && key2 !== "textContent" && key2 !== "innerText") {
-          setters.push(key2);
+          setters.add(key2);
         }
       }
       proto = get_prototype_of(proto);
@@ -5388,7 +5507,7 @@ ${component_stack}
     );
   }
 
-  // ../vscode-ego/node_modules/svelte/src/internal/client/dom/elements/bindings/input.js
+  // node_modules/svelte/src/internal/client/dom/elements/bindings/input.js
   function bind_value(input, get3, set2 = get3) {
     var batches = /* @__PURE__ */ new WeakSet();
     listen_to_event_and_reset_event(input, "input", async (is_reset) => {
@@ -5464,7 +5583,7 @@ ${component_stack}
     return value === "" ? null : +value;
   }
 
-  // ../vscode-ego/node_modules/svelte/src/legacy/legacy-client.js
+  // node_modules/svelte/src/legacy/legacy-client.js
   function createClassComponent(options) {
     return new Svelte4Component(options);
   }
@@ -5561,7 +5680,7 @@ ${component_stack}
     }
   };
 
-  // ../vscode-ego/node_modules/svelte/src/internal/client/dom/elements/custom-element.js
+  // node_modules/svelte/src/internal/client/dom/elements/custom-element.js
   var SvelteElement;
   if (typeof HTMLElement === "function") {
     SvelteElement = class extends HTMLElement {
@@ -5782,7 +5901,7 @@ ${component_stack}
     return result;
   }
 
-  // ../vscode-ego/node_modules/svelte/src/index-client.js
+  // node_modules/svelte/src/index-client.js
   if (dev_fallback_default) {
     let throw_rune_error = function(rune) {
       if (!(rune in globalThis)) {
@@ -5833,10 +5952,10 @@ ${component_stack}
     return l.u ??= { a: [], b: [], m: [] };
   }
 
-  // ../vscode-ego/node_modules/svelte/src/version.js
+  // node_modules/svelte/src/version.js
   var PUBLIC_VERSION = "5";
 
-  // ../vscode-ego/node_modules/svelte/src/internal/disclose-version.js
+  // node_modules/svelte/src/internal/disclose-version.js
   if (typeof window !== "undefined") {
     ((window.__svelte ??= {}).v ??= /* @__PURE__ */ new Set()).add(PUBLIC_VERSION);
   }
@@ -5901,6 +6020,14 @@ ${component_stack}
   async function deleteUser(userId) {
     return request("DELETE", `/admin/users/${userId}`);
   }
+  async function getOverview() {
+    return request("GET", "/admin/overview");
+  }
+  async function getCatalog(q) {
+    const needle = (q ?? "").trim();
+    const path = needle ? `/admin/catalog?q=${encodeURIComponent(needle)}` : "/admin/catalog";
+    return request("GET", path);
+  }
 
   // src/components/Login.svelte
   var root = from_html(`<div class="error svelte-h34f85"> </div>`);
@@ -5939,14 +6066,12 @@ ${component_stack}
     var input_1 = sibling(input, 2);
     remove_input_defaults(input_1);
     var button = sibling(input_1, 2);
-    var text2 = child(button, true);
-    reset(button);
+    var text2 = only_child(button, true);
     var node = sibling(button, 2);
     {
       var consequent = ($$anchor2) => {
         var div_1 = root();
-        var text_1 = child(div_1, true);
-        reset(div_1);
+        var text_1 = only_child(div_1, true);
         template_effect(() => set_text(text_1, get2(error)));
         append($$anchor2, div_1);
       };
@@ -5970,11 +6095,209 @@ ${component_stack}
     pop();
   }
 
+  // src/components/Overview.svelte
+  var root2 = from_html(`<div class="loading svelte-op2jfd">Loading overview\u2026</div>`);
+  var root_12 = from_html(`<div class="error svelte-op2jfd"> </div>`);
+  var root_2 = from_html(`<div class="grid svelte-op2jfd"><div class="card svelte-op2jfd"><span class="card-label svelte-op2jfd">Server</span> <span> </span></div> <div class="card svelte-op2jfd"><span class="card-label svelte-op2jfd">Projects</span> <span class="card-value svelte-op2jfd"> </span></div> <div class="card svelte-op2jfd"><span class="card-label svelte-op2jfd">Folders</span> <span class="card-value svelte-op2jfd"> </span></div> <div class="card svelte-op2jfd"><span class="card-label svelte-op2jfd">Tasks</span> <span class="card-value svelte-op2jfd"> </span></div> <div class="card svelte-op2jfd"><span class="card-label svelte-op2jfd">Students</span> <span class="card-value svelte-op2jfd"> </span></div></div> <div class="sync-block svelte-op2jfd"><h3 class="svelte-op2jfd">Latest sync</h3> <dl class="svelte-op2jfd"><div class="svelte-op2jfd"><dt class="svelte-op2jfd">Status</dt><dd class="svelte-op2jfd"><span> </span></dd></div> <div class="svelte-op2jfd"><dt class="svelte-op2jfd">Source</dt><dd class="svelte-op2jfd"> </dd></div> <div class="svelte-op2jfd"><dt class="svelte-op2jfd">Repo</dt><dd class="svelte-op2jfd"> </dd></div> <div class="svelte-op2jfd"><dt class="svelte-op2jfd">Git SHA</dt><dd class="svelte-op2jfd"> </dd></div> <div class="svelte-op2jfd"><dt class="svelte-op2jfd">Started</dt><dd class="svelte-op2jfd"> </dd></div> <div class="svelte-op2jfd"><dt class="svelte-op2jfd">Finished</dt><dd class="svelte-op2jfd"> </dd></div> <div class="svelte-op2jfd"><dt class="svelte-op2jfd">Added</dt><dd class="svelte-op2jfd"> </dd></div> <div class="svelte-op2jfd"><dt class="svelte-op2jfd">Updated</dt><dd class="svelte-op2jfd"> </dd></div> <div class="svelte-op2jfd"><dt class="svelte-op2jfd">Skipped</dt><dd class="svelte-op2jfd"> </dd></div> <div class="svelte-op2jfd"><dt class="svelte-op2jfd">Errors</dt><dd class="svelte-op2jfd"> </dd></div> <div class="full svelte-op2jfd"><dt class="svelte-op2jfd">Error summary</dt><dd class="svelte-op2jfd"> </dd></div></dl></div>`, 1);
+  var root_3 = from_html(`<div class="section"><div class="section-header svelte-op2jfd"><h2 class="svelte-op2jfd">Overview</h2> <button class="btn svelte-op2jfd" type="button" aria-label="Refresh overview"> </button></div> <!></div>`);
+  var $$css2 = {
+    hash: "svelte-op2jfd",
+    code: ".section-header.svelte-op2jfd {display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}h2.svelte-op2jfd {font-size:0.9rem;font-weight:600;}h3.svelte-op2jfd {font-size:0.8rem;font-weight:600;margin:20px 0 10px;color:#858585;text-transform:uppercase;letter-spacing:0.05em;}.btn.svelte-op2jfd {padding:4px 12px;background:transparent;border:1px solid #3c3c3c;border-radius:4px;color:#d4d4d4;font-family:inherit;font-size:0.8rem;cursor:pointer;}.btn.svelte-op2jfd:hover:not(:disabled) {border-color:#007acc;}.btn.svelte-op2jfd:disabled {opacity:0.5;cursor:not-allowed;}.grid.svelte-op2jfd {display:grid;grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));gap:12px;}.card.svelte-op2jfd {display:flex;flex-direction:column;gap:4px;padding:14px 16px;background:#2d2d2d;border:1px solid #3c3c3c;border-radius:6px;}.card-label.svelte-op2jfd {font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:#858585;}.card-value.svelte-op2jfd {font-size:1.4rem;font-weight:700;font-variant-numeric:tabular-nums;}.status-ok.svelte-op2jfd {color:#22c55e;}.status-err.svelte-op2jfd {color:#f87171;}.sync-block.svelte-op2jfd {margin-top:8px;}dl.svelte-op2jfd {display:grid;grid-template-columns:max-content 1fr;gap:6px 16px;margin:0;}dl.svelte-op2jfd div:where(.svelte-op2jfd) {display:contents;}dl.svelte-op2jfd .full:where(.svelte-op2jfd) {grid-column:1 / -1;}dt.svelte-op2jfd {color:#858585;font-size:0.75rem;}dd.svelte-op2jfd {margin:0;font-size:0.85rem;word-break:break-word;}.sync-pill.svelte-op2jfd {display:inline-block;padding:1px 8px;border-radius:10px;font-size:0.7rem;border:1px solid #3c3c3c;text-transform:capitalize;}.sync-pill.ok.svelte-op2jfd {color:#22c55e;border-color:#22c55e;}.sync-pill.running.svelte-op2jfd {color:#eab308;border-color:#eab308;}.sync-pill.err.svelte-op2jfd {color:#f87171;border-color:#f87171;}.sync-pill.none.svelte-op2jfd {color:#858585;}.loading.svelte-op2jfd, .error.svelte-op2jfd {padding:24px;text-align:center;color:#858585;}.error.svelte-op2jfd {color:#f87171;}\r\n\r\n	@media (max-width: 600px) {dl.svelte-op2jfd {grid-template-columns:1fr;}\r\n	}"
+  };
+  function Overview($$anchor, $$props) {
+    push($$props, true);
+    append_styles($$anchor, $$css2);
+    let overview = state(null);
+    let loading = state(true);
+    let error = state("");
+    async function load() {
+      set(loading, true);
+      set(error, "");
+      try {
+        set(overview, await getOverview(), true);
+      } catch (e) {
+        set(error, e.message, true);
+      } finally {
+        set(loading, false);
+      }
+    }
+    function timeAgo(iso) {
+      if (!iso) return "\u2014";
+      const t = new Date(iso).getTime();
+      if (Number.isNaN(t)) return iso;
+      const s = Math.round((Date.now() - t) / 1e3);
+      if (s < 0) return "just now";
+      if (s < 60) return `${s}s ago`;
+      if (s < 3600) return `${Math.round(s / 60)}m ago`;
+      if (s < 86400) return `${Math.round(s / 3600)}h ago`;
+      return `${Math.round(s / 86400)}d ago`;
+    }
+    function syncStatusClass(s) {
+      if (!s) return "none";
+      const st = (s.status || "").toLowerCase();
+      if (st === "ok" || st === "success") return "ok";
+      if (st === "running") return "running";
+      return "err";
+    }
+    function syncLabel(s) {
+      if (!s) return "never";
+      return s.status || "\u2014";
+    }
+    function errorSummary(s) {
+      if (!s) return "";
+      if (s.errors <= 0 && !s.error_details) return "No errors.";
+      const parts = [];
+      parts.push(`${s.errors} error(s)`);
+      if (s.error_details) parts.push(s.error_details);
+      return parts.join(" \u2014 ");
+    }
+    onMount(() => {
+      load();
+    });
+    var div = root_3();
+    var div_1 = child(div);
+    var button = sibling(child(div_1), 2);
+    var text2 = only_child(button, true);
+    reset(div_1);
+    var node = sibling(div_1, 2);
+    {
+      var consequent = ($$anchor2) => {
+        var div_2 = root2();
+        append($$anchor2, div_2);
+      };
+      var consequent_1 = ($$anchor2) => {
+        var div_3 = root_12();
+        var text_1 = only_child(div_3, true);
+        template_effect(() => set_text(text_1, get2(error)));
+        append($$anchor2, div_3);
+      };
+      var consequent_2 = ($$anchor2) => {
+        var fragment = root_2();
+        var div_4 = first_child(fragment);
+        var div_5 = child(div_4);
+        var span = sibling(child(div_5), 2);
+        var text_2 = only_child(span, true);
+        reset(div_5);
+        var div_6 = sibling(div_5, 2);
+        var span_1 = sibling(child(div_6), 2);
+        var text_3 = only_child(span_1, true);
+        reset(div_6);
+        var div_7 = sibling(div_6, 2);
+        var span_2 = sibling(child(div_7), 2);
+        var text_4 = only_child(span_2, true);
+        reset(div_7);
+        var div_8 = sibling(div_7, 2);
+        var span_3 = sibling(child(div_8), 2);
+        var text_5 = only_child(span_3, true);
+        reset(div_8);
+        var div_9 = sibling(div_8, 2);
+        var span_4 = sibling(child(div_9), 2);
+        var text_6 = only_child(span_4, true);
+        reset(div_9);
+        reset(div_4);
+        var div_10 = sibling(div_4, 2);
+        var dl = sibling(child(div_10), 2);
+        var div_11 = child(dl);
+        var dd = sibling(child(div_11));
+        var span_5 = child(dd);
+        var text_7 = only_child(span_5, true);
+        reset(dd);
+        reset(div_11);
+        var div_12 = sibling(div_11, 2);
+        var dd_1 = sibling(child(div_12));
+        var text_8 = only_child(dd_1, true);
+        reset(div_12);
+        var div_13 = sibling(div_12, 2);
+        var dd_2 = sibling(child(div_13));
+        var text_9 = only_child(dd_2, true);
+        reset(div_13);
+        var div_14 = sibling(div_13, 2);
+        var dd_3 = sibling(child(div_14));
+        var text_10 = only_child(dd_3, true);
+        reset(div_14);
+        var div_15 = sibling(div_14, 2);
+        var dd_4 = sibling(child(div_15));
+        var text_11 = only_child(dd_4, true);
+        reset(div_15);
+        var div_16 = sibling(div_15, 2);
+        var dd_5 = sibling(child(div_16));
+        var text_12 = only_child(dd_5, true);
+        reset(div_16);
+        var div_17 = sibling(div_16, 2);
+        var dd_6 = sibling(child(div_17));
+        var text_13 = only_child(dd_6, true);
+        reset(div_17);
+        var div_18 = sibling(div_17, 2);
+        var dd_7 = sibling(child(div_18));
+        var text_14 = only_child(dd_7, true);
+        reset(div_18);
+        var div_19 = sibling(div_18, 2);
+        var dd_8 = sibling(child(div_19));
+        var text_15 = only_child(dd_8, true);
+        reset(div_19);
+        var div_20 = sibling(div_19, 2);
+        var dd_9 = sibling(child(div_20));
+        var text_16 = only_child(dd_9, true);
+        reset(div_20);
+        var div_21 = sibling(div_20, 2);
+        var dd_10 = sibling(child(div_21));
+        var text_17 = only_child(dd_10, true);
+        reset(div_21);
+        reset(dl);
+        reset(div_10);
+        template_effect(
+          ($0, $1, $2, $3, $4) => {
+            set_class(span, 1, `card-value status-${get2(overview).server === "ok" ? "ok" : "err"}`, "svelte-op2jfd");
+            set_text(text_2, get2(overview).server);
+            set_text(text_3, get2(overview).counts.projects);
+            set_text(text_4, get2(overview).counts.folders);
+            set_text(text_5, get2(overview).counts.tasks);
+            set_text(text_6, get2(overview).counts.students);
+            set_class(span_5, 1, `sync-pill ${$0 ?? ""}`, "svelte-op2jfd");
+            set_text(text_7, $1);
+            set_text(text_8, get2(overview).latest_sync?.source ?? "\u2014");
+            set_text(text_9, get2(overview).latest_sync?.repo_url || "\u2014");
+            set_text(text_10, get2(overview).latest_sync?.git_sha ?? "\u2014");
+            set_text(text_11, $2);
+            set_text(text_12, $3);
+            set_text(text_13, get2(overview).latest_sync?.added ?? 0);
+            set_text(text_14, get2(overview).latest_sync?.updated ?? 0);
+            set_text(text_15, get2(overview).latest_sync?.skipped ?? 0);
+            set_text(text_16, get2(overview).latest_sync?.errors ?? 0);
+            set_text(text_17, $4);
+          },
+          [
+            () => syncStatusClass(get2(overview).latest_sync),
+            () => syncLabel(get2(overview).latest_sync),
+            () => get2(overview).latest_sync ? timeAgo(get2(overview).latest_sync.started_at) : "\u2014",
+            () => get2(overview).latest_sync ? timeAgo(get2(overview).latest_sync.finished_at) : "\u2014",
+            () => errorSummary(get2(overview).latest_sync)
+          ]
+        );
+        append($$anchor2, fragment);
+      };
+      if_block(node, ($$render) => {
+        if (get2(loading) && !get2(overview)) $$render(consequent);
+        else if (get2(error)) $$render(consequent_1, 1);
+        else if (get2(overview)) $$render(consequent_2, 2);
+      });
+    }
+    reset(div);
+    template_effect(() => {
+      button.disabled = get2(loading);
+      set_text(text2, get2(loading) ? "Refreshing\u2026" : "Refresh");
+    });
+    delegated("click", button, load);
+    append($$anchor, div);
+    pop();
+  }
+  delegate(["click"]);
+
   // src/components/StudentList.svelte
-  var root2 = from_html(`<button class="btn svelte-18vtxcr"> </button>`);
-  var root_12 = from_html(`<form class="create-form svelte-18vtxcr"><input name="username" placeholder="Username" required="" class="svelte-18vtxcr"/> <input name="password" type="password" placeholder="Password" required="" class="svelte-18vtxcr"/> <select name="role" class="svelte-18vtxcr"><option>student</option><option>mentor</option><option>admin</option></select> <button type="submit" class="btn primary svelte-18vtxcr">Create</button></form>`);
-  var root_2 = from_html(`<div class="loading svelte-18vtxcr">Loading students\u2026</div>`);
-  var root_3 = from_html(`<div class="error svelte-18vtxcr"> </div>`);
+  var root3 = from_html(`<button class="btn svelte-18vtxcr"> </button>`);
+  var root_13 = from_html(`<form class="create-form svelte-18vtxcr"><input name="username" placeholder="Username" required="" class="svelte-18vtxcr"/> <input name="password" type="password" placeholder="Password" required="" class="svelte-18vtxcr"/> <select name="role" class="svelte-18vtxcr"><option>student</option><option>mentor</option><option>admin</option></select> <button type="submit" class="btn primary svelte-18vtxcr">Create</button></form>`);
+  var root_22 = from_html(`<div class="loading svelte-18vtxcr">Loading students\u2026</div>`);
+  var root_32 = from_html(`<div class="error svelte-18vtxcr"> </div>`);
   var root_4 = from_html(`<div class="empty svelte-18vtxcr">No students yet</div>`);
   var root_5 = from_html(`<th class="svelte-18vtxcr"></th>`);
   var root_6 = from_html(`<select class="role-select svelte-18vtxcr"><option>student</option><option>mentor</option><option>admin</option></select>`);
@@ -5982,13 +6305,13 @@ ${component_stack}
   var root_8 = from_html(`<tr class="student-row svelte-18vtxcr"><td class="svelte-18vtxcr"> </td><td class="svelte-18vtxcr"><!></td><td class="num svelte-18vtxcr"> </td><td class="num svelte-18vtxcr" style="color:#22c55e"> </td><td class="num svelte-18vtxcr" style="color:#eab308"> </td><td class="num svelte-18vtxcr" style="color:#f87171"> </td><td class="svelte-18vtxcr"> </td><!></tr>`);
   var root_9 = from_html(`<table class="svelte-18vtxcr"><thead><tr><th class="svelte-18vtxcr">Student</th><th class="svelte-18vtxcr">Role</th><th class="num svelte-18vtxcr">Total</th><th class="num svelte-18vtxcr">Passed</th><th class="num svelte-18vtxcr">Partial</th><th class="num svelte-18vtxcr">Failed</th><th class="svelte-18vtxcr">Last activity</th><!></tr></thead><tbody></tbody></table>`);
   var root_10 = from_html(`<div class="section"><div class="section-header svelte-18vtxcr"><h2 class="svelte-18vtxcr">Students</h2> <!></div> <!> <!></div>`);
-  var $$css2 = {
+  var $$css3 = {
     hash: "svelte-18vtxcr",
     code: ".section-header.svelte-18vtxcr {display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}h2.svelte-18vtxcr {font-size:0.9rem;font-weight:600;}.btn.svelte-18vtxcr {padding:4px 12px;background:transparent;border:1px solid #3c3c3c;border-radius:4px;color:#d4d4d4;font-family:inherit;font-size:0.8rem;cursor:pointer;}.btn.svelte-18vtxcr:hover {border-color:#007acc;}.btn.primary.svelte-18vtxcr {background:#007acc;color:#fff;border-color:transparent;}.btn.primary.svelte-18vtxcr:hover {opacity:0.9;}.create-form.svelte-18vtxcr {display:flex;gap:8px;margin-bottom:16px;}.create-form.svelte-18vtxcr input:where(.svelte-18vtxcr), .create-form.svelte-18vtxcr select:where(.svelte-18vtxcr) {padding:6px 10px;background:#2d2d2d;border:1px solid #3c3c3c;border-radius:4px;color:#d4d4d4;font-family:inherit;font-size:0.8rem;}.create-form.svelte-18vtxcr input:where(.svelte-18vtxcr) {flex:1;}table.svelte-18vtxcr {width:100%;border-collapse:collapse;}th.svelte-18vtxcr, td.svelte-18vtxcr {text-align:left;padding:6px 12px;border-bottom:1px solid #3c3c3c;}th.svelte-18vtxcr {font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:#858585;}tr.svelte-18vtxcr:hover td:where(.svelte-18vtxcr) {background:rgba(255,255,255,0.03);}.num.svelte-18vtxcr {text-align:right;font-variant-numeric:tabular-nums;}.student-row.svelte-18vtxcr {cursor:pointer;}.student-row.svelte-18vtxcr:hover td:where(.svelte-18vtxcr) {background:rgba(0,122,204,0.08);}.role-select.svelte-18vtxcr {background:#2d2d2d;border:1px solid #3c3c3c;border-radius:3px;color:#d4d4d4;font-family:inherit;font-size:0.75rem;padding:2px 6px;}.actions.svelte-18vtxcr {white-space:nowrap;}.actions.svelte-18vtxcr button:where(.svelte-18vtxcr) {padding:2px 8px;background:transparent;border:1px solid #3c3c3c;border-radius:3px;color:#858585;font-family:inherit;font-size:0.7rem;cursor:pointer;margin-left:4px;}.actions.svelte-18vtxcr button:where(.svelte-18vtxcr):hover {border-color:#007acc;color:#d4d4d4;}.actions.svelte-18vtxcr .danger:where(.svelte-18vtxcr):hover {border-color:#f87171;color:#f87171;}.loading.svelte-18vtxcr, .empty.svelte-18vtxcr, .error.svelte-18vtxcr {padding:24px;text-align:center;color:#858585;}.error.svelte-18vtxcr {color:#f87171;}"
   };
   function StudentList($$anchor, $$props) {
     push($$props, true);
-    append_styles($$anchor, $$css2);
+    append_styles($$anchor, $$css3);
     let students = state(proxy([]));
     let loading = state(true);
     let error = state("");
@@ -6073,9 +6396,8 @@ ${component_stack}
     var node = sibling(child(div_1), 2);
     {
       var consequent = ($$anchor2) => {
-        var button = root2();
-        var text2 = child(button, true);
-        reset(button);
+        var button = root3();
+        var text2 = only_child(button, true);
         template_effect(() => set_text(text2, get2(showForm) ? "Cancel" : "+ Add user"));
         delegated("click", button, () => {
           set(showForm, !get2(showForm));
@@ -6090,7 +6412,7 @@ ${component_stack}
     var node_1 = sibling(div_1, 2);
     {
       var consequent_1 = ($$anchor2) => {
-        var form_1 = root_12();
+        var form_1 = root_13();
         var select = sibling(child(form_1), 4);
         var option = child(select);
         option.value = option.__value = "student";
@@ -6111,13 +6433,12 @@ ${component_stack}
     var node_2 = sibling(node_1, 2);
     {
       var consequent_2 = ($$anchor2) => {
-        var div_2 = root_2();
+        var div_2 = root_22();
         append($$anchor2, div_2);
       };
       var consequent_3 = ($$anchor2) => {
-        var div_3 = root_3();
-        var text_1 = child(div_3, true);
-        reset(div_3);
+        var div_3 = root_32();
+        var text_1 = only_child(div_3, true);
         template_effect(() => set_text(text_1, get2(error)));
         append($$anchor2, div_3);
       };
@@ -6145,8 +6466,7 @@ ${component_stack}
         each(tbody, 21, () => get2(students), (s) => s.student_id, ($$anchor3, s) => {
           var tr_1 = root_8();
           var td = child(tr_1);
-          var text_2 = child(td, true);
-          reset(td);
+          var text_2 = only_child(td, true);
           var td_1 = sibling(td);
           var node_4 = child(td_1);
           {
@@ -6163,7 +6483,7 @@ ${component_stack}
               init_select(select_1);
               template_effect(() => {
                 if (select_1_value !== (select_1_value = get2(s).role)) {
-                  select_1.value = (select_1.__value = get2(s).role) ?? "", select_option(select_1, get2(s).role);
+                  select_1.value = (select_1.__value = select_1_value) ?? "", select_option(select_1, select_1_value);
                 }
               });
               delegated("change", select_1, (e) => handleRoleChange(get2(s), e.target.value));
@@ -6182,20 +6502,15 @@ ${component_stack}
           }
           reset(td_1);
           var td_2 = sibling(td_1);
-          var text_4 = child(td_2, true);
-          reset(td_2);
+          var text_4 = only_child(td_2, true);
           var td_3 = sibling(td_2);
-          var text_5 = child(td_3, true);
-          reset(td_3);
+          var text_5 = only_child(td_3, true);
           var td_4 = sibling(td_3);
-          var text_6 = child(td_4, true);
-          reset(td_4);
+          var text_6 = only_child(td_4, true);
           var td_5 = sibling(td_4);
-          var text_7 = child(td_5, true);
-          reset(td_5);
+          var text_7 = only_child(td_5, true);
           var td_6 = sibling(td_5);
-          var text_8 = child(td_6, true);
-          reset(td_6);
+          var text_8 = only_child(td_6, true);
           var node_5 = sibling(td_6);
           {
             var consequent_7 = ($$anchor4) => {
@@ -6250,19 +6565,19 @@ ${component_stack}
   delegate(["click", "change"]);
 
   // src/components/StudentDetail.svelte
-  var root3 = from_html(`<div class="loading svelte-15k1m16">Loading progress\u2026</div>`);
-  var root_13 = from_html(`<div class="error svelte-15k1m16"> </div>`);
-  var root_22 = from_html(`<div class="empty svelte-15k1m16">No progress yet</div>`);
-  var root_32 = from_html(`<tr><td class="svelte-15k1m16"> </td><td class="svelte-15k1m16"><span></span> </td><td class="num svelte-15k1m16"> </td><td class="num svelte-15k1m16"> </td><td class="svelte-15k1m16"> </td></tr>`);
+  var root4 = from_html(`<div class="loading svelte-15k1m16">Loading progress\u2026</div>`);
+  var root_14 = from_html(`<div class="error svelte-15k1m16"> </div>`);
+  var root_23 = from_html(`<div class="empty svelte-15k1m16">No progress yet</div>`);
+  var root_33 = from_html(`<tr><td class="svelte-15k1m16"> </td><td class="svelte-15k1m16"><span></span> </td><td class="num svelte-15k1m16"> </td><td class="num svelte-15k1m16"> </td><td class="svelte-15k1m16"> </td></tr>`);
   var root_42 = from_html(`<table class="svelte-15k1m16"><thead><tr><th class="svelte-15k1m16">Task</th><th class="svelte-15k1m16">Status</th><th class="num svelte-15k1m16">Score</th><th class="num svelte-15k1m16">Attempts</th><th class="svelte-15k1m16">Last run</th></tr></thead><tbody></tbody></table>`);
   var root_52 = from_html(`<div class="detail"><button class="back svelte-15k1m16" type="button">&larr; Back to students</button> <h2 class="svelte-15k1m16"> </h2> <!></div>`);
-  var $$css3 = {
+  var $$css4 = {
     hash: "svelte-15k1m16",
     code: ".back.svelte-15k1m16 {display:inline-block;margin-bottom:16px;color:#007acc;padding:0;border:0;background:transparent;cursor:pointer;font-family:inherit;font-size:0.8rem;text-decoration:none;}.back.svelte-15k1m16:hover {text-decoration:underline;}h2.svelte-15k1m16 {font-size:1rem;font-weight:600;margin-bottom:12px;}table.svelte-15k1m16 {width:100%;border-collapse:collapse;}th.svelte-15k1m16, td.svelte-15k1m16 {text-align:left;padding:6px 12px;border-bottom:1px solid #3c3c3c;}th.svelte-15k1m16 {font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:#858585;}.num.svelte-15k1m16 {text-align:right;font-variant-numeric:tabular-nums;}.dot.svelte-15k1m16 {display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;}.dot.green.svelte-15k1m16 {background:#22c55e;}.dot.yellow.svelte-15k1m16 {background:#eab308;}.dot.red.svelte-15k1m16 {background:#f87171;}.loading.svelte-15k1m16, .empty.svelte-15k1m16, .error.svelte-15k1m16 {padding:24px;text-align:center;color:#858585;}.error.svelte-15k1m16 {color:#f87171;}"
   };
   function StudentDetail($$anchor, $$props) {
     push($$props, true);
-    append_styles($$anchor, $$css3);
+    append_styles($$anchor, $$css4);
     let progress = state(proxy([]));
     let loading = state(true);
     let error = state("");
@@ -6305,46 +6620,40 @@ ${component_stack}
     var div = root_52();
     var button = child(div);
     var h2 = sibling(button, 2);
-    var text2 = child(h2);
-    reset(h2);
+    var text2 = only_child(h2);
     var node = sibling(h2, 2);
     {
       var consequent = ($$anchor2) => {
-        var div_1 = root3();
+        var div_1 = root4();
         append($$anchor2, div_1);
       };
       var consequent_1 = ($$anchor2) => {
-        var div_2 = root_13();
-        var text_1 = child(div_2, true);
-        reset(div_2);
+        var div_2 = root_14();
+        var text_1 = only_child(div_2, true);
         template_effect(() => set_text(text_1, get2(error)));
         append($$anchor2, div_2);
       };
       var consequent_2 = ($$anchor2) => {
-        var div_3 = root_22();
+        var div_3 = root_23();
         append($$anchor2, div_3);
       };
       var alternate = ($$anchor2) => {
         var table = root_42();
         var tbody = sibling(child(table));
         each(tbody, 21, () => get2(progress), (r) => r.task_id + r.version, ($$anchor3, r) => {
-          var tr = root_32();
+          var tr = root_33();
           var td = child(tr);
-          var text_2 = child(td, true);
-          reset(td);
+          var text_2 = only_child(td, true);
           var td_1 = sibling(td);
           var span = child(td_1);
           var text_3 = sibling(span);
           reset(td_1);
           var td_2 = sibling(td_1);
-          var text_4 = child(td_2);
-          reset(td_2);
+          var text_4 = only_child(td_2);
           var td_3 = sibling(td_2);
-          var text_5 = child(td_3, true);
-          reset(td_3);
+          var text_5 = only_child(td_3, true);
           var td_4 = sibling(td_3);
-          var text_6 = child(td_4, true);
-          reset(td_4);
+          var text_6 = only_child(td_4, true);
           reset(tr);
           template_effect(
             ($0, $1, $2) => {
@@ -6384,21 +6693,267 @@ ${component_stack}
   }
   delegate(["click"]);
 
+  // src/components/Catalog.svelte
+  var root5 = from_html(`<button class="btn svelte-qickb7" type="button" aria-label="Clear search">Clear</button>`);
+  var root_15 = from_html(`<div class="loading svelte-qickb7">Loading catalog\u2026</div>`);
+  var root_24 = from_html(`<div class="error svelte-qickb7"> </div>`);
+  var root_34 = from_html(`<div class="empty svelte-qickb7"> </div>`);
+  var root_43 = from_html(`<span class="filtered svelte-qickb7"> </span>`);
+  var root_53 = from_html(`<span class="tag svelte-qickb7"> </span>`);
+  var root_62 = from_html(`<span class="tag warn svelte-qickb7">breaking</span>`);
+  var root_72 = from_html(`<li class="task"><button class="node task-node svelte-qickb7" type="button"><span class="task-id svelte-qickb7"> </span> <span class="task-title svelte-qickb7"> </span> <span class="task-tags svelte-qickb7"><!> <!> <!> <span class="tag svelte-qickb7"> </span></span></button></li>`);
+  var root_82 = from_html(`<li class="folder svelte-qickb7"><div class="node folder-node svelte-qickb7"><span class="caret svelte-qickb7">\u25BE</span> <span class="name svelte-qickb7"> </span> <span class="meta svelte-qickb7"> </span> <span class="badge svelte-qickb7"> </span></div> <ul class="sub svelte-qickb7"></ul></li>`);
+  var root_92 = from_html(`<li class="project svelte-qickb7"><div class="node project-node svelte-qickb7"><span class="caret svelte-qickb7">\u25BE</span> <span class="name svelte-qickb7"> </span> <span class="meta svelte-qickb7"> </span> <span class="badge svelte-qickb7"> </span></div> <ul class="sub svelte-qickb7"></ul></li>`);
+  var root_102 = from_html(`<p class="count svelte-qickb7"> <!></p> <ul class="tree svelte-qickb7"></ul>`, 1);
+  var root_11 = from_html(`<div class="section"><div class="section-header svelte-qickb7"><h2 class="svelte-qickb7">Catalog</h2> <button class="btn svelte-qickb7" type="button" aria-label="Refresh catalog"> </button></div> <div class="search svelte-qickb7"><input type="search" placeholder="Search projects, folders, tasks\u2026" aria-label="Search catalog" class="svelte-qickb7"/> <!></div> <!></div>`);
+  var $$css5 = {
+    hash: "svelte-qickb7",
+    code: ".section-header.svelte-qickb7 {display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}h2.svelte-qickb7 {font-size:0.9rem;font-weight:600;}.btn.svelte-qickb7 {padding:4px 12px;background:transparent;border:1px solid #3c3c3c;border-radius:4px;color:#d4d4d4;font-family:inherit;font-size:0.8rem;cursor:pointer;}.btn.svelte-qickb7:hover:not(:disabled) {border-color:#007acc;}.btn.svelte-qickb7:disabled {opacity:0.5;cursor:not-allowed;}.search.svelte-qickb7 {display:flex;gap:8px;margin-bottom:14px;}.search.svelte-qickb7 input:where(.svelte-qickb7) {flex:1;padding:6px 10px;background:#2d2d2d;border:1px solid #3c3c3c;border-radius:4px;color:#d4d4d4;font-family:inherit;font-size:0.8rem;}.search.svelte-qickb7 input:where(.svelte-qickb7):focus {outline:none;border-color:#007acc;}.count.svelte-qickb7 {font-size:0.75rem;color:#858585;margin:0 0 12px;}.filtered.svelte-qickb7 {color:#007acc;}.tree.svelte-qickb7, .sub.svelte-qickb7 {list-style:none;margin:0;padding:0;}.sub.svelte-qickb7 {padding-left:20px;border-left:1px solid #3c3c3c;margin-left:8px;}.project.svelte-qickb7 > .sub:where(.svelte-qickb7), .folder.svelte-qickb7 > .sub:where(.svelte-qickb7) {margin-top:2px;}.node.svelte-qickb7 {display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:4px;}.project-node.svelte-qickb7 {font-weight:600;}.folder-node.svelte-qickb7 {color:#d4d4d4;}.task-node.svelte-qickb7 {width:100%;text-align:left;background:transparent;border:1px solid transparent;color:#d4d4d4;font-family:inherit;font-size:0.8rem;cursor:pointer;}.task-node.svelte-qickb7:hover {background:rgba(0,122,204,0.08);border-color:#3c3c3c;}.caret.svelte-qickb7 {color:#858585;width:12px;font-size:0.7rem;}.name.svelte-qickb7 {flex:0 1 auto;}.meta.svelte-qickb7 {color:#858585;font-size:0.7rem;}.badge.svelte-qickb7 {margin-left:auto;padding:1px 8px;border:1px solid #3c3c3c;border-radius:10px;font-size:0.7rem;color:#858585;}.task-id.svelte-qickb7 {color:#007acc;font-family:inherit;flex:0 0 auto;}.task-title.svelte-qickb7 {flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.task-tags.svelte-qickb7 {display:inline-flex;gap:4px;flex:0 0 auto;}.tag.svelte-qickb7 {padding:0 6px;border:1px solid #3c3c3c;border-radius:3px;font-size:0.65rem;color:#858585;}.tag.warn.svelte-qickb7 {color:#eab308;border-color:#eab308;}.loading.svelte-qickb7, .empty.svelte-qickb7, .error.svelte-qickb7 {padding:24px;text-align:center;color:#858585;}.error.svelte-qickb7 {color:#f87171;}\r\n\r\n	@media (max-width: 600px) {.sub.svelte-qickb7 {padding-left:12px;}.task-title.svelte-qickb7 {white-space:normal;}\r\n	}"
+  };
+  function Catalog($$anchor, $$props) {
+    push($$props, true);
+    append_styles($$anchor, $$css5);
+    let catalog = state(null);
+    let loading = state(true);
+    let error = state("");
+    let query = state("");
+    let activeQuery = state("");
+    let debounce = null;
+    async function load(q) {
+      set(loading, true);
+      set(error, "");
+      try {
+        set(catalog, await getCatalog(q), true);
+        set(activeQuery, q, true);
+      } catch (e) {
+        set(error, e.message, true);
+      } finally {
+        set(loading, false);
+      }
+    }
+    function onInput(e) {
+      set(query, e.target.value, true);
+      if (debounce) clearTimeout(debounce);
+      debounce = setTimeout(() => load(get2(query)), 250);
+    }
+    function clearSearch() {
+      set(query, "");
+      load("");
+    }
+    function taskCount(p) {
+      return p.folders.reduce((n, f) => n + f.tasks.length, 0);
+    }
+    function totalTasks() {
+      if (!get2(catalog)) return 0;
+      return get2(catalog).projects.reduce((n, p) => n + taskCount(p), 0);
+    }
+    onMount(() => {
+      load("");
+    });
+    var div = root_11();
+    var div_1 = child(div);
+    var button = sibling(child(div_1), 2);
+    var text2 = only_child(button, true);
+    reset(div_1);
+    var div_2 = sibling(div_1, 2);
+    var input = child(div_2);
+    remove_input_defaults(input);
+    var node = sibling(input, 2);
+    {
+      var consequent = ($$anchor2) => {
+        var button_1 = root5();
+        delegated("click", button_1, clearSearch);
+        append($$anchor2, button_1);
+      };
+      if_block(node, ($$render) => {
+        if (get2(query)) $$render(consequent);
+      });
+    }
+    reset(div_2);
+    var node_1 = sibling(div_2, 2);
+    {
+      var consequent_1 = ($$anchor2) => {
+        var div_3 = root_15();
+        append($$anchor2, div_3);
+      };
+      var consequent_2 = ($$anchor2) => {
+        var div_4 = root_24();
+        var text_1 = only_child(div_4, true);
+        template_effect(() => set_text(text_1, get2(error)));
+        append($$anchor2, div_4);
+      };
+      var consequent_3 = ($$anchor2) => {
+        var div_5 = root_34();
+        var text_2 = only_child(div_5, true);
+        template_effect(() => set_text(text_2, get2(activeQuery) ? `No matches for "${get2(activeQuery)}"` : "Catalog is empty \u2014 run a sync to populate."));
+        append($$anchor2, div_5);
+      };
+      var consequent_8 = ($$anchor2) => {
+        var fragment = root_102();
+        var p_1 = first_child(fragment);
+        var text_3 = child(p_1);
+        var node_2 = sibling(text_3);
+        {
+          var consequent_4 = ($$anchor3) => {
+            var span = root_43();
+            var text_4 = only_child(span);
+            template_effect(() => set_text(text_4, `\xB7 filtered by "${get2(activeQuery) ?? ""}"`));
+            append($$anchor3, span);
+          };
+          if_block(node_2, ($$render) => {
+            if (get2(activeQuery)) $$render(consequent_4);
+          });
+        }
+        reset(p_1);
+        var ul = sibling(p_1, 2);
+        each(ul, 21, () => get2(catalog).projects, (p) => p.id, ($$anchor3, p) => {
+          var li = root_92();
+          var div_6 = child(li);
+          var span_1 = sibling(child(div_6), 2);
+          var text_5 = only_child(span_1, true);
+          var span_2 = sibling(span_1, 2);
+          var text_6 = only_child(span_2);
+          var span_3 = sibling(span_2, 2);
+          var text_7 = only_child(span_3);
+          reset(div_6);
+          var ul_1 = sibling(div_6, 2);
+          each(ul_1, 21, () => get2(p).folders, (f) => f.id, ($$anchor4, f) => {
+            var li_1 = root_82();
+            var div_7 = child(li_1);
+            var span_4 = sibling(child(div_7), 2);
+            var text_8 = only_child(span_4, true);
+            var span_5 = sibling(span_4, 2);
+            var text_9 = only_child(span_5);
+            var span_6 = sibling(span_5, 2);
+            var text_10 = only_child(span_6, true);
+            reset(div_7);
+            var ul_2 = sibling(div_7, 2);
+            each(ul_2, 21, () => get2(f).tasks, (t) => t.id, ($$anchor5, t) => {
+              var li_2 = root_72();
+              var button_2 = child(li_2);
+              var span_7 = child(button_2);
+              var text_11 = only_child(span_7, true);
+              var span_8 = sibling(span_7, 2);
+              var text_12 = only_child(span_8, true);
+              var span_9 = sibling(span_8, 2);
+              var node_3 = child(span_9);
+              {
+                var consequent_5 = ($$anchor6) => {
+                  var span_10 = root_53();
+                  var text_13 = only_child(span_10, true);
+                  template_effect(() => set_text(text_13, get2(t).block));
+                  append($$anchor6, span_10);
+                };
+                if_block(node_3, ($$render) => {
+                  if (get2(t).block) $$render(consequent_5);
+                });
+              }
+              var node_4 = sibling(node_3, 2);
+              {
+                var consequent_6 = ($$anchor6) => {
+                  var span_11 = root_53();
+                  var text_14 = only_child(span_11, true);
+                  template_effect(() => set_text(text_14, get2(t).level));
+                  append($$anchor6, span_11);
+                };
+                if_block(node_4, ($$render) => {
+                  if (get2(t).level) $$render(consequent_6);
+                });
+              }
+              var node_5 = sibling(node_4, 2);
+              {
+                var consequent_7 = ($$anchor6) => {
+                  var span_12 = root_62();
+                  append($$anchor6, span_12);
+                };
+                if_block(node_5, ($$render) => {
+                  if (get2(t).breaking) $$render(consequent_7);
+                });
+              }
+              var span_13 = sibling(node_5, 2);
+              var text_15 = only_child(span_13);
+              reset(span_9);
+              reset(button_2);
+              reset(li_2);
+              template_effect(() => {
+                set_attribute2(button_2, "aria-label", `Open task ${get2(t).task_id}: ${get2(t).title}`);
+                set_text(text_11, get2(t).task_id);
+                set_text(text_12, get2(t).title || get2(t).slug);
+                set_text(text_15, `v${get2(t).version ?? ""}`);
+              });
+              delegated("click", button_2, () => $$props.onSelectTask(get2(t)));
+              append($$anchor5, li_2);
+            });
+            reset(ul_2);
+            reset(li_1);
+            template_effect(() => {
+              set_text(text_8, get2(f).name || get2(f).code);
+              set_text(text_9, `${get2(f).code ?? ""}${get2(f).level ? ` \xB7 ${get2(f).level}` : ""}`);
+              set_text(text_10, get2(f).tasks.length);
+            });
+            append($$anchor4, li_1);
+          });
+          reset(ul_1);
+          reset(li);
+          template_effect(
+            ($0, $1) => {
+              set_text(text_5, get2(p).name || get2(p).id);
+              set_text(text_6, `${get2(p).id ?? ""} \xB7 v${get2(p).version ?? ""}`);
+              set_text(text_7, `${$0 ?? ""} task${$1 ?? ""}`);
+            },
+            [
+              () => taskCount(get2(p)),
+              () => taskCount(get2(p)) === 1 ? "" : "s"
+            ]
+          );
+          append($$anchor3, li);
+        });
+        reset(ul);
+        template_effect(
+          ($0, $1) => set_text(text_3, `${get2(catalog).projects.length ?? ""} project${get2(catalog).projects.length === 1 ? "" : "s"}
+			\xB7 ${$0 ?? ""} task${$1 ?? ""} `),
+          [() => totalTasks(), () => totalTasks() === 1 ? "" : "s"]
+        );
+        append($$anchor2, fragment);
+      };
+      if_block(node_1, ($$render) => {
+        if (get2(loading) && !get2(catalog)) $$render(consequent_1);
+        else if (get2(error)) $$render(consequent_2, 1);
+        else if (get2(catalog) && get2(catalog).projects.length === 0) $$render(consequent_3, 2);
+        else if (get2(catalog)) $$render(consequent_8, 3);
+      });
+    }
+    reset(div);
+    template_effect(() => {
+      button.disabled = get2(loading);
+      set_text(text2, get2(loading) ? "Refreshing\u2026" : "Refresh");
+      set_value(input, get2(query));
+    });
+    delegated("click", button, () => load(get2(query)));
+    delegated("input", input, onInput);
+    append($$anchor, div);
+    pop();
+  }
+  delegate(["click", "input"]);
+
   // src/App.svelte
-  var root4 = from_html(`<p class="auth-error svelte-1n46o8q"> </p>`);
-  var root_14 = from_html(`<!> <!>`, 1);
-  var root_23 = from_html(`<main class="svelte-1n46o8q"><header class="svelte-1n46o8q"><h1 class="svelte-1n46o8q">Ego Admin</h1> <div class="header-actions svelte-1n46o8q"><span class="role-pill svelte-1n46o8q"> </span> <button class="svelte-1n46o8q">Logout</button></div></header> <!></main>`);
-  var $$css4 = {
+  var root6 = from_html(`<p class="auth-error svelte-1n46o8q"> </p>`);
+  var root_16 = from_html(`<!> <!>`, 1);
+  var root_25 = from_html(`<div class="task-preview svelte-1n46o8q" role="status" aria-live="polite"><h3 class="svelte-1n46o8q">Selected task</h3> <p class="svelte-1n46o8q"><strong> </strong> </p> <p class="hint svelte-1n46o8q">Task Studio editor opens here in a follow-up commit.</p></div>`);
+  var root_35 = from_html(`<main class="svelte-1n46o8q"><header class="svelte-1n46o8q"><h1 class="svelte-1n46o8q">Ego Admin</h1> <nav aria-label="Primary" class="svelte-1n46o8q"><button>Overview</button> <button>Students</button> <button>Catalog</button></nav> <div class="header-actions svelte-1n46o8q"><span class="role-pill svelte-1n46o8q" title="Your role"> </span> <button aria-label="Log out" class="svelte-1n46o8q">Logout</button></div></header> <!></main>`);
+  var $$css6 = {
     hash: "svelte-1n46o8q",
-    code: "html, body {margin:0;height:100%;font-family:'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;background:#1e1e1e;color:#d4d4d4;font-size:14px;line-height:1.5;}#app {height:100%;}main.svelte-1n46o8q {max-width:960px;margin:0 auto;padding:24px;}header.svelte-1n46o8q {display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;}h1.svelte-1n46o8q {font-size:1.2rem;font-weight:700;}.header-actions.svelte-1n46o8q {display:flex;align-items:center;gap:12px;}.role-pill.svelte-1n46o8q {color:#858585;font-size:0.8rem;text-transform:capitalize;}header.svelte-1n46o8q button:where(.svelte-1n46o8q) {padding:6px 12px;background:transparent;border:1px solid #3c3c3c;border-radius:4px;color:#858585;font-family:inherit;font-size:0.8rem;cursor:pointer;}header.svelte-1n46o8q button:where(.svelte-1n46o8q):hover {border-color:#007acc;color:#d4d4d4;}.auth-error.svelte-1n46o8q {color:#f87171;text-align:center;margin:16px 0;}"
+    code: "html, body {margin:0;height:100%;font-family:'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;background:#1e1e1e;color:#d4d4d4;font-size:14px;line-height:1.5;}#app {height:100%;}main.svelte-1n46o8q {max-width:960px;margin:0 auto;padding:24px;}header.svelte-1n46o8q {display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;gap:16px;flex-wrap:wrap;}h1.svelte-1n46o8q {font-size:1.2rem;font-weight:700;}nav.svelte-1n46o8q {display:flex;gap:4px;flex:1 1 auto;}.nav-btn.svelte-1n46o8q {padding:6px 14px;background:transparent;border:1px solid transparent;border-radius:4px;color:#858585;font-family:inherit;font-size:0.8rem;cursor:pointer;}.nav-btn.svelte-1n46o8q:hover {color:#d4d4d4;}.nav-btn.active.svelte-1n46o8q {color:#d4d4d4;border-color:#3c3c3c;background:#2d2d2d;}.header-actions.svelte-1n46o8q {display:flex;align-items:center;gap:12px;}.role-pill.svelte-1n46o8q {color:#858585;font-size:0.8rem;text-transform:capitalize;}header.svelte-1n46o8q button:where(.svelte-1n46o8q):not(.nav-btn) {padding:6px 12px;background:transparent;border:1px solid #3c3c3c;border-radius:4px;color:#858585;font-family:inherit;font-size:0.8rem;cursor:pointer;}header.svelte-1n46o8q button:where(.svelte-1n46o8q):not(.nav-btn):hover {border-color:#007acc;color:#d4d4d4;}.auth-error.svelte-1n46o8q {color:#f87171;text-align:center;margin:16px 0;}.task-preview.svelte-1n46o8q {margin-top:24px;padding:16px;background:#2d2d2d;border:1px solid #3c3c3c;border-radius:6px;}.task-preview.svelte-1n46o8q h3:where(.svelte-1n46o8q) {font-size:0.8rem;font-weight:600;margin:0 0 8px;color:#858585;text-transform:uppercase;letter-spacing:0.05em;}.task-preview.svelte-1n46o8q p:where(.svelte-1n46o8q) {margin:0 0 6px;}.task-preview.svelte-1n46o8q .hint:where(.svelte-1n46o8q) {color:#858585;font-size:0.75rem;}\r\n\r\n	@media (max-width: 600px) {header.svelte-1n46o8q {flex-direction:column;align-items:stretch;}nav.svelte-1n46o8q {flex-wrap:wrap;}\r\n	}"
   };
   function App($$anchor, $$props) {
     push($$props, true);
-    append_styles($$anchor, $$css4);
+    append_styles($$anchor, $$css6);
     let loggedIn = state(false);
     let userRole = state("");
     let authError = state("");
+    let view = state("overview");
     let selectedStudent = state(null);
+    let selectedTask = state(null);
     async function restoreSession() {
       if (!getToken()) return;
       try {
@@ -6429,6 +6984,7 @@ ${component_stack}
       set(authError, "");
       set(userRole, data.role, true);
       set(loggedIn, true);
+      set(view, "overview");
     }
     function handleSelect(studentId, username) {
       set(selectedStudent, { id: studentId, username }, true);
@@ -6436,17 +6992,31 @@ ${component_stack}
     function handleBack() {
       set(selectedStudent, null);
     }
+    function handleSelectTask(task) {
+      set(selectedTask, task, true);
+    }
+    function navTo(next2) {
+      set(view, next2, true);
+      set(selectedStudent, null);
+      set(selectedTask, null);
+    }
+    function logout() {
+      setToken(null);
+      set(loggedIn, false);
+      set(userRole, "");
+      set(selectedStudent, null);
+      set(selectedTask, null);
+    }
     var fragment = comment();
     var node = first_child(fragment);
     {
       var consequent_1 = ($$anchor2) => {
-        var fragment_1 = root_14();
+        var fragment_1 = root_16();
         var node_1 = first_child(fragment_1);
         {
           var consequent = ($$anchor3) => {
-            var p = root4();
-            var text2 = child(p, true);
-            reset(p);
+            var p = root6();
+            var text2 = only_child(p, true);
             template_effect(() => set_text(text2, get2(authError)));
             append($$anchor3, p);
           };
@@ -6459,48 +7029,104 @@ ${component_stack}
         append($$anchor2, fragment_1);
       };
       var alternate_1 = ($$anchor2) => {
-        var main = root_23();
+        var main = root_35();
         var header = child(main);
-        var div = sibling(child(header), 2);
+        var nav = sibling(child(header), 2);
+        var button = child(nav);
+        let classes;
+        var button_1 = sibling(button, 2);
+        let classes_1;
+        var button_2 = sibling(button_1, 2);
+        let classes_2;
+        reset(nav);
+        var div = sibling(nav, 2);
         var span = child(div);
-        var text_1 = child(span, true);
-        reset(span);
-        var button = sibling(span, 2);
+        var text_1 = only_child(span, true);
+        var button_3 = sibling(span, 2);
         reset(div);
         reset(header);
         var node_3 = sibling(header, 2);
         {
           var consequent_2 = ($$anchor3) => {
-            StudentDetail($$anchor3, {
-              get studentId() {
-                return get2(selectedStudent).id;
-              },
-              get username() {
-                return get2(selectedStudent).username;
-              },
-              onBack: handleBack
-            });
+            Overview($$anchor3, {});
           };
-          var alternate = ($$anchor3) => {
-            StudentList($$anchor3, {
-              get userRole() {
-                return get2(userRole);
-              },
-              onSelect: handleSelect
-            });
+          var consequent_4 = ($$anchor3) => {
+            var fragment_3 = comment();
+            var node_4 = first_child(fragment_3);
+            {
+              var consequent_3 = ($$anchor4) => {
+                StudentDetail($$anchor4, {
+                  get studentId() {
+                    return get2(selectedStudent).id;
+                  },
+                  get username() {
+                    return get2(selectedStudent).username;
+                  },
+                  onBack: handleBack
+                });
+              };
+              var alternate = ($$anchor4) => {
+                StudentList($$anchor4, {
+                  get userRole() {
+                    return get2(userRole);
+                  },
+                  onSelect: handleSelect
+                });
+              };
+              if_block(node_4, ($$render) => {
+                if (get2(selectedStudent)) $$render(consequent_3);
+                else $$render(alternate, -1);
+              });
+            }
+            append($$anchor3, fragment_3);
+          };
+          var consequent_6 = ($$anchor3) => {
+            var fragment_6 = root_16();
+            var node_5 = first_child(fragment_6);
+            Catalog(node_5, { onSelectTask: handleSelectTask });
+            var node_6 = sibling(node_5, 2);
+            {
+              var consequent_5 = ($$anchor4) => {
+                var div_1 = root_25();
+                var p_1 = sibling(child(div_1), 2);
+                var strong = child(p_1);
+                var text_2 = only_child(strong, true);
+                var text_3 = sibling(strong);
+                reset(p_1);
+                next(2);
+                reset(div_1);
+                template_effect(() => {
+                  set_text(text_2, get2(selectedTask).task_id);
+                  set_text(text_3, ` \u2014 ${(get2(selectedTask).title || get2(selectedTask).slug) ?? ""}`);
+                });
+                append($$anchor4, div_1);
+              };
+              if_block(node_6, ($$render) => {
+                if (get2(selectedTask)) $$render(consequent_5);
+              });
+            }
+            append($$anchor3, fragment_6);
           };
           if_block(node_3, ($$render) => {
-            if (get2(selectedStudent)) $$render(consequent_2);
-            else $$render(alternate, -1);
+            if (get2(view) === "overview") $$render(consequent_2);
+            else if (get2(view) === "students") $$render(consequent_4, 1);
+            else if (get2(view) === "catalog") $$render(consequent_6, 2);
           });
         }
         reset(main);
-        template_effect(() => set_text(text_1, get2(userRole)));
-        delegated("click", button, () => {
-          setToken(null);
-          set(loggedIn, false);
-          set(userRole, "");
+        template_effect(() => {
+          classes = set_class(button, 1, "nav-btn svelte-1n46o8q", null, classes, { active: get2(view) === "overview" });
+          set_attribute2(button, "aria-current", get2(view) === "overview" ? "page" : void 0);
+          classes_1 = set_class(button_1, 1, "nav-btn svelte-1n46o8q", null, classes_1, { active: get2(view) === "students" });
+          set_attribute2(button_1, "aria-current", get2(view) === "students" ? "page" : void 0);
+          classes_2 = set_class(button_2, 1, "nav-btn svelte-1n46o8q", null, classes_2, { active: get2(view) === "catalog" });
+          set_attribute2(button_2, "aria-current", get2(view) === "catalog" ? "page" : void 0);
+          set_text(text_1, get2(userRole));
         });
+        delegated("click", button, () => navTo("overview"));
+        delegated("click", button_1, () => navTo("students"));
+        delegated("click", button_2, () => navTo("catalog"));
+        delegated("click", button_3, logout);
         append($$anchor2, main);
       };
       if_block(node, ($$render) => {
