@@ -8,8 +8,11 @@ All endpoints require ``admin`` role (per ADR-0001 D8).
 
 from __future__ import annotations
 
+import os
 import re
+import sqlite3
 import tempfile
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -26,6 +29,8 @@ from ego_server.models import (
     OverviewCounts,
     OverviewDTO,
     ResetPasswordRequest,
+    StudioSaveRequest,
+    StudioSaveResponse,
     StudioValidateRequest,
     StudioValidateResponse,
     StudentSummaryDTO,
@@ -523,35 +528,49 @@ def _semver_gt(a: str, b: str) -> bool:
     return ta > tb
 
 
-@router.post(
-    "/tasks/{task_id}/studio/validate",
-    response_model=StudioValidateResponse,
-    dependencies=[Depends(require_role("admin"))],
-)
-async def validate_task_studio(
-    task_id: str, body: StudioValidateRequest, db: DbDep
-) -> StudioValidateResponse:
-    """Validate a Task Studio candidate without modifying canonical files.
+@dataclass(frozen=True)
+class _StudioCandidate:
+    """Result of validating a Task Studio candidate (shared by validate + save).
 
-    Accepts the full candidate markdown (with YAML frontmatter), solution,
-    and tests sidecars. Validation is entirely read-only with respect to the
-    content repo — the candidate is parsed from a temporary isolated
-    directory, so canonical files remain byte-identical.
+    Carries every value the save endpoint needs to write files and verify
+    the post-sync DB state, without re-reading or re-validating.
+    """
 
-    Failure modes:
+    row: sqlite3.Row
+    root: Path
+    md_canonical: Path
+    sol_canonical: Path
+    tests_canonical: Path
+    canonical_md: str
+    canonical_sol: str
+    canonical_tests: str
+    tests_existed: bool
+    candidate_version: str
+    current_version: str
+    content_changed: bool
+    version_policy: str
+
+
+def _validate_studio_candidate(
+    db: sqlite3.Connection, task_id: str, body: StudioValidateRequest
+) -> _StudioCandidate:
+    """Run all Task Studio validation checks and return a typed result.
+
+    Raises :class:`fastapi.HTTPException` on any validation failure.
+    Shared by POST ``/studio/validate`` (read-only) and PUT ``/studio``
+    (write + sync). No canonical files are modified here — the candidate
+    is parsed from a temp isolated directory.
+
+    Failure modes (same as :func:`validate_task_studio`):
 
     - **404** — task ``task_id`` not found in the DB.
-    - **409** — content repo is unconfigured / non-local / missing / not
-      writable; the DB-stored ``md_path`` escapes the canonical root via
-      ``..`` or a symlink; ``expected_version`` does not match the current
-      DB version (optimistic concurrency); or the project uses
-      ``version_policy=declare``, content changed, and the candidate
-      version is not strictly greater than the current version.
-    - **422** — frontmatter is missing/malformed; frontmatter ``id`` does
-      not match the DB task identity; candidate version is not valid
-      strict SemVer; the candidate markdown + sidecars fail to parse
-      through :func:`ego.parser.parse_task_file`; or the solution / tests
-      do not compile as Python.
+    - **409** — content repo unconfigured / non-local / missing / not
+      writable; ``md_path`` or a sidecar path escapes the canonical root;
+      ``expected_version`` mismatch; or ``version_policy=declare`` with
+      changed content but candidate version not strictly greater.
+    - **422** — frontmatter missing/malformed; frontmatter ``id`` mismatch;
+      candidate version not strict SemVer; candidate fails to parse; or
+      solution / tests do not compile as Python.
     """
     row = db.execute(
         "SELECT id, task_id, version, md_path, project_id FROM tasks WHERE id = ?",
@@ -584,6 +603,18 @@ async def validate_task_studio(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="task markdown path escapes content root",
+        )
+    sol_canonical = contained_path(root, _sidecar_rel(md_path_str, ".solution.py"))
+    if sol_canonical is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="solution sidecar path escapes content root",
+        )
+    tests_canonical = contained_path(root, _sidecar_rel(md_path_str, ".tests.py"))
+    if tests_canonical is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="tests sidecar path escapes content root",
         )
 
     # --- expected_version optimistic concurrency (409 on mismatch) ---
@@ -642,18 +673,9 @@ async def validate_task_studio(
 
     # --- content changed? (read canonical for comparison; no writes) ---
     canonical_md = md_canonical.read_text(encoding="utf-8") if md_canonical.is_file() else ""
-    sol_canonical_p = contained_path(root, _sidecar_rel(md_path_str, ".solution.py"))
-    canonical_sol = (
-        sol_canonical_p.read_text(encoding="utf-8")
-        if (sol_canonical_p is not None and sol_canonical_p.is_file())
-        else ""
-    )
-    tests_canonical_p = contained_path(root, _sidecar_rel(md_path_str, ".tests.py"))
-    canonical_tests = (
-        tests_canonical_p.read_text(encoding="utf-8")
-        if (tests_canonical_p is not None and tests_canonical_p.is_file())
-        else ""
-    )
+    canonical_sol = sol_canonical.read_text(encoding="utf-8") if sol_canonical.is_file() else ""
+    tests_existed = tests_canonical.is_file()
+    canonical_tests = tests_canonical.read_text(encoding="utf-8") if tests_existed else ""
     content_changed = (
         body.markdown != canonical_md
         or body.solution_py != canonical_sol
@@ -708,13 +730,264 @@ async def validate_task_studio(
                 detail=f"tests_py has a syntax error: {e}",
             )
 
-    return StudioValidateResponse(
-        valid=True,
-        task_id=row["task_id"],
-        current_version=current_version,
+    return _StudioCandidate(
+        row=row,
+        root=root,
+        md_canonical=md_canonical,
+        sol_canonical=sol_canonical,
+        tests_canonical=tests_canonical,
+        canonical_md=canonical_md,
+        canonical_sol=canonical_sol,
+        canonical_tests=canonical_tests,
+        tests_existed=tests_existed,
         candidate_version=candidate_version,
+        current_version=current_version,
         content_changed=content_changed,
         version_policy=version_policy,
+    )
+
+
+@router.post(
+    "/tasks/{task_id}/studio/validate",
+    response_model=StudioValidateResponse,
+    dependencies=[Depends(require_role("admin"))],
+)
+async def validate_task_studio(
+    task_id: str, body: StudioValidateRequest, db: DbDep
+) -> StudioValidateResponse:
+    """Validate a Task Studio candidate without modifying canonical files.
+
+    Accepts the full candidate markdown (with YAML frontmatter), solution,
+    and tests sidecars. Validation is entirely read-only with respect to the
+    content repo — the candidate is parsed from a temporary isolated
+    directory, so canonical files remain byte-identical.
+
+    Failure modes:
+
+    - **404** — task ``task_id`` not found in the DB.
+    - **409** — content repo is unconfigured / non-local / missing / not
+      writable; the DB-stored ``md_path`` escapes the canonical root via
+      ``..`` or a symlink; ``expected_version`` does not match the current
+      DB version (optimistic concurrency); or the project uses
+      ``version_policy=declare``, content changed, and the candidate
+      version is not strictly greater than the current version.
+    - **422** — frontmatter is missing/malformed; frontmatter ``id`` does
+      not match the DB task identity; candidate version is not valid
+      strict SemVer; the candidate markdown + sidecars fail to parse
+      through :func:`ego.parser.parse_task_file`; or the solution / tests
+      do not compile as Python.
+    """
+    cand = _validate_studio_candidate(db, task_id, body)
+    return StudioValidateResponse(
+        valid=True,
+        task_id=cand.row["task_id"],
+        current_version=cand.current_version,
+        candidate_version=cand.candidate_version,
+        content_changed=cand.content_changed,
+        version_policy=cand.version_policy,
+    )
+
+
+# === Task Studio save (PUT /admin/tasks/{task_id}/studio) ===
+
+
+@dataclass
+class _FileBackup:
+    """Snapshot of a canonical file's pre-write state for rollback restore."""
+
+    path: Path
+    existed: bool = False
+    data: bytes | None = None  # original bytes if the file existed
+    replaced: bool = False  # whether os.replace was applied to this file
+
+
+def _atomic_replace(path: Path, content: str, backup: _FileBackup) -> None:
+    """Write ``content`` to ``path`` via temp file + ``os.replace``.
+
+    The temp file is created in the same directory (so the rename is
+    atomic on the same filesystem), flushed and fsync'd before the
+    replace. The backup snapshot is recorded for potential rollback.
+    """
+    backup.data = path.read_bytes() if path.is_file() else None
+    backup.existed = backup.data is not None
+
+    tmp_fd, tmp_name = tempfile.mkstemp(
+        dir=str(path.parent), prefix=".ego-studio-tmp-", suffix=path.suffix
+    )
+    try:
+        with os.fdopen(tmp_fd, "wb") as f:
+            f.write(content.encode("utf-8"))
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_name, str(path))
+        backup.replaced = True
+    except BaseException:
+        # Clean up the temp file if replace failed.
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
+
+
+def _restore_files(backups: list[_FileBackup]) -> None:
+    """Atomically restore each file to its pre-write state.
+
+    For files that existed before: write the original bytes via temp +
+    ``os.replace``. For files that did not exist but were created: remove
+    them. Files that were never replaced are skipped.
+    """
+    for b in backups:
+        if not b.replaced:
+            continue
+        if b.existed and b.data is not None:
+            tmp_fd, tmp_name = tempfile.mkstemp(
+                dir=str(b.path.parent), prefix=".ego-studio-restore-", suffix=b.path.suffix
+            )
+            try:
+                with os.fdopen(tmp_fd, "wb") as f:
+                    f.write(b.data)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp_name, str(b.path))
+            except BaseException:
+                try:
+                    os.unlink(tmp_name)
+                except OSError:
+                    pass
+                raise
+        else:
+            # File did not exist before our write — remove what we created.
+            try:
+                os.unlink(str(b.path))
+            except FileNotFoundError:
+                pass
+
+
+@router.put(
+    "/tasks/{task_id}/studio",
+    response_model=StudioSaveResponse,
+    dependencies=[Depends(require_role("admin"))],
+)
+async def save_task_studio(task_id: str, body: StudioSaveRequest, db: DbDep) -> StudioSaveResponse:
+    """Save a Task Studio candidate to canonical files + re-sync the DB.
+
+    Admin-only (mentor/student forbidden). Reuses the same typed candidate
+    fields and validation as POST ``/studio/validate``. After validation
+    passes:
+
+    1. Repeat the optimistic ``expected_version`` check immediately before
+       writing (re-read from DB) to close the TOCTOU window.
+    2. Atomically replace the canonical ``.md``, ``.solution.py``, and
+       ``.tests.py`` (temp file in the same directory, flush + fsync, then
+       ``os.replace``). The original bytes/existence of every file are
+       retained for rollback.
+    3. Trigger :func:`ego_server.sync.sync_from_path` against the
+       configured repo root with ``source='admin-studio'``.
+    4. Verify sync reported zero errors and the task row was updated to
+       the candidate version (when content changed). If either check
+       fails, rollback the DB savepoint, atomically restore all canonical
+       files, and return a 409 error.
+    5. Commit the DB only after successful sync.
+
+    No malformed, version-conflict, read-only, or traversal request may
+    change canonical bytes — validation runs before any write, and the
+    pre-write expected_version check guards against concurrent edits.
+
+    Failure modes (in addition to those from validate):
+
+    - **409** — stale ``expected_version`` detected at write time
+      (concurrent edit); sync reported errors; or sync completed but the
+      expected task/version was not updated in the DB.
+    - **500** — an unexpected exception during write or sync triggers a
+      full rollback (DB + file restore) and is re-raised.
+    """
+    cand = _validate_studio_candidate(db, task_id, body)
+
+    # --- files to write (md + solution always; tests only if non-empty) ---
+    writes: list[tuple[Path, str]] = [
+        (cand.md_canonical, body.markdown),
+        (cand.sol_canonical, body.solution_py),
+    ]
+    if body.tests_py:
+        writes.append((cand.tests_canonical, body.tests_py))
+
+    backups: list[_FileBackup] = [_FileBackup(path=p) for p, _ in writes]
+
+    # --- DB savepoint wraps all mutations (sync writes inside it) ---
+    db.execute("SAVEPOINT ego_studio_save")
+    try:
+        # --- repeat optimistic expected_version check immediately before write ---
+        fresh = db.execute("SELECT version FROM tasks WHERE id = ?", (cand.row["id"],)).fetchone()
+        if fresh is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Task not found (deleted before save)",
+            )
+        if fresh["version"] != body.expected_version:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"expected_version {body.expected_version!r} does not match "
+                    f"current version {fresh['version']!r} (concurrent edit)"
+                ),
+            )
+
+        # --- atomically replace canonical files ---
+        for (target, content), backup in zip(writes, backups, strict=True):
+            _atomic_replace(target, content, backup)
+
+        # --- trigger sync against the configured repo root ---
+        result = sync_from_path(db, cand.root, source="admin-studio", repo_url=str(cand.root))
+
+        # --- verify sync succeeded ---
+        if result.errors > 0:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"sync reported {result.errors} error(s) after save; "
+                    f"all changes rolled back: {result.error_details_text}"
+                ),
+            )
+
+        # --- verify task/version was updated when content changed ---
+        post = db.execute("SELECT version FROM tasks WHERE id = ?", (cand.row["id"],)).fetchone()
+        if post is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="task row missing after sync; all changes rolled back",
+            )
+        new_version = post["version"]
+        if cand.content_changed and new_version == cand.current_version:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"expected task version to be updated to {cand.candidate_version} "
+                    f"but DB still shows {new_version}; all changes rolled back"
+                ),
+            )
+
+        # --- commit DB only after successful sync ---
+        db.execute("RELEASE SAVEPOINT ego_studio_save")
+        db.commit()
+    except HTTPException:
+        db.execute("ROLLBACK TO SAVEPOINT ego_studio_save")
+        db.execute("RELEASE SAVEPOINT ego_studio_save")
+        _restore_files(backups)
+        raise
+    except Exception as e:
+        db.execute("ROLLBACK TO SAVEPOINT ego_studio_save")
+        db.execute("RELEASE SAVEPOINT ego_studio_save")
+        _restore_files(backups)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"save failed unexpectedly; all changes rolled back: {e}",
+        ) from e
+
+    return StudioSaveResponse(
+        task_id=cand.row["task_id"],
+        new_version=new_version,
+        sync=_to_dto(result, repo_url=str(cand.root)),
     )
 
 
