@@ -297,6 +297,16 @@ class TaskStudioDTO(BaseModel):
     the canonical root via ``..`` or a symlink. When content cannot be
     read safely, the string fields are empty and only the DB identity
     metadata is returned.
+
+    ``content_etag`` is a deterministic lowercase SHA-256 over the
+    tagged, length-delimited exact bytes AND existence/missing state
+    of all three canonical files (``.md``, ``.solution.py``,
+    ``.tests.py``). It is returned whenever all three paths are safely
+    resolved and readable (a missing optional ``.tests.py`` is encoded
+    as an explicit missing state, not an error). It is empty when any
+    path escapes the root or content cannot be read safely. Clients
+    must send it back as ``expected_content_etag`` on validate/save
+    for optimistic concurrency.
     """
 
     task_id: str
@@ -305,6 +315,8 @@ class TaskStudioDTO(BaseModel):
     markdown: str = ""
     solution_py: str = ""
     tests_py: str = ""
+    content_etag: str = ""
+    version_policy: str | None = None
     writable: bool = False
     read_only_reason: str = ""
 
@@ -317,10 +329,13 @@ class StudioValidateRequest(BaseModel):
 
     The candidate is validated entirely in-memory — no canonical files are
     modified. ``expected_version`` must match the current DB version of the
-    task (optimistic concurrency); a mismatch yields 409.
+    task and ``expected_content_etag`` must match the deterministic SHA-256
+    over the current canonical files' exact bytes + existence state
+    (optimistic concurrency); a mismatch on either yields 409.
     """
 
     expected_version: str
+    expected_content_etag: str
     markdown: str  # full .md including YAML frontmatter
     solution_py: str
     tests_py: str = ""
@@ -349,8 +364,9 @@ class StudioSaveRequest(StudioValidateRequest):
     """Request body for PUT /admin/tasks/{task_id}/studio.
 
     Identical typed candidate fields as :class:`StudioValidateRequest`:
-    ``expected_version``, ``markdown``, ``solution_py``, ``tests_py``.
-    The same validation checks run before any canonical file is touched.
+    ``expected_version``, ``expected_content_etag``, ``markdown``,
+    ``solution_py``, ``tests_py``. The same validation checks run
+    before any canonical file is touched.
     """
 
 
@@ -358,13 +374,19 @@ class StudioSaveResponse(BaseModel):
     """Success response for PUT /admin/tasks/{task_id}/studio.
 
     Returned only after the candidate passes validation, canonical files
-    are atomically replaced, and the subsequent ``sync_from_path`` run
-    succeeds with zero errors. ``new_version`` is the task version now
-    stored in the DB (which equals the candidate version when content
-    changed, or the unchanged current version when nothing changed).
-    ``sync`` carries the sync counts from the post-save re-sync.
+    are replaced (each ``os.replace`` is per-file atomic; in-process
+    exceptions attempt best-effort restoration; a process/host crash can
+    leave the three files in a mixed state), and the subsequent
+    ``sync_from_path`` run succeeds with zero errors. ``new_version`` is
+    the task version now stored in the DB (which equals the candidate
+    version when content changed, or the unchanged current version when
+    nothing changed). ``content_etag`` is the new deterministic etag over
+    the post-save canonical files' exact bytes + existence state, for the
+    UI to send on the next request. ``sync`` carries the sync counts from
+    the post-save re-sync.
     """
 
     task_id: str
     new_version: str
+    content_etag: str = ""
     sync: SyncResultDTO

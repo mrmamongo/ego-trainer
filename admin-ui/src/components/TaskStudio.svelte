@@ -35,6 +35,7 @@
 	let solBuffer = $state('');
 	let testsBuffer = $state('');
 	let expectedVersion = $state('');
+	let expectedEtag = $state('');
 
 	let activeTab = $state<Tab>('statement');
 
@@ -75,6 +76,7 @@
 			solBuffer = data.solution_py;
 			testsBuffer = data.tests_py;
 			expectedVersion = data.version;
+			expectedEtag = data.content_etag;
 		} catch (e) {
 			studio = null;
 			loadError = (e as Error).message;
@@ -89,6 +91,7 @@
 		solBuffer = studio.solution_py;
 		testsBuffer = studio.tests_py;
 		expectedVersion = studio.version;
+		expectedEtag = studio.content_etag;
 		validateResult = null;
 		validateError = '';
 		saveResult = null;
@@ -109,6 +112,7 @@
 		try {
 			const res = await validateTaskStudio(taskId, {
 				expected_version: expectedVersion,
+				expected_content_etag: expectedEtag,
 				markdown: mdBuffer,
 				solution_py: solBuffer,
 				tests_py: testsBuffer,
@@ -132,14 +136,16 @@
 		try {
 			const res = await saveTaskStudio(taskId, {
 				expected_version: expectedVersion,
+				expected_content_etag: expectedEtag,
 				markdown: mdBuffer,
 				solution_py: solBuffer,
 				tests_py: testsBuffer,
 			});
 			saveResult = res;
-			// reload server state + update expected version to the new version
+			// Reload to pick up fresh canonical state; load() updates
+			// expectedVersion/expectedEtag from the server. Do NOT overwrite
+			// that fresh state with the (now-stale) save response values.
 			await load();
-			expectedVersion = res.new_version;
 			notice = `Saved (v${res.new_version}) — reloaded from server`;
 		} catch (e) {
 			saveError = (e as Error).message;
@@ -170,12 +176,13 @@
 			<div><dt>Task</dt><dd><strong>{taskLabel || studio.task_id}</strong></dd></div>
 			<div><dt>ID</dt><dd><code>{taskId}</code></dd></div>
 			<div><dt>Version</dt><dd><code>v{studio.version}</code>{#if isDirty()} <span class="dirty" title="Unsaved changes">● dirty</span>{/if}</dd></div>
+			<div><dt>Version policy</dt><dd><code>{studio.version_policy ?? '—'}</code></dd></div>
 			<div><dt>Canonical path</dt><dd><code>{studio.md_path || '—'}</code></dd></div>
 		</dl>
 
 		{#if !studio.writable}
 			<div class="readonly-banner" role="alert">
-				Read-only: {studio.read_only_reason || 'content repo is not writable'}
+				Read-only: {studio.read_only_reason || 'content repo is not writable'}. Editing is disabled; ask an admin to make the content repo writable (configure a local repo path with write access).
 			</div>
 		{:else if !canEdit}
 			<div class="readonly-banner" role="alert">
