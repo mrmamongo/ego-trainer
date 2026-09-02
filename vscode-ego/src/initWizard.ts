@@ -75,15 +75,9 @@ export async function runServerInit(
     });
     if (!password) return false;
 
-    let role = 'student';
-    if (authMode.mode === 'register') {
-        const picked = await vscode.window.showQuickPick(
-            ['student', 'mentor', 'admin'],
-            { placeHolder: 'Select role', ignoreFocusOut: true }
-        );
-        if (!picked) return false;
-        role = picked;
-    }
+    // Self-registration always creates a student; the server ignores any
+    // client-supplied role. No role picker is offered.
+    const role = 'student';
 
     return vscode.window.withProgress(
         {
