@@ -28,7 +28,14 @@ from ego_server.models import (
     SyncLogRow,
     SyncResultDTO,
     SyncTasksRequest,
+    TaskStudioDTO,
     UpdateRoleRequest,
+)
+from ego_server.authoring import (
+    contained_path,
+    is_writable,
+    resolve_root,
+    safe_config,
 )
 from ego_server.sync import sync_from_path
 
@@ -360,6 +367,125 @@ async def get_catalog(db: DbDep, q: str | None = None) -> CatalogDTO:
         )
 
     return CatalogDTO(projects=projects_out)
+
+
+# === Task Studio read (GET /admin/tasks/{task_id}/studio) ===
+
+
+@router.get(
+    "/tasks/{task_id}/studio",
+    response_model=TaskStudioDTO,
+    dependencies=[Depends(require_role("mentor", "admin"))],
+)
+async def get_task_studio(task_id: str, db: DbDep) -> TaskStudioDTO:
+    """Read a task's canonical markdown + .solution.py/.tests.py sidecars.
+
+    Content is read directly from the configured LOCAL content-repo root
+    (:class:`ego_server.content_config.TasksRepoConfig`) — never from
+    SQLite blobs. The DB row supplies only identity metadata (``id``,
+    ``version``, ``md_path``).
+
+    ``writable`` is ``False`` with a concise ``read_only_reason`` when the
+    repo is unconfigured / non-local / missing / unwritable, or when any
+    resolved task/sidecar path escapes the canonical root via ``..`` or a
+    symlink. When content cannot be read safely, the string fields are
+    empty and only the DB identity metadata is returned.
+
+    A missing optional ``.tests.py`` sidecar yields an empty string. A
+    missing required ``.md`` returns 404; a missing required
+    ``.solution.py`` returns 409 (task exists in DB but its solution
+    sidecar is inconsistent).
+    """
+    row = db.execute(
+        "SELECT id, task_id, version, md_path FROM tasks WHERE id = ?",
+        (task_id,),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found",
+        )
+
+    md_path_str = row["md_path"] or ""
+    base = TaskStudioDTO(
+        task_id=row["task_id"],
+        version=row["version"],
+        md_path=md_path_str,
+    )
+
+    root_status = resolve_root(safe_config())
+    if not root_status.ok or root_status.path is None:
+        return base.model_copy(update={"writable": False, "read_only_reason": root_status.reason})
+    root = root_status.path
+
+    writable = True
+    reason = ""
+    if not is_writable(root):
+        writable = False
+        reason = "content repo root is not writable"
+
+    # --- markdown (required) ---
+    md = contained_path(root, md_path_str)
+    if md is None:
+        return base.model_copy(
+            update={
+                "writable": False,
+                "read_only_reason": "task markdown path escapes content root",
+            }
+        )
+    if not md.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="task markdown not found in content repo",
+        )
+    markdown = md.read_text(encoding="utf-8")
+
+    # --- solution sidecar (required) ---
+    sol_rel = _sidecar_rel(md_path_str, ".solution.py")
+    sol = contained_path(root, sol_rel)
+    if sol is None:
+        return base.model_copy(
+            update={
+                "markdown": markdown,
+                "writable": False,
+                "read_only_reason": "solution path escapes content root",
+            }
+        )
+    if not sol.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="solution sidecar missing in content repo",
+        )
+    solution_py = sol.read_text(encoding="utf-8")
+
+    # --- tests sidecar (optional) ---
+    tests_rel = _sidecar_rel(md_path_str, ".tests.py")
+    tests = contained_path(root, tests_rel)
+    tests_py = ""
+    if tests is None:
+        writable = False
+        reason = "tests path escapes content root"
+    elif tests.is_file():
+        tests_py = tests.read_text(encoding="utf-8")
+
+    return base.model_copy(
+        update={
+            "markdown": markdown,
+            "solution_py": solution_py,
+            "tests_py": tests_py,
+            "writable": writable,
+            "read_only_reason": reason,
+        }
+    )
+
+
+def _sidecar_rel(md_path_str: str, suffix: str) -> str:
+    """Derive a sidecar path string from the task's ``md_path``.
+
+    ``task_f1.md`` + ``.solution.py`` → ``task_f1.solution.py``. Preserves
+    any relative directory component of ``md_path_str``.
+    """
+    return str(Path(md_path_str).with_suffix(suffix))
 
 
 # === Helpers ===

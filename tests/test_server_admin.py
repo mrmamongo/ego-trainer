@@ -593,3 +593,310 @@ def test_catalog_search_no_match_returns_empty(client: TestClient) -> None:
     r = client.get("/admin/catalog?q=zzznomatch", headers=_auth_headers(a_token))
     assert r.status_code == 200
     assert r.json() == {"projects": []}
+
+
+# === GET /admin/tasks/{task_id}/studio ===
+
+
+@pytest.fixture
+def studio_env(tmp_path, monkeypatch):
+    """Build a local content repo + DB task row + TestClient.
+
+    Creates ``<tmp>/repo/tasks/task_f1.md`` with ``.solution.py`` and
+    ``.tests.py`` sidecars, points ``EGO_TASKS_REPO_URL`` at the repo,
+    reloads ``content_config`` so the singleton picks up the env, and
+    inserts a matching ``tasks`` row whose ``md_path`` is relative to
+    the repo root.
+    """
+    repo = tmp_path / "repo"
+    tasks_dir = repo / "tasks"
+    tasks_dir.mkdir(parents=True)
+    (tasks_dir / "task_f1.md").write_text(
+        "# Задача F1: Studio\n\n## Условие\nDo the thing.\n",
+        encoding="utf-8",
+    )
+    (tasks_dir / "task_f1.solution.py").write_text(
+        "def task_f1():\n    return 42\n",
+        encoding="utf-8",
+    )
+    (tasks_dir / "task_f1.tests.py").write_text(
+        "from solution import task_f1\n\n@case\ndef t():\n    assert task_f1() == 42\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("EGO_DB_PATH", str(tmp_path / "test.db"))
+    monkeypatch.setenv("EGO_TASKS_REPO_URL", str(repo))
+
+    import ego_server.config
+    import ego_server.content_config
+    import ego_server.db
+
+    importlib.reload(ego_server.config)
+    importlib.reload(ego_server.content_config)
+    importlib.reload(ego_server.db)
+
+    from ego_server.db import init_db
+
+    init_db()
+
+    from ego_server.db import get_connection
+
+    conn = get_connection()
+    try:
+        conn.execute(
+            "INSERT INTO tasks (id, block, slug, task_id, title, level, tags, "
+            "version, content_hash, breaking, md_path, folder_id, project_id, "
+            "created_at, updated_at) "
+            "VALUES ('F1', 'F', 'block_f_simple', 'F1', 'Studio', 'easy', '[]', "
+            "'1.0.0', 'h', 0, 'tasks/task_f1.md', NULL, NULL, "
+            "datetime('now'), datetime('now'))"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    import ego_server.main
+
+    importlib.reload(ego_server.main)
+    from ego_server.main import app
+
+    with TestClient(app) as c:
+        yield c
+
+
+def _insert_task_row(
+    *,
+    task_id: str = "F1",
+    md_path: str = "tasks/task_f1.md",
+    version: str = "1.0.0",
+) -> None:
+    from ego_server.db import get_connection
+
+    conn = get_connection()
+    try:
+        conn.execute(
+            "INSERT INTO tasks (id, block, slug, task_id, title, level, tags, "
+            "version, content_hash, breaking, md_path, folder_id, project_id, "
+            "created_at, updated_at) "
+            "VALUES (?, 'F', 'block_f_simple', ?, 'Studio', 'easy', '[]', "
+            "?, 'h', 0, ?, NULL, NULL, datetime('now'), datetime('now'))",
+            (task_id, task_id, version, md_path),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def test_studio_unauthorized(studio_env: TestClient) -> None:
+    assert studio_env.get("/admin/tasks/F1/studio").status_code == 401
+
+
+def test_studio_forbidden_for_student(studio_env: TestClient) -> None:
+    s_token, _ = _make_student(studio_env)
+    r = studio_env.get("/admin/tasks/F1/studio", headers=_auth_headers(s_token))
+    assert r.status_code == 403
+
+
+def test_studio_mentor_and_admin_read(studio_env: TestClient) -> None:
+    m_token, _ = _create_user(studio_env, "mentor1", "pw", "mentor")
+    r = studio_env.get("/admin/tasks/F1/studio", headers=_auth_headers(m_token))
+    assert r.status_code == 200
+    data = r.json()
+    assert data["task_id"] == "F1"
+    assert data["version"] == "1.0.0"
+    assert data["md_path"] == "tasks/task_f1.md"
+    assert "# Задача F1" in data["markdown"]
+    assert "def task_f1" in data["solution_py"]
+    assert "assert task_f1() == 42" in data["tests_py"]
+    assert data["writable"] is True
+    assert data["read_only_reason"] == ""
+
+    a_token, _ = _create_user(studio_env, "admin1", "pw", "admin")
+    r = studio_env.get("/admin/tasks/F1/studio", headers=_auth_headers(a_token))
+    assert r.status_code == 200
+    assert r.json()["markdown"]
+
+
+def test_studio_missing_tests_sidecar_returns_empty(studio_env: TestClient) -> None:
+    from ego_server.content_config import content_settings
+
+    repo = content_settings.to_config().resolved_local_path
+    (repo / "tasks" / "task_f1.tests.py").unlink()
+
+    a_token, _ = _create_user(studio_env, "admin1", "pw", "admin")
+    r = studio_env.get("/admin/tasks/F1/studio", headers=_auth_headers(a_token))
+    assert r.status_code == 200
+    data = r.json()
+    assert data["tests_py"] == ""
+    assert data["solution_py"]  # solution still present
+    assert data["writable"] is True
+
+
+def test_studio_unconfigured_reports_read_only(tmp_path, monkeypatch) -> None:
+    # No EGO_TASKS_REPO_URL configured → read-only with "not configured".
+    monkeypatch.setenv("EGO_DB_PATH", str(tmp_path / "test.db"))
+    monkeypatch.delenv("EGO_TASKS_REPO_URL", raising=False)
+
+    import ego_server.config
+    import ego_server.content_config
+    import ego_server.db
+
+    importlib.reload(ego_server.config)
+    importlib.reload(ego_server.content_config)
+    importlib.reload(ego_server.db)
+    from ego_server.db import init_db
+
+    init_db()
+    _insert_task_row()
+
+    import ego_server.main
+
+    importlib.reload(ego_server.main)
+    from ego_server.main import app
+
+    with TestClient(app) as c:
+        a_token, _ = _create_user(c, "admin1", "pw", "admin")
+        r = c.get("/admin/tasks/F1/studio", headers=_auth_headers(a_token))
+        assert r.status_code == 200
+        data = r.json()
+        assert data["writable"] is False
+        assert "not configured" in data["read_only_reason"]
+        assert data["markdown"] == ""
+        assert data["solution_py"] == ""
+
+
+def test_studio_root_nonexistent_reports_read_only(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("EGO_DB_PATH", str(tmp_path / "test.db"))
+    monkeypatch.setenv("EGO_TASKS_REPO_URL", str(tmp_path / "missing"))
+
+    import ego_server.config
+    import ego_server.content_config
+    import ego_server.db
+
+    importlib.reload(ego_server.config)
+    importlib.reload(ego_server.content_config)
+    importlib.reload(ego_server.db)
+    from ego_server.db import init_db
+
+    init_db()
+    _insert_task_row()
+
+    import ego_server.main
+
+    importlib.reload(ego_server.main)
+    from ego_server.main import app
+
+    with TestClient(app) as c:
+        a_token, _ = _create_user(c, "admin1", "pw", "admin")
+        r = c.get("/admin/tasks/F1/studio", headers=_auth_headers(a_token))
+        assert r.status_code == 200
+        data = r.json()
+        assert data["writable"] is False
+        assert "not found" in data["read_only_reason"]
+        assert data["markdown"] == ""
+
+
+def test_studio_unwritable_reports_read_only(studio_env: TestClient) -> None:
+    import os
+
+    from ego_server.content_config import content_settings
+
+    repo = content_settings.to_config().resolved_local_path
+    mode = os.stat(repo).st_mode
+    os.chmod(repo, 0o555)
+    try:
+        if os.access(repo, os.W_OK):
+            pytest.skip("platform does not honour directory write bits")
+        a_token, _ = _create_user(studio_env, "admin1", "pw", "admin")
+        r = studio_env.get("/admin/tasks/F1/studio", headers=_auth_headers(a_token))
+        assert r.status_code == 200
+        data = r.json()
+        assert data["writable"] is False
+        assert "not writable" in data["read_only_reason"]
+        # Content is still safely readable.
+        assert data["markdown"]
+        assert data["solution_py"]
+    finally:
+        os.chmod(repo, mode)
+
+
+def test_studio_tampered_traversal_blocked(studio_env: TestClient) -> None:
+    # Tamper the DB row so md_path escapes the root via '..'.
+    from ego_server.db import get_connection
+
+    conn = get_connection()
+    try:
+        conn.execute("UPDATE tasks SET md_path = ? WHERE id = 'F1'", ("../secret.md",))
+        conn.commit()
+    finally:
+        conn.close()
+
+    a_token, _ = _create_user(studio_env, "admin1", "pw", "admin")
+    r = studio_env.get("/admin/tasks/F1/studio", headers=_auth_headers(a_token))
+    assert r.status_code == 200
+    data = r.json()
+    assert data["writable"] is False
+    assert "escapes" in data["read_only_reason"]
+    assert data["markdown"] == ""
+    assert data["solution_py"] == ""
+
+
+def test_studio_symlink_escape_blocked(studio_env: TestClient) -> None:
+    import os
+
+    from ego_server.content_config import content_settings
+
+    repo = content_settings.to_config().resolved_local_path
+    outside = repo.parent / "outside_target.py"
+    outside.write_text("STOLEN\n", encoding="utf-8")
+    sol_link = repo / "tasks" / "task_f1.solution.py"
+    sol_link.unlink()
+    try:
+        os.symlink(outside, sol_link)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks not supported on this platform")
+
+    try:
+        a_token, _ = _create_user(studio_env, "admin1", "pw", "admin")
+        r = studio_env.get("/admin/tasks/F1/studio", headers=_auth_headers(a_token))
+        assert r.status_code == 200
+        data = r.json()
+        assert data["writable"] is False
+        assert "escapes" in data["read_only_reason"]
+        # Markdown is still safely readable; the escaping sidecar is not.
+        assert data["markdown"]
+        assert data["solution_py"] == ""
+        assert "STOLEN" not in data["solution_py"]
+    finally:
+        try:
+            sol_link.unlink()
+        except OSError:
+            pass
+
+
+def test_studio_missing_markdown_404(studio_env: TestClient) -> None:
+    from ego_server.content_config import content_settings
+
+    repo = content_settings.to_config().resolved_local_path
+    (repo / "tasks" / "task_f1.md").unlink()
+
+    a_token, _ = _create_user(studio_env, "admin1", "pw", "admin")
+    r = studio_env.get("/admin/tasks/F1/studio", headers=_auth_headers(a_token))
+    assert r.status_code == 404
+
+
+def test_studio_missing_solution_409(studio_env: TestClient) -> None:
+    from ego_server.content_config import content_settings
+
+    repo = content_settings.to_config().resolved_local_path
+    (repo / "tasks" / "task_f1.solution.py").unlink()
+
+    a_token, _ = _create_user(studio_env, "admin1", "pw", "admin")
+    r = studio_env.get("/admin/tasks/F1/studio", headers=_auth_headers(a_token))
+    assert r.status_code == 409
+
+
+def test_studio_task_not_found_404(studio_env: TestClient) -> None:
+    a_token, _ = _create_user(studio_env, "admin1", "pw", "admin")
+    r = studio_env.get("/admin/tasks/NOPE/studio", headers=_auth_headers(a_token))
+    assert r.status_code == 404

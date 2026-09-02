@@ -281,3 +281,29 @@ class CatalogDTO(BaseModel):
     """
 
     projects: list[CatalogProjectDTO] = Field(default_factory=list)
+
+
+# === Task Studio read (GET /admin/tasks/{task_id}/studio) ===
+
+
+class TaskStudioDTO(BaseModel):
+    """Canonical task content for the Task Studio read view.
+
+    Content (``markdown`` / ``solution_py`` / ``tests_py``) is read
+    directly from the configured local content-repo root — never from
+    SQLite blobs. ``writable`` is ``False`` with a concise
+    ``read_only_reason`` when the repo is unconfigured/non-local/
+    missing/unwritable, or when any resolved task/sidecar path escapes
+    the canonical root via ``..`` or a symlink. When content cannot be
+    read safely, the string fields are empty and only the DB identity
+    metadata is returned.
+    """
+
+    task_id: str
+    version: str
+    md_path: str
+    markdown: str = ""
+    solution_py: str = ""
+    tests_py: str = ""
+    writable: bool = False
+    read_only_reason: str = ""
