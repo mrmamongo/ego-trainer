@@ -314,14 +314,14 @@ def test_overview_mentor_and_admin_success(client: TestClient) -> None:
     conn = get_connection()
     try:
         conn.execute(
-            "INSERT INTO projects (id, name, description, version, \"order\", "
+            'INSERT INTO projects (id, name, description, version, "order", '
             "default_locale, tags, version_policy, created_at, updated_at) "
             "VALUES ('p1', 'P1', '', '1.0.0', 0, 'ru', '[]', 'declare', "
             "datetime('now'), datetime('now'))"
         )
         conn.execute(
             "INSERT INTO folders (id, project_id, code, name, description, "
-            "\"order\", level, created_at, updated_at) "
+            '"order", level, created_at, updated_at) '
             "VALUES ('f1', 'p1', 'F', 'F1', '', 0, 'easy', "
             "datetime('now'), datetime('now'))"
         )
@@ -372,3 +372,224 @@ def test_overview_latest_sync_is_newest_row(client: TestClient) -> None:
     latest = r.json()["latest_sync"]
     assert latest is not None
     assert latest["status"] == "failed"  # newest row wins
+
+
+# === GET /admin/catalog ===
+
+
+def _insert_catalog_rows() -> None:
+    """Seed a deterministic 2-project / 2-folder / 2-task hierarchy.
+
+    Layout (order is intentionally reversed from id to verify sort):
+
+        p1 Alpha (order 0, version 2.0.0)
+          f1 FolderF (order 0, easy)
+            F1 First  (md_path docs/tasks/F1.md, breaking=0)
+            F2 Second (md_path docs/tasks/F2.md, breaking=1)
+          f2 Gamma (order 1, medium)
+        p2 Beta (order 1, version 1.0.0)
+          f3 Delta (order 0, hard)
+            F3 Third (md_path docs/tasks/F3.md, breaking=0)
+    """
+    from ego_server.db import get_connection
+
+    conn = get_connection()
+    try:
+        conn.execute(
+            'INSERT INTO projects (id, name, description, version, "order", '
+            "default_locale, tags, version_policy, created_at, updated_at) "
+            "VALUES ('p2', 'Beta', '', '1.0.0', 1, 'ru', '[]', 'declare', "
+            "datetime('now'), datetime('now'))"
+        )
+        conn.execute(
+            'INSERT INTO projects (id, name, description, version, "order", '
+            "default_locale, tags, version_policy, created_at, updated_at) "
+            "VALUES ('p1', 'Alpha', '', '2.0.0', 0, 'ru', '[]', 'declare', "
+            "datetime('now'), datetime('now'))"
+        )
+        conn.execute(
+            "INSERT INTO folders (id, project_id, code, name, description, "
+            '"order", level, created_at, updated_at) '
+            "VALUES ('f2', 'p1', 'G', 'Gamma', '', 1, 'medium', "
+            "datetime('now'), datetime('now'))"
+        )
+        conn.execute(
+            "INSERT INTO folders (id, project_id, code, name, description, "
+            '"order", level, created_at, updated_at) '
+            "VALUES ('f1', 'p1', 'F', 'FolderF', '', 0, 'easy', "
+            "datetime('now'), datetime('now'))"
+        )
+        conn.execute(
+            "INSERT INTO folders (id, project_id, code, name, description, "
+            '"order", level, created_at, updated_at) '
+            "VALUES ('f3', 'p2', 'D', 'Delta', '', 0, 'hard', "
+            "datetime('now'), datetime('now'))"
+        )
+        conn.execute(
+            "INSERT INTO tasks (id, block, slug, task_id, title, level, tags, "
+            "version, content_hash, breaking, md_path, folder_id, project_id, "
+            "created_at, updated_at) "
+            "VALUES ('F2', 'F', 'block_f_simple', 'F2', 'Second', 'easy', '[]', "
+            "'1.0.0', 'h2', 1, 'docs/tasks/F2.md', 'f1', 'p1', "
+            "datetime('now'), datetime('now'))"
+        )
+        conn.execute(
+            "INSERT INTO tasks (id, block, slug, task_id, title, level, tags, "
+            "version, content_hash, breaking, md_path, folder_id, project_id, "
+            "created_at, updated_at) "
+            "VALUES ('F1', 'F', 'block_f_simple', 'F1', 'First', 'easy', '[]', "
+            "'1.0.0', 'h1', 0, 'docs/tasks/F1.md', 'f1', 'p1', "
+            "datetime('now'), datetime('now'))"
+        )
+        conn.execute(
+            "INSERT INTO tasks (id, block, slug, task_id, title, level, tags, "
+            "version, content_hash, breaking, md_path, folder_id, project_id, "
+            "created_at, updated_at) "
+            "VALUES ('F3', 'D', 'block_d', 'F3', 'Third', 'hard', '[]', "
+            "'1.0.0', 'h3', 0, 'docs/tasks/F3.md', 'f3', 'p2', "
+            "datetime('now'), datetime('now'))"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def test_catalog_unauthorized(client: TestClient) -> None:
+    assert client.get("/admin/catalog").status_code == 401
+
+
+def test_catalog_forbidden_for_student(client: TestClient) -> None:
+    s_token, _ = _make_student(client)
+    r = client.get("/admin/catalog", headers=_auth_headers(s_token))
+    assert r.status_code == 403
+
+
+def test_catalog_empty_db(client: TestClient) -> None:
+    m_token, _ = _create_user(client, "mentor1", "pw", "mentor")
+    r = client.get("/admin/catalog", headers=_auth_headers(m_token))
+    assert r.status_code == 200
+    assert r.json() == {"projects": []}
+
+
+def test_catalog_hierarchy_shape_and_ordering(client: TestClient) -> None:
+    _insert_catalog_rows()
+    m_token, _ = _create_user(client, "mentor1", "pw", "mentor")
+    r = client.get("/admin/catalog", headers=_auth_headers(m_token))
+    assert r.status_code == 200
+    data = r.json()
+
+    # Projects ordered by (order, id): p1 (0) before p2 (1).
+    assert [p["id"] for p in data["projects"]] == ["p1", "p2"]
+    p1, p2 = data["projects"]
+
+    # Project metadata: only existing columns exposed.
+    assert p1["id"] == "p1"
+    assert p1["name"] == "Alpha"
+    assert p1["order"] == 0
+    assert p1["version"] == "2.0.0"
+
+    # Folders under p1 ordered by (order, id): f1 (0) before f2 (1).
+    assert [f["id"] for f in p1["folders"]] == ["f1", "f2"]
+    f1, f2 = p1["folders"]
+    assert f1["code"] == "F"
+    assert f1["name"] == "FolderF"
+    assert f1["order"] == 0
+    assert f1["level"] == "easy"
+    assert f1["project_id"] == "p1"
+
+    # Tasks under f1 ordered by (task_id, id): F1 before F2.
+    assert [t["task_id"] for t in f1["tasks"]] == ["F1", "F2"]
+    t1, t2 = f1["tasks"]
+    assert t1["id"] == "F1"
+    assert t1["title"] == "First"
+    assert t1["level"] == "easy"
+    assert t1["version"] == "1.0.0"
+    assert t1["md_path"] == "docs/tasks/F1.md"
+    assert t1["breaking"] is False
+    assert t1["folder_id"] == "f1"
+    assert t1["project_id"] == "p1"
+    assert t2["breaking"] is True
+
+    # f2 has no tasks.
+    assert f2["tasks"] == []
+
+    # p2 has one folder with one task.
+    assert [f["id"] for f in p2["folders"]] == ["f3"]
+    assert [t["task_id"] for t in p2["folders"][0]["tasks"]] == ["F3"]
+
+
+def test_catalog_admin_allowed(client: TestClient) -> None:
+    _insert_catalog_rows()
+    a_token, _ = _create_user(client, "admin1", "pw", "admin")
+    r = client.get("/admin/catalog", headers=_auth_headers(a_token))
+    assert r.status_code == 200
+    assert len(r.json()["projects"]) == 2
+
+
+def test_catalog_search_prunes_unmatched_tasks(client: TestClient) -> None:
+    _insert_catalog_rows()
+    a_token, _ = _create_user(client, "admin1", "pw", "admin")
+    r = client.get("/admin/catalog?q=Second", headers=_auth_headers(a_token))
+    assert r.status_code == 200
+    projects = r.json()["projects"]
+    # Only p1 retained (ancestor of the matching task's folder).
+    assert [p["id"] for p in projects] == ["p1"]
+    p1 = projects[0]
+    # Only f1 retained (ancestor of the matching task).
+    assert [f["id"] for f in p1["folders"]] == ["f1"]
+    f1 = p1["folders"][0]
+    # Only the matching task retained; sibling pruned.
+    assert [t["task_id"] for t in f1["tasks"]] == ["F2"]
+
+
+def test_catalog_search_prunes_unmatched_folders(client: TestClient) -> None:
+    _insert_catalog_rows()
+    a_token, _ = _create_user(client, "admin1", "pw", "admin")
+    # Match folder f2 by name "Gamma"; no tasks under it, so it stays empty.
+    r = client.get("/admin/catalog?q=Gamma", headers=_auth_headers(a_token))
+    assert r.status_code == 200
+    projects = r.json()["projects"]
+    assert [p["id"] for p in projects] == ["p1"]
+    p1 = projects[0]
+    assert [f["id"] for f in p1["folders"]] == ["f2"]
+    assert p1["folders"][0]["tasks"] == []
+
+
+def test_catalog_search_keeps_project_subtree(client: TestClient) -> None:
+    _insert_catalog_rows()
+    a_token, _ = _create_user(client, "admin1", "pw", "admin")
+    # Match project p2 by name "Beta"; all its folders/tasks retained.
+    r = client.get("/admin/catalog?q=Beta", headers=_auth_headers(a_token))
+    assert r.status_code == 200
+    projects = r.json()["projects"]
+    assert [p["id"] for p in projects] == ["p2"]
+    p2 = projects[0]
+    assert [f["id"] for f in p2["folders"]] == ["f3"]
+    assert [t["task_id"] for t in p2["folders"][0]["tasks"]] == ["F3"]
+
+
+def test_catalog_search_case_insensitive(client: TestClient) -> None:
+    _insert_catalog_rows()
+    a_token, _ = _create_user(client, "admin1", "pw", "admin")
+    r = client.get("/admin/catalog?q=fIrSt", headers=_auth_headers(a_token))
+    assert r.status_code == 200
+    tasks = r.json()["projects"][0]["folders"][0]["tasks"]
+    assert [t["task_id"] for t in tasks] == ["F1"]
+
+
+def test_catalog_search_matches_task_md_path(client: TestClient) -> None:
+    _insert_catalog_rows()
+    a_token, _ = _create_user(client, "admin1", "pw", "admin")
+    r = client.get("/admin/catalog?q=docs/tasks/F3.md", headers=_auth_headers(a_token))
+    assert r.status_code == 200
+    projects = r.json()["projects"]
+    assert [p["id"] for p in projects] == ["p2"]
+    assert projects[0]["folders"][0]["tasks"][0]["task_id"] == "F3"
+
+
+def test_catalog_search_no_match_returns_empty(client: TestClient) -> None:
+    _insert_catalog_rows()
+    a_token, _ = _create_user(client, "admin1", "pw", "admin")
+    r = client.get("/admin/catalog?q=zzznomatch", headers=_auth_headers(a_token))
+    assert r.status_code == 200
+    assert r.json() == {"projects": []}

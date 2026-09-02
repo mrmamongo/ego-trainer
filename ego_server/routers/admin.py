@@ -16,6 +16,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from ego_server.auth import generate_user_id, hash_password
 from ego_server.deps import DbDep, require_role
 from ego_server.models import (
+    CatalogDTO,
+    CatalogFolderDTO,
+    CatalogProjectDTO,
+    CatalogTaskDTO,
     CreateUserRequest,
     OverviewCounts,
     OverviewDTO,
@@ -217,9 +221,9 @@ async def get_overview(db: DbDep) -> OverviewDTO:
     projects = db.execute("SELECT COUNT(*) AS n FROM projects").fetchone()["n"]
     folders = db.execute("SELECT COUNT(*) AS n FROM folders").fetchone()["n"]
     tasks = db.execute("SELECT COUNT(*) AS n FROM tasks").fetchone()["n"]
-    students = db.execute(
-        "SELECT COUNT(*) AS n FROM students WHERE role = 'student'"
-    ).fetchone()["n"]
+    students = db.execute("SELECT COUNT(*) AS n FROM students WHERE role = 'student'").fetchone()[
+        "n"
+    ]
 
     sync_row = db.execute(
         """SELECT id, started_at, finished_at, source, repo_url, git_sha,
@@ -238,6 +242,124 @@ async def get_overview(db: DbDep) -> OverviewDTO:
         ),
         latest_sync=latest_sync,
     )
+
+
+@router.get(
+    "/catalog",
+    response_model=CatalogDTO,
+    dependencies=[Depends(require_role("mentor", "admin"))],
+)
+async def get_catalog(db: DbDep, q: str | None = None) -> CatalogDTO:
+    """Browse the catalog hierarchy: projects -> folders -> tasks.
+
+    Reads the existing ``projects``/``folders``/``tasks`` tables and returns
+    a deterministic, nested snapshot. Ordering is stable:
+
+    * projects by (``order``, ``id``)
+    * folders  by (``order``, ``id``)
+    * tasks    by (``task_id``, ``id``)
+
+    Only columns that already exist on the tables are exposed — no schema
+    is invented. ``breaking`` is normalised from the 0/1 int to a bool.
+
+    Optional ``q`` performs a case-insensitive substring match against
+    project/folder/task identifiers and names (project ``id``/``name``,
+    folder ``id``/``code``/``name``, task ``id``/``task_id``/``title``/
+    ``slug``/``md_path``). Unmatched leaves are pruned, but ancestors of
+    any match are retained so the hierarchy stays connected. An empty DB
+    (or a ``q`` that matches nothing) yields ``{"projects": []}``.
+    """
+    projects_rows = db.execute(
+        'SELECT id, name, "order", version FROM projects ORDER BY "order", id'
+    ).fetchall()
+    folders_rows = db.execute(
+        'SELECT id, project_id, code, name, "order", level '
+        'FROM folders ORDER BY "order", id, project_id'
+    ).fetchall()
+    tasks_rows = db.execute(
+        "SELECT id, task_id, title, block, slug, level, version, breaking, "
+        "md_path, folder_id, project_id FROM tasks ORDER BY task_id, id"
+    ).fetchall()
+
+    tasks_by_folder: dict[str, list[dict]] = {}
+    for r in tasks_rows:
+        t = dict(r)
+        t["breaking"] = bool(t["breaking"])
+        tasks_by_folder.setdefault(t["folder_id"] or "", []).append(t)
+
+    needle = (q or "").strip().lower()
+    searching = needle != ""
+
+    def task_hits(t: dict) -> bool:
+        if not searching:
+            return True
+        return (
+            needle in " ".join([t["id"], t["task_id"], t["title"], t["slug"], t["md_path"]]).lower()
+        )
+
+    def folder_hits(f: dict) -> bool:
+        if not searching:
+            return True
+        return needle in " ".join([f["id"], f["code"], f["name"]]).lower()
+
+    def project_hits(p: dict) -> bool:
+        if not searching:
+            return True
+        return needle in " ".join([p["id"], p["name"]]).lower()
+
+    # Direct (self) match flags, computed once.
+    proj_direct = {p["id"]: project_hits(dict(p)) for p in projects_rows}
+    folder_direct = {f["id"]: folder_hits(dict(f)) for f in folders_rows}
+    # Does any task in this folder match directly?
+    folder_has_match_task = {
+        fid: any(task_hits(t) for t in ts) for fid, ts in tasks_by_folder.items()
+    }
+
+    # Subtree-aware retention: a node is kept if it matches, any ancestor
+    # matches, or any descendant matches. This keeps the hierarchy connected
+    # both upward (ancestors of a matching task) and downward (the full
+    # subtree of a matching project/folder).
+    projects_out: list[CatalogProjectDTO] = []
+    for p in projects_rows:
+        p = dict(p)
+        pm = proj_direct[p["id"]]
+        folders_out: list[CatalogFolderDTO] = []
+        for f in folders_rows:
+            if f["project_id"] != p["id"]:
+                continue
+            f = dict(f)
+            fm = folder_direct[f["id"]]
+            keep_folder = pm or fm or folder_has_match_task.get(f["id"], False)
+            if not keep_folder:
+                continue
+            kept_tasks: list[CatalogTaskDTO] = []
+            for t in tasks_by_folder.get(f["id"], []):
+                if pm or fm or task_hits(t):
+                    kept_tasks.append(CatalogTaskDTO(**t))
+            folders_out.append(
+                CatalogFolderDTO(
+                    id=f["id"],
+                    project_id=f["project_id"],
+                    code=f["code"],
+                    name=f["name"],
+                    order=f["order"],
+                    level=f["level"],
+                    tasks=kept_tasks,
+                )
+            )
+        if not (pm or folders_out):
+            continue
+        projects_out.append(
+            CatalogProjectDTO(
+                id=p["id"],
+                name=p["name"],
+                order=p["order"],
+                version=p["version"],
+                folders=folders_out,
+            )
+        )
+
+    return CatalogDTO(projects=projects_out)
 
 
 # === Helpers ===
