@@ -1157,3 +1157,290 @@ def test_studio_validate_task_not_found_404(studio_env: TestClient) -> None:
         headers=_auth_headers(a_token),
     )
     assert r.status_code == 404
+
+
+# === PUT /admin/tasks/{task_id}/studio ===
+
+
+def _save_payload(
+    *,
+    expected_version: str = "1.0.0",
+    markdown: str | None = None,
+    solution_py: str | None = None,
+    tests_py: str | None = None,
+) -> dict:
+    """Build a PUT /studio request body (same shape as validate)."""
+    return {
+        "expected_version": expected_version,
+        "markdown": markdown if markdown is not None else _valid_candidate_md(),
+        "solution_py": solution_py if solution_py is not None else _VALID_SOLUTION,
+        "tests_py": tests_py if tests_py is not None else _VALID_TESTS,
+    }
+
+
+def _db_task_row(task_id: str = "F1") -> dict | None:
+    """Read the tasks row for ``task_id`` from the live DB."""
+    from ego_server.db import get_connection
+
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT id, task_id, version, content_hash, md_path, "
+            "folder_id, project_id FROM tasks WHERE id = ?",
+            (task_id,),
+        ).fetchone()
+        return dict(row) if row is not None else None
+    finally:
+        conn.close()
+
+
+def _db_task_versions(task_id: str = "F1") -> list[dict]:
+    """Read all task_versions rows for ``task_id``."""
+    from ego_server.db import get_connection
+
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT task_id, version, content_hash, breaking, md_path "
+            "FROM task_versions WHERE task_id = ? ORDER BY version",
+            (task_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def _db_sync_log_count() -> int:
+    """Count sync_log rows."""
+    from ego_server.db import get_connection
+
+    conn = get_connection()
+    try:
+        return conn.execute("SELECT COUNT(*) AS n FROM sync_log").fetchone()["n"]
+    finally:
+        conn.close()
+
+
+def test_studio_save_unauthorized(studio_env: TestClient) -> None:
+    r = studio_env.put("/admin/tasks/F1/studio", json=_save_payload())
+    assert r.status_code == 401
+
+
+def test_studio_save_forbidden_for_student(studio_env: TestClient) -> None:
+    s_token, _ = _make_student(studio_env)
+    r = studio_env.put(
+        "/admin/tasks/F1/studio",
+        json=_save_payload(),
+        headers=_auth_headers(s_token),
+    )
+    assert r.status_code == 403
+
+
+def test_studio_save_forbidden_for_mentor(studio_env: TestClient) -> None:
+    m_token, _ = _create_user(studio_env, "mentor1", "pw", "mentor")
+    r = studio_env.put(
+        "/admin/tasks/F1/studio",
+        json=_save_payload(),
+        headers=_auth_headers(m_token),
+    )
+    assert r.status_code == 403
+
+
+def test_studio_save_admin_happy_sync(studio_env: TestClient) -> None:
+    """Admin save: all 3 files written, tasks row + task_versions + sync_log updated."""
+    a_token, _ = _create_user(studio_env, "admin1", "pw", "admin")
+    before = _read_canonical(studio_env)
+    before_row = _db_task_row()
+    before_versions = _db_task_versions()
+    before_log_count = _db_sync_log_count()
+
+    r = studio_env.put(
+        "/admin/tasks/F1/studio",
+        json=_save_payload(),
+        headers=_auth_headers(a_token),
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["task_id"] == "F1"
+    assert data["new_version"] != "1.0.0"  # version was bumped
+    assert data["sync"]["status"] == "success"
+    assert data["sync"]["errors"] == 0
+    assert data["sync"]["updated"] >= 1
+
+    # --- all 3 canonical files were written with candidate content ---
+    after = _read_canonical(studio_env)
+    assert after["task_f1.md"] != before["task_f1.md"]
+    assert "id: F1" in after["task_f1.md"]  # frontmatter present
+    assert after["task_f1.solution.py"] == _VALID_SOLUTION
+    assert after["task_f1.tests.py"] == _VALID_TESTS
+
+    # --- tasks row updated ---
+    row = _db_task_row()
+    assert row is not None
+    assert row["version"] == data["new_version"]
+    assert row["content_hash"] != before_row["content_hash"]
+
+    # --- task_versions row added ---
+    versions = _db_task_versions()
+    assert len(versions) > len(before_versions)
+    assert any(v["version"] == data["new_version"] for v in versions)
+
+    # --- sync_log row added ---
+    assert _db_sync_log_count() == before_log_count + 1
+
+
+def test_studio_save_stale_expected_version_unchanged(studio_env: TestClient) -> None:
+    """Stale expected_version → 409, files and DB unchanged."""
+    a_token, _ = _create_user(studio_env, "admin1", "pw", "admin")
+    before = _read_canonical(studio_env)
+    before_row = _db_task_row()
+
+    r = studio_env.put(
+        "/admin/tasks/F1/studio",
+        json=_save_payload(expected_version="0.9.0"),
+        headers=_auth_headers(a_token),
+    )
+    assert r.status_code == 409
+    assert "expected_version" in r.json()["detail"]
+
+    # Files and DB must be byte-identical / unchanged.
+    assert _read_canonical(studio_env) == before
+    assert _db_task_row() == before_row
+
+
+def test_studio_save_non_bumped_version_unchanged(studio_env: TestClient) -> None:
+    """Content changed + version not bumped (declare) → 409, files/DB unchanged."""
+    a_token, _ = _create_user(studio_env, "admin1", "pw", "admin")
+    before = _read_canonical(studio_env)
+    before_row = _db_task_row()
+
+    r = studio_env.put(
+        "/admin/tasks/F1/studio",
+        json=_save_payload(
+            markdown=_valid_candidate_md(version="1.0.0", title="Changed"),
+        ),
+        headers=_auth_headers(a_token),
+    )
+    assert r.status_code == 409
+    assert "declare" in r.json()["detail"]
+
+    assert _read_canonical(studio_env) == before
+    assert _db_task_row() == before_row
+
+
+def test_studio_save_malformed_candidate_unchanged(studio_env: TestClient) -> None:
+    """Malformed frontmatter → 422, canonical files unchanged."""
+    a_token, _ = _create_user(studio_env, "admin1", "pw", "admin")
+    before = _read_canonical(studio_env)
+
+    bad_md = "---\nid: F1\ntitle: Test\n\n# Задача F1: Test\n\n## Условие\nx\n"
+    r = studio_env.put(
+        "/admin/tasks/F1/studio",
+        json=_save_payload(markdown=bad_md),
+        headers=_auth_headers(a_token),
+    )
+    assert r.status_code == 422
+    assert "frontmatter" in r.json()["detail"].lower()
+    assert _read_canonical(studio_env) == before
+
+
+def test_studio_save_traversal_blocked(studio_env: TestClient) -> None:
+    """Traversal md_path → 409, files unchanged."""
+    from ego_server.db import get_connection
+
+    conn = get_connection()
+    try:
+        conn.execute("UPDATE tasks SET md_path = ? WHERE id = 'F1'", ("../secret.md",))
+        conn.commit()
+    finally:
+        conn.close()
+
+    a_token, _ = _create_user(studio_env, "admin1", "pw", "admin")
+    r = studio_env.put(
+        "/admin/tasks/F1/studio",
+        json=_save_payload(),
+        headers=_auth_headers(a_token),
+    )
+    assert r.status_code == 409
+    assert "escapes" in r.json()["detail"]
+
+
+def test_studio_save_read_only_blocked(tmp_path, monkeypatch) -> None:
+    """Unconfigured repo → 409, no files touched."""
+    monkeypatch.setenv("EGO_DB_PATH", str(tmp_path / "test.db"))
+    monkeypatch.delenv("EGO_TASKS_REPO_URL", raising=False)
+
+    import ego_server.config
+    import ego_server.content_config
+    import ego_server.db
+
+    importlib.reload(ego_server.config)
+    importlib.reload(ego_server.content_config)
+    importlib.reload(ego_server.db)
+    from ego_server.db import init_db
+
+    init_db()
+    _insert_task_row()
+
+    import ego_server.main
+
+    importlib.reload(ego_server.main)
+    from ego_server.main import app
+
+    with TestClient(app) as c:
+        a_token, _ = _create_user(c, "admin1", "pw", "admin")
+        r = c.put(
+            "/admin/tasks/F1/studio",
+            json=_save_payload(),
+            headers=_auth_headers(a_token),
+        )
+        assert r.status_code == 409
+        assert "read-only" in r.json()["detail"].lower()
+
+
+def test_studio_save_sync_failure_restores_files_and_db(studio_env: TestClient) -> None:
+    """Simulated sync failure → 409, all files restored, DB unchanged."""
+    from ego_server.sync import SyncResult
+
+    a_token, _ = _create_user(studio_env, "admin1", "pw", "admin")
+    before = _read_canonical(studio_env)
+    before_row = _db_task_row()
+    before_versions = _db_task_versions()
+    before_log_count = _db_sync_log_count()
+
+    # Monkeypatch sync_from_path to return an error result.
+    import ego_server.routers.admin as admin_mod
+
+    def _failing_sync(conn, repo_path, *, source="manual", repo_url=""):
+        return SyncResult(
+            added=0,
+            updated=0,
+            skipped=0,
+            errors=1,
+            error_details=["simulated sync failure"],
+            started_at="2026-01-01T00:00:00Z",
+            finished_at="2026-01-01T00:00:01Z",
+            log_id=999,
+        )
+
+    original_sync = admin_mod.sync_from_path
+    admin_mod.sync_from_path = _failing_sync
+    try:
+        r = studio_env.put(
+            "/admin/tasks/F1/studio",
+            json=_save_payload(),
+            headers=_auth_headers(a_token),
+        )
+    finally:
+        admin_mod.sync_from_path = original_sync
+
+    assert r.status_code == 409
+    assert "sync" in r.json()["detail"].lower()
+
+    # All canonical files must be restored to their original bytes.
+    assert _read_canonical(studio_env) == before
+
+    # DB must be unchanged: task row, task_versions, sync_log count.
+    assert _db_task_row() == before_row
+    assert _db_task_versions() == before_versions
+    assert _db_sync_log_count() == before_log_count

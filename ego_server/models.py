@@ -340,3 +340,31 @@ class StudioValidateResponse(BaseModel):
     candidate_version: str
     content_changed: bool
     version_policy: str
+
+
+# === Task Studio save (PUT /admin/tasks/{task_id}/studio) ===
+
+
+class StudioSaveRequest(StudioValidateRequest):
+    """Request body for PUT /admin/tasks/{task_id}/studio.
+
+    Identical typed candidate fields as :class:`StudioValidateRequest`:
+    ``expected_version``, ``markdown``, ``solution_py``, ``tests_py``.
+    The same validation checks run before any canonical file is touched.
+    """
+
+
+class StudioSaveResponse(BaseModel):
+    """Success response for PUT /admin/tasks/{task_id}/studio.
+
+    Returned only after the candidate passes validation, canonical files
+    are atomically replaced, and the subsequent ``sync_from_path`` run
+    succeeds with zero errors. ``new_version`` is the task version now
+    stored in the DB (which equals the candidate version when content
+    changed, or the unchanged current version when nothing changed).
+    ``sync`` carries the sync counts from the post-save re-sync.
+    """
+
+    task_id: str
+    new_version: str
+    sync: SyncResultDTO
