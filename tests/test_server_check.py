@@ -44,6 +44,11 @@ def client(temp_db, monkeypatch):
 
 
 def _register_and_login(client, username="alice", password="pw", role="student"):
+    if role != "student":
+        from tests.conftest import create_test_user
+
+        return create_test_user(client, username, password, role)
+
     r = client.post(
         "/auth/register",
         json={"username": username, "password": password, "role": role},
@@ -89,7 +94,6 @@ def test_check_correct_solution(client):
 
     match = re.search(r"def (task_\w+)", stub)
     assert match, f"No task_ function in stub: {stub}"
-    func_name = match.group(1)
 
     # Get tests_code from statement_md to know what to return.
     # For F1, we need to actually solve it. Let's use the reference solution
