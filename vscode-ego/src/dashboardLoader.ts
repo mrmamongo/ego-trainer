@@ -12,6 +12,7 @@ export interface DashboardRow {
     slug: string;
     version: string;
     status: string;
+    stale: boolean;
     passed_tests: number;
     total_tests: number;
     attempts: number;
@@ -118,6 +119,7 @@ async function loadServer(api: EgoApi): Promise<DashboardData> {
         let progressMap = new Map<
             string,
             {
+                version: string;
                 status: string;
                 attempts: number;
                 passed_tests: number;
@@ -132,6 +134,7 @@ async function loadServer(api: EgoApi): Promise<DashboardData> {
                 progress.map((p) => [
                     p.task_id,
                     {
+                        version: p.version,
                         status: p.status,
                         attempts: p.attempts,
                         passed_tests: p.passed_tests,
@@ -153,6 +156,7 @@ async function loadServer(api: EgoApi): Promise<DashboardData> {
                 block: t.block,
                 slug: t.slug,
                 version: t.version,
+                stale: p !== undefined && p.version !== t.version,
                 status: p?.status || 'new',
                 passed_tests: p?.passed_tests ?? 0,
                 total_tests: p?.total_tests ?? 0,
@@ -211,6 +215,7 @@ async function loadOffline(): Promise<DashboardData> {
             block: t.block,
             slug: t.slug,
             version: t.version,
+            stale: p !== undefined && p.version !== t.version,
             status: p?.status || 'new',
             passed_tests: p?.passed_tests ?? 0,
             total_tests: p?.total_tests ?? 0,

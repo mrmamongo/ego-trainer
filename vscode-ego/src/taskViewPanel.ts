@@ -11,6 +11,7 @@ import {
     stripSolutionDetails,
 } from './markdown';
 import { readEgoConfig } from './egoWorkspace';
+import { parseRunSummary, sortRecentRuns, type TaskRunSummary } from './runHistory';
 
 export interface TaskViewHint {
     level: number;
@@ -26,6 +27,7 @@ export interface TaskViewData {
     version: string;
     statement_html: string;
     hints: TaskViewHint[];
+    history: TaskRunSummary[];
     mode: 'server' | 'offline';
 }
 
@@ -128,10 +130,10 @@ export class TaskViewPanel {
     /** Route check results here when panel is open. */
     static postResult(result: CheckResponse): boolean {
         if (!TaskViewPanel.panel || !TaskViewPanel.current) return false;
-        if (result.task_id !== TaskViewPanel.current.id) return false;
+        if (result.task_id.toLowerCase() !== TaskViewPanel.current.id.toLowerCase()) return false;
         TaskViewPanel.pendingResult = result;
         // Keep host-side status in sync for later refreshes.
-        if (TaskViewPanel.current && result.task_id === TaskViewPanel.current.id) {
+        if (TaskViewPanel.current && result.task_id.toLowerCase() === TaskViewPanel.current.id.toLowerCase()) {
             TaskViewPanel.current = { ...TaskViewPanel.current, status: result.status };
         }
         if (TaskViewPanel.ready) {
@@ -190,6 +192,7 @@ export class TaskViewPanel {
                     version: cur.version,
                     statement_html: `<p>Failed to load task: ${escapeHtml((e as Error).message)}</p>`,
                     hints: [],
+                    history: await readLocalRunHistory(cur.id),
                     mode: 'offline',
                 } satisfies TaskViewData,
             });
@@ -200,6 +203,7 @@ export class TaskViewPanel {
 async function loadTaskViewData(api: EgoApi, ref: TaskRef): Promise<TaskViewData> {
     const cfg = await readEgoConfig();
     const mode = cfg?.mode === 'offline' ? 'offline' : 'server';
+    const history = await readLocalRunHistory(ref.id);
 
     if (mode === 'server') {
         try {
@@ -222,6 +226,7 @@ async function loadTaskViewData(api: EgoApi, ref: TaskRef): Promise<TaskViewData
                 version: full.version,
                 statement_html: renderStatementHtml(full.statement_md),
                 hints,
+                history,
                 mode: 'server',
             };
         } catch {
@@ -241,8 +246,39 @@ async function loadTaskViewData(api: EgoApi, ref: TaskRef): Promise<TaskViewData
         version: ref.version,
         statement_html: renderStatementHtml(md),
         hints: hintsFromMarkdown(stripSolutionDetails(md), stub),
+        history,
         mode: 'offline',
     };
+}
+
+async function readLocalRunHistory(taskId: string): Promise<TaskRunSummary[]> {
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+    if (!root) return [];
+    const runsDir = vscode.Uri.joinPath(root, '.ego', 'runs');
+    const safeId = taskId.replace(/\./g, '_').toLowerCase();
+    try {
+        const entries = await vscode.workspace.fs.readDirectory(runsDir);
+        const files = entries.filter(([name, type]) =>
+            type === vscode.FileType.File &&
+            name.toLowerCase().startsWith(`${safeId}-`) &&
+            name.toLowerCase().endsWith('.json')
+        );
+        const runs: TaskRunSummary[] = [];
+        for (const [name] of files) {
+            try {
+                const raw = JSON.parse(Buffer.from(await vscode.workspace.fs.readFile(
+                    vscode.Uri.joinPath(runsDir, name)
+                )).toString('utf-8')) as unknown;
+                const summary = parseRunSummary(raw);
+                if (summary) runs.push(summary);
+            } catch {
+                // Ignore inaccessible and malformed run files.
+            }
+        }
+        return sortRecentRuns(runs);
+    } catch {
+        return [];
+    }
 }
 
 function hintsFromMarkdown(statementMd: string, stubPy: string): TaskViewHint[] {

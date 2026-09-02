@@ -112,7 +112,7 @@
 
 		<section class="section results" aria-label="Results">
 			<h2 class="section-title">Results</h2>
-			<ResultsBody result={$checkResult} emptyMessage="Run Check to see results." />
+			<ResultsBody result={$checkResult} history={data.history} emptyMessage="Run Check to see results." />
 		</section>
 	{/if}
 </main>
