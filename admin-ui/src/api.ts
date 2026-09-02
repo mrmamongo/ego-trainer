@@ -191,3 +191,78 @@ export async function getCatalog(q?: string): Promise<CatalogDTO> {
 	const path = needle ? `/admin/catalog?q=${encodeURIComponent(needle)}` : '/admin/catalog';
 	return request<CatalogDTO>('GET', path);
 }
+
+// === Task Studio (GET / PUT / POST /admin/tasks/{id}/studio) ===
+
+export interface SyncResultDTO {
+	log_id: number;
+	status: string; // success | partial | failed
+	added: number;
+	updated: number;
+	skipped: number;
+	errors: number;
+	error_details: string;
+	started_at: string;
+	finished_at: string;
+	git_sha: string | null;
+	repo_url: string;
+}
+
+export interface TaskStudioDTO {
+	task_id: string;
+	version: string;
+	md_path: string;
+	markdown: string;
+	solution_py: string;
+	tests_py: string;
+	writable: boolean;
+	read_only_reason: string;
+}
+
+export interface StudioCandidateBody {
+	expected_version: string;
+	markdown: string; // full .md including YAML frontmatter
+	solution_py: string;
+	tests_py: string;
+}
+
+export interface StudioValidateResponse {
+	valid: boolean;
+	task_id: string;
+	current_version: string;
+	candidate_version: string;
+	content_changed: boolean;
+	version_policy: string;
+}
+
+export interface StudioSaveResponse {
+	task_id: string;
+	new_version: string;
+	sync: SyncResultDTO;
+}
+
+export async function getTaskStudio(taskId: string): Promise<TaskStudioDTO> {
+	return request<TaskStudioDTO>('GET', `/admin/tasks/${encodeURIComponent(taskId)}/studio`);
+}
+
+export async function validateTaskStudio(
+	taskId: string,
+	body: StudioCandidateBody,
+): Promise<StudioValidateResponse> {
+	return request<StudioValidateResponse>(
+		'POST',
+		`/admin/tasks/${encodeURIComponent(taskId)}/studio/validate`,
+		body,
+	);
+}
+
+export async function saveTaskStudio(
+	taskId: string,
+	body: StudioCandidateBody,
+): Promise<StudioSaveResponse> {
+	return request<StudioSaveResponse>(
+		'PUT',
+		`/admin/tasks/${encodeURIComponent(taskId)}/studio`,
+		body,
+	);
+}
