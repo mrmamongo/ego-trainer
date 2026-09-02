@@ -28,7 +28,7 @@ const options = {
   format: 'iife',
   platform: 'browser',
   target: ['es2022'],
-  sourcemap: true,
+  sourcemap: false,
   logLevel: 'info',
   plugins: [
     sveltePlugin({
