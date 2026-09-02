@@ -185,6 +185,7 @@
     "watch:webview": "node esbuild.webview.mjs --watch",
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js",
+    "test:unit": "node --test out/test/*.test.js",
     "package": "vsce package"
   },
   "devDependencies": {

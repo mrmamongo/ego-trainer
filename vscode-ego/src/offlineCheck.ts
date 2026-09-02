@@ -2,11 +2,27 @@
  *
  * Shells out to `python -m ego.cli check <task_id> --json` (writes progress
  * when `.ego/` exists). Falls back across python3 / python / `uv run`.
+ *
+ * Windows/offline slice (8bv.9.9):
+ * - Detection cache is keyed by normalized cwd so switching workspaces can
+ *   never reuse a stale executable decision.
+ * - Every probe (`canRun`) and the real run (`runCapture`) use that cwd.
+ * - On win32, spawn uses `shell:true` so `.cmd` shims (ego/uv) launch.
+ * - `taskId` is validated before it can reach a shell.
+ * - Child env preserves `process.env` and forces UTF-8.
+ * - Promise resolution is guarded against double-settle when both `error`
+ *   and `close` fire.
  */
 
 import * as vscode from 'vscode';
 import { spawn } from 'child_process';
 import { CheckResponse } from './api';
+import {
+    cwdCacheKey,
+    childEnv,
+    shouldUseShell,
+    validateTaskId,
+} from './offlineCheckHelpers';
 
 export interface OfflineCheckOptions {
     taskId: string;
@@ -18,16 +34,17 @@ export interface OfflineCheckOptions {
     pyPath?: string;
 }
 
-let cachedPython: string[] | undefined;
+const pythonCmdCache = new Map<string, string[]>();
 
-async function detectPythonCmd(): Promise<string[]> {
-    if (cachedPython) return cachedPython;
+async function detectPythonCmd(cwd: string): Promise<string[]> {
+    const key = cwdCacheKey(cwd);
+    const cached = pythonCmdCache.get(key);
+    if (cached) return cached;
 
-    // Prefer `ego` console script; fall back to `python -m ego.cli`.
     const egoBins: string[][] = [['uv', 'run', 'ego'], ['ego']];
     for (const cmd of egoBins) {
-        if (await canRun([...cmd, '--version'])) {
-            cachedPython = cmd;
+        if (await canRun([...cmd, '--version'], cwd)) {
+            pythonCmdCache.set(key, cmd);
             return cmd;
         }
     }
@@ -38,12 +55,13 @@ async function detectPythonCmd(): Promise<string[]> {
         ['python'],
     ];
     for (const cmd of pyCandidates) {
-        const ok = await canRun([...cmd, '--version']);
+        const ok = await canRun([...cmd, '--version'], cwd);
         if (!ok) continue;
-        const importOk = await canRun([...cmd, '-c', 'import ego.checker']);
+        const importOk = await canRun([...cmd, '-c', 'import ego.checker'], cwd);
         if (importOk) {
-            cachedPython = [...cmd, '-m', 'ego.cli'];
-            return cachedPython;
+            const prefix = [...cmd, '-m', 'ego.cli'];
+            pythonCmdCache.set(key, prefix);
+            return prefix;
         }
     }
     throw new Error(
@@ -51,12 +69,23 @@ async function detectPythonCmd(): Promise<string[]> {
     );
 }
 
-function canRun(argv: string[]): Promise<boolean> {
+function canRun(argv: string[], cwd: string): Promise<boolean> {
     return new Promise((resolve) => {
         const [bin, ...args] = argv;
-        const child = spawn(bin, args, { stdio: ['ignore', 'ignore', 'ignore'] });
-        child.on('error', () => resolve(false));
-        child.on('close', (code) => resolve(code === 0));
+        const child = spawn(bin, args, {
+            cwd,
+            env: childEnv(),
+            stdio: ['ignore', 'ignore', 'ignore'],
+            shell: shouldUseShell(),
+        });
+        let settled = false;
+        const done = (value: boolean) => {
+            if (settled) return;
+            settled = true;
+            resolve(value);
+        };
+        child.on('error', () => done(false));
+        child.on('close', (code) => done(code === 0));
     });
 }
 
@@ -66,17 +95,30 @@ function runCapture(
 ): Promise<{ code: number | null; stdout: string; stderr: string }> {
     return new Promise((resolve, reject) => {
         const [bin, ...args] = argv;
-        const child = spawn(bin, args, { cwd, env: process.env });
+        const child = spawn(bin, args, {
+            cwd,
+            env: childEnv(),
+            shell: shouldUseShell(),
+        });
         let stdout = '';
         let stderr = '';
-        child.stdout.on('data', (d: Buffer) => {
+        let settled = false;
+        child.stdout?.on('data', (d: Buffer) => {
             stdout += d.toString('utf-8');
         });
-        child.stderr.on('data', (d: Buffer) => {
+        child.stderr?.on('data', (d: Buffer) => {
             stderr += d.toString('utf-8');
         });
-        child.on('error', reject);
-        child.on('close', (code) => resolve({ code, stdout, stderr }));
+        child.on('error', (err) => {
+            if (settled) return;
+            settled = true;
+            reject(err);
+        });
+        child.on('close', (code) => {
+            if (settled) return;
+            settled = true;
+            resolve({ code, stdout, stderr });
+        });
     });
 }
 
@@ -113,16 +155,25 @@ async function ensureStudentFile(
 }
 
 export async function runOfflineCheck(opts: OfflineCheckOptions): Promise<CheckResponse> {
+    const idCheck = validateTaskId(opts.taskId);
+    if (!idCheck.ok) {
+        throw new Error(idCheck.error);
+    }
+
     await ensureStudentFile(opts);
-    const base = await detectPythonCmd();
-    // base is either ['ego']/['uv','run','ego'] or ['python','-m','ego.cli']
+    const base = await detectPythonCmd(opts.cwd);
     const argv = [...base, 'check', opts.taskId, '--json'];
     const { code, stdout, stderr } = await runCapture(argv, opts.cwd);
 
     const jsonLine = extractJson(stdout);
     if (!jsonLine) {
-        const detail = (stderr || stdout || `exit ${code}`).trim();
-        throw new Error(detail || 'Offline check produced no JSON output.');
+        const detail = (stderr || stdout || '').trim();
+        const exitPart = `exit code ${code}`;
+        throw new Error(
+            detail
+                ? `${detail}\n(${exitPart})`
+                : `Offline check produced no JSON output (${exitPart}).`
+        );
     }
 
     let parsed: CheckResponse;
@@ -150,7 +201,6 @@ export async function runOfflineCheck(opts: OfflineCheckOptions): Promise<CheckR
 function extractJson(stdout: string): string | undefined {
     const trimmed = stdout.trim();
     if (!trimmed) return undefined;
-    // Prefer last JSON object in stdout (CLI may print other lines).
     const lines = trimmed.split(/\r?\n/).filter((l) => l.trim().startsWith('{'));
     if (lines.length > 0) return lines[lines.length - 1];
     const start = trimmed.indexOf('{');
