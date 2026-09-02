@@ -28,6 +28,11 @@
         "category": "Ego"
       },
       {
+        "command": "ego.setupPython",
+        "title": "Ego: Setup Python",
+        "category": "Ego"
+      },
+      {
         "command": "ego.check",
         "title": "Ego: Check Current Task",
         "category": "Ego"
@@ -171,6 +176,12 @@
           "type": "boolean",
           "default": false,
           "description": "Automatically run check when saving a task .py file",
+          "scope": "resource"
+        },
+        "ego.pythonPackageSpec": {
+          "type": "string",
+          "default": "ego-trainer",
+          "description": "Python package to install for Ego checks; may be a published package or a trusted local path/URL",
           "scope": "resource"
         }
       }
