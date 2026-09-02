@@ -1,16 +1,17 @@
 .vscode/**
 .vscode-test/**
+.vscodeignore
 src/**
-# Exclude dev-only packages so the runtime dependency `marked` (and its
-# runtime dependency tree) ships inside the .vsix. Build tooling, type defs,
-# and the Svelte/esbuild pipeline are not needed at runtime.
-node_modules/@types/**
-node_modules/esbuild/**
-node_modules/esbuild-svelte/**
-node_modules/svelte/**
-node_modules/typescript/**
+out/test/**
 out/**/*.map
 out/**/*.d.ts
+out/extension.js
+out/extension.js.map
+node_modules/**
+package-lock.json
 tsconfig.json
-esbuild.webview.mjs
+esbuild.*.mjs
+scripts/**
+.devin/**
+.esbuild
 .gitignore
