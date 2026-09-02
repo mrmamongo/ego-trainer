@@ -259,3 +259,116 @@ def test_delete_user_admin_only(client: TestClient) -> None:
         assert conn.execute("SELECT 1 FROM runs WHERE student_id = ?", (sid,)).fetchone() is None
     finally:
         conn.close()
+
+
+# === GET /admin/overview ===
+
+
+def _insert_sync_log_row(
+    *,
+    status: str = "success",
+    added: int = 1,
+    source: str = "manual",
+    repo_url: str = "file://test",
+) -> None:
+    from ego_server.db import get_connection
+
+    conn = get_connection()
+    try:
+        conn.execute(
+            "INSERT INTO sync_log "
+            "(started_at, finished_at, source, repo_url, git_sha, status, "
+            " added, updated, skipped, errors, error_details) "
+            "VALUES (datetime('now'), datetime('now'), ?, ?, NULL, ?, ?, 0, 0, 0, '')",
+            (source, repo_url, status, added),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def test_overview_unauthorized(client: TestClient) -> None:
+    assert client.get("/admin/overview").status_code == 401
+
+
+def test_overview_forbidden_for_student(client: TestClient) -> None:
+    s_token, _ = _make_student(client)
+    r = client.get("/admin/overview", headers=_auth_headers(s_token))
+    assert r.status_code == 403
+
+
+def test_overview_empty_db_latest_sync_null(client: TestClient) -> None:
+    m_token, _ = _create_user(client, "mentor1", "pw", "mentor")
+    r = client.get("/admin/overview", headers=_auth_headers(m_token))
+    assert r.status_code == 200
+    data = r.json()
+    assert data["server"] == "ok"
+    assert data["counts"] == {"projects": 0, "folders": 0, "tasks": 0, "students": 0}
+    assert data["latest_sync"] is None
+
+
+def test_overview_mentor_and_admin_success(client: TestClient) -> None:
+    # Seed: 1 project, 1 folder, 1 task, 2 students (1 created via helper).
+    from ego_server.db import get_connection
+
+    conn = get_connection()
+    try:
+        conn.execute(
+            "INSERT INTO projects (id, name, description, version, \"order\", "
+            "default_locale, tags, version_policy, created_at, updated_at) "
+            "VALUES ('p1', 'P1', '', '1.0.0', 0, 'ru', '[]', 'declare', "
+            "datetime('now'), datetime('now'))"
+        )
+        conn.execute(
+            "INSERT INTO folders (id, project_id, code, name, description, "
+            "\"order\", level, created_at, updated_at) "
+            "VALUES ('f1', 'p1', 'F', 'F1', '', 0, 'easy', "
+            "datetime('now'), datetime('now'))"
+        )
+        conn.execute(
+            "INSERT INTO tasks (id, block, slug, task_id, title, level, tags, "
+            "version, content_hash, breaking, md_path, folder_id, project_id, "
+            "created_at, updated_at) "
+            "VALUES ('F1', 'F', 'block_f_simple', 'F1', 'T', 'easy', '[]', "
+            "'1.0.0', 'h', 0, 'docs/tasks/F1.md', 'f1', 'p1', "
+            "datetime('now'), datetime('now'))"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    _make_student(client, "student_a")
+    _make_student(client, "student_b")
+    _insert_sync_log_row(status="success", added=1)
+
+    m_token, _ = _create_user(client, "mentor1", "pw", "mentor")
+    r = client.get("/admin/overview", headers=_auth_headers(m_token))
+    assert r.status_code == 200
+    data = r.json()
+    assert data["server"] == "ok"
+    assert data["counts"] == {
+        "projects": 1,
+        "folders": 1,
+        "tasks": 1,
+        "students": 2,
+    }
+    assert data["latest_sync"] is not None
+    assert data["latest_sync"]["status"] == "success"
+    assert data["latest_sync"]["added"] == 1
+
+    a_token, _ = _create_user(client, "admin1", "pw", "admin")
+    r = client.get("/admin/overview", headers=_auth_headers(a_token))
+    assert r.status_code == 200
+    assert r.json()["counts"]["tasks"] == 1
+
+
+def test_overview_latest_sync_is_newest_row(client: TestClient) -> None:
+    _insert_sync_log_row(status="success", added=1)
+    _insert_sync_log_row(status="failed", added=0)
+
+    a_token, _ = _create_user(client, "admin1", "pw", "admin")
+    r = client.get("/admin/overview", headers=_auth_headers(a_token))
+    assert r.status_code == 200
+    latest = r.json()["latest_sync"]
+    assert latest is not None
+    assert latest["status"] == "failed"  # newest row wins
