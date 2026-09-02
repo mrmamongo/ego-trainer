@@ -8,6 +8,8 @@ All endpoints require ``admin`` role (per ADR-0001 D8).
 
 from __future__ import annotations
 
+import re
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -24,6 +26,8 @@ from ego_server.models import (
     OverviewCounts,
     OverviewDTO,
     ResetPasswordRequest,
+    StudioValidateRequest,
+    StudioValidateResponse,
     StudentSummaryDTO,
     SyncLogRow,
     SyncResultDTO,
@@ -486,6 +490,232 @@ def _sidecar_rel(md_path_str: str, suffix: str) -> str:
     any relative directory component of ``md_path_str``.
     """
     return str(Path(md_path_str).with_suffix(suffix))
+
+
+# === Task Studio validate (POST /admin/tasks/{task_id}/studio/validate) ===
+
+
+_STRICT_SEMVER_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
+
+
+def _is_strict_semver(v: str) -> bool:
+    """True iff ``v`` is a clean ``MAJOR.MINOR.PATCH`` (no pre-release/build)."""
+    return bool(_STRICT_SEMVER_RE.match(v))
+
+
+def _semver_tuple(v: str) -> tuple[int, int, int] | None:
+    """Parse ``'1.2.3'`` → ``(1, 2, 3)``. Returns ``None`` if not 3 int parts."""
+    parts = v.split(".")
+    if len(parts) != 3:
+        return None
+    try:
+        return (int(parts[0]), int(parts[1]), int(parts[2]))
+    except ValueError:
+        return None
+
+
+def _semver_gt(a: str, b: str) -> bool:
+    """True iff SemVer ``a`` > ``b`` (string fallback for non-SemVer values)."""
+    ta = _semver_tuple(a)
+    tb = _semver_tuple(b)
+    if ta is None or tb is None:
+        return a > b
+    return ta > tb
+
+
+@router.post(
+    "/tasks/{task_id}/studio/validate",
+    response_model=StudioValidateResponse,
+    dependencies=[Depends(require_role("admin"))],
+)
+async def validate_task_studio(
+    task_id: str, body: StudioValidateRequest, db: DbDep
+) -> StudioValidateResponse:
+    """Validate a Task Studio candidate without modifying canonical files.
+
+    Accepts the full candidate markdown (with YAML frontmatter), solution,
+    and tests sidecars. Validation is entirely read-only with respect to the
+    content repo — the candidate is parsed from a temporary isolated
+    directory, so canonical files remain byte-identical.
+
+    Failure modes:
+
+    - **404** — task ``task_id`` not found in the DB.
+    - **409** — content repo is unconfigured / non-local / missing / not
+      writable; the DB-stored ``md_path`` escapes the canonical root via
+      ``..`` or a symlink; ``expected_version`` does not match the current
+      DB version (optimistic concurrency); or the project uses
+      ``version_policy=declare``, content changed, and the candidate
+      version is not strictly greater than the current version.
+    - **422** — frontmatter is missing/malformed; frontmatter ``id`` does
+      not match the DB task identity; candidate version is not valid
+      strict SemVer; the candidate markdown + sidecars fail to parse
+      through :func:`ego.parser.parse_task_file`; or the solution / tests
+      do not compile as Python.
+    """
+    row = db.execute(
+        "SELECT id, task_id, version, md_path, project_id FROM tasks WHERE id = ?",
+        (task_id,),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found",
+        )
+
+    # --- root + writability (409 on read-only / unconfigured) ---
+    root_status = resolve_root(safe_config())
+    if not root_status.ok or root_status.path is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"content repo is read-only: {root_status.reason}",
+        )
+    root = root_status.path
+    if not is_writable(root):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="content repo root is not writable",
+        )
+
+    # --- canonical path containment (409 on traversal / symlink escape) ---
+    md_path_str = row["md_path"] or ""
+    md_canonical = contained_path(root, md_path_str)
+    if md_canonical is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="task markdown path escapes content root",
+        )
+
+    # --- expected_version optimistic concurrency (409 on mismatch) ---
+    current_version = row["version"]
+    if body.expected_version != current_version:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"expected_version {body.expected_version!r} does not match "
+                f"current version {current_version!r}"
+            ),
+        )
+
+    # --- frontmatter parse + id match (422 on malformed / mismatch) ---
+    from ego.catalog import parse_task_frontmatter
+
+    try:
+        fm, _body = parse_task_frontmatter(body.markdown)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"malformed frontmatter: {e}",
+        )
+    if fm is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="candidate markdown must include YAML frontmatter",
+        )
+    if fm.id != row["id"]:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"frontmatter id {fm.id!r} does not match task id {row['id']!r}",
+        )
+
+    # --- candidate version: strict SemVer (422 on invalid) ---
+    candidate_version = fm.version
+    if not _is_strict_semver(candidate_version):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                f"candidate version {candidate_version!r} is not valid strict "
+                f"SemVer (expected MAJOR.MINOR.PATCH)"
+            ),
+        )
+
+    # --- version_policy lookup (default 'declare' for legacy/no project) ---
+    version_policy = "declare"
+    project_id = row["project_id"]
+    if project_id:
+        prow = db.execute(
+            "SELECT version_policy FROM projects WHERE id = ?",
+            (project_id,),
+        ).fetchone()
+        if prow is not None:
+            version_policy = prow["version_policy"]
+
+    # --- content changed? (read canonical for comparison; no writes) ---
+    canonical_md = md_canonical.read_text(encoding="utf-8") if md_canonical.is_file() else ""
+    sol_canonical_p = contained_path(root, _sidecar_rel(md_path_str, ".solution.py"))
+    canonical_sol = (
+        sol_canonical_p.read_text(encoding="utf-8")
+        if (sol_canonical_p is not None and sol_canonical_p.is_file())
+        else ""
+    )
+    tests_canonical_p = contained_path(root, _sidecar_rel(md_path_str, ".tests.py"))
+    canonical_tests = (
+        tests_canonical_p.read_text(encoding="utf-8")
+        if (tests_canonical_p is not None and tests_canonical_p.is_file())
+        else ""
+    )
+    content_changed = (
+        body.markdown != canonical_md
+        or body.solution_py != canonical_sol
+        or body.tests_py != canonical_tests
+    )
+
+    # --- version_policy=declare + changed content → must bump (409) ---
+    if version_policy == "declare" and content_changed:
+        if not _semver_gt(candidate_version, current_version):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"version_policy=declare requires candidate version > current "
+                    f"({current_version}) when content changed, got {candidate_version}"
+                ),
+            )
+
+    # --- parse through the existing parser using a temp isolated candidate (422) ---
+    from ego.parser import parse_task_file
+
+    md_name = Path(md_path_str).name
+    sol_name = Path(md_path_str).with_suffix(".solution.py").name
+    with tempfile.TemporaryDirectory(prefix="ego-studio-validate-") as tmp:
+        tmp_dir = Path(tmp)
+        (tmp_dir / md_name).write_text(body.markdown, encoding="utf-8")
+        (tmp_dir / sol_name).write_text(body.solution_py, encoding="utf-8")
+        if body.tests_py:
+            tests_name = Path(md_path_str).with_suffix(".tests.py").name
+            (tmp_dir / tests_name).write_text(body.tests_py, encoding="utf-8")
+        try:
+            parse_task_file(tmp_dir / md_name)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"candidate failed to parse: {e}",
+            )
+
+    # --- Python compile: solution (required) + tests (if nonempty) (422) ---
+    try:
+        compile(body.solution_py, "<candidate.solution.py>", "exec")
+    except SyntaxError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"solution_py has a syntax error: {e}",
+        )
+    if body.tests_py:
+        try:
+            compile(body.tests_py, "<candidate.tests.py>", "exec")
+        except SyntaxError as e:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"tests_py has a syntax error: {e}",
+            )
+
+    return StudioValidateResponse(
+        valid=True,
+        task_id=row["task_id"],
+        current_version=current_version,
+        candidate_version=candidate_version,
+        content_changed=content_changed,
+        version_policy=version_policy,
+    )
 
 
 # === Helpers ===

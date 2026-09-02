@@ -900,3 +900,260 @@ def test_studio_task_not_found_404(studio_env: TestClient) -> None:
     a_token, _ = _create_user(studio_env, "admin1", "pw", "admin")
     r = studio_env.get("/admin/tasks/NOPE/studio", headers=_auth_headers(a_token))
     assert r.status_code == 404
+
+
+# === POST /admin/tasks/{task_id}/studio/validate ===
+
+
+def _valid_candidate_md(
+    *, version: str = "2.0.0", task_id: str = "F1", title: str = "Studio"
+) -> str:
+    """Build a candidate markdown with valid YAML frontmatter + body."""
+    return (
+        f"---\nid: {task_id}\ntitle: '{title}'\nversion: '{version}'\nlevel: easy\n---\n\n"
+        f"# Задача {task_id}: {title}\n\n## Условие\nDo the thing.\n"
+    )
+
+
+_VALID_SOLUTION = "def task_f1():\n    return 42\n"
+_VALID_TESTS = "from solution import task_f1\n\n@case\ndef t():\n    assert task_f1() == 42\n"
+
+
+def _validate_payload(
+    *,
+    expected_version: str = "1.0.0",
+    markdown: str | None = None,
+    solution_py: str | None = None,
+    tests_py: str | None = None,
+) -> dict:
+    return {
+        "expected_version": expected_version,
+        "markdown": markdown if markdown is not None else _valid_candidate_md(),
+        "solution_py": solution_py if solution_py is not None else _VALID_SOLUTION,
+        "tests_py": tests_py if tests_py is not None else _VALID_TESTS,
+    }
+
+
+def _read_canonical(studio_env: TestClient) -> dict[str, str]:
+    """Read the three canonical files from the configured content repo."""
+    from ego_server.content_config import content_settings
+
+    repo = content_settings.to_config().resolved_local_path
+    files = {}
+    for name in ("task_f1.md", "task_f1.solution.py", "task_f1.tests.py"):
+        p = repo / "tasks" / name
+        files[name] = p.read_text(encoding="utf-8") if p.is_file() else ""
+    return files
+
+
+def test_studio_validate_unauthorized(studio_env: TestClient) -> None:
+    r = studio_env.post("/admin/tasks/F1/studio/validate", json=_validate_payload())
+    assert r.status_code == 401
+
+
+def test_studio_validate_forbidden_for_student(studio_env: TestClient) -> None:
+    s_token, _ = _make_student(studio_env)
+    r = studio_env.post(
+        "/admin/tasks/F1/studio/validate",
+        json=_validate_payload(),
+        headers=_auth_headers(s_token),
+    )
+    assert r.status_code == 403
+
+
+def test_studio_validate_forbidden_for_mentor(studio_env: TestClient) -> None:
+    m_token, _ = _create_user(studio_env, "mentor1", "pw", "mentor")
+    r = studio_env.post(
+        "/admin/tasks/F1/studio/validate",
+        json=_validate_payload(),
+        headers=_auth_headers(m_token),
+    )
+    assert r.status_code == 403
+
+
+def test_studio_validate_admin_happy(studio_env: TestClient) -> None:
+    a_token, _ = _create_user(studio_env, "admin1", "pw", "admin")
+    before = _read_canonical(studio_env)
+    r = studio_env.post(
+        "/admin/tasks/F1/studio/validate",
+        json=_validate_payload(),
+        headers=_auth_headers(a_token),
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["valid"] is True
+    assert data["task_id"] == "F1"
+    assert data["current_version"] == "1.0.0"
+    assert data["candidate_version"] == "2.0.0"
+    assert data["content_changed"] is True
+    assert data["version_policy"] == "declare"
+    # Canonical files must be byte-identical after validation.
+    assert _read_canonical(studio_env) == before
+
+
+def test_studio_validate_unchanged_content_no_bump_ok(studio_env: TestClient) -> None:
+    """When content is unchanged, version need not bump (declare policy)."""
+    a_token, _ = _create_user(studio_env, "admin1", "pw", "admin")
+    canonical = _read_canonical(studio_env)
+    # Candidate matches canonical exactly (no frontmatter in canonical).
+    payload = _validate_payload(
+        markdown=canonical["task_f1.md"],
+        solution_py=canonical["task_f1.solution.py"],
+        tests_py=canonical["task_f1.tests.py"],
+    )
+    # But canonical has no frontmatter → 422 (frontmatter required).
+    r = studio_env.post(
+        "/admin/tasks/F1/studio/validate",
+        json=payload,
+        headers=_auth_headers(a_token),
+    )
+    assert r.status_code == 422
+    assert "frontmatter" in r.json()["detail"].lower()
+
+
+def test_studio_validate_malformed_frontmatter_422(studio_env: TestClient) -> None:
+    a_token, _ = _create_user(studio_env, "admin1", "pw", "admin")
+    # Unclosed frontmatter.
+    bad_md = "---\nid: F1\ntitle: Test\n\n# Задача F1: Test\n\n## Условие\nx\n"
+    r = studio_env.post(
+        "/admin/tasks/F1/studio/validate",
+        json=_validate_payload(markdown=bad_md),
+        headers=_auth_headers(a_token),
+    )
+    assert r.status_code == 422
+    assert "frontmatter" in r.json()["detail"].lower()
+
+
+def test_studio_validate_frontmatter_id_mismatch_422(studio_env: TestClient) -> None:
+    a_token, _ = _create_user(studio_env, "admin1", "pw", "admin")
+    r = studio_env.post(
+        "/admin/tasks/F1/studio/validate",
+        json=_validate_payload(markdown=_valid_candidate_md(task_id="WRONG")),
+        headers=_auth_headers(a_token),
+    )
+    assert r.status_code == 422
+    assert "does not match" in r.json()["detail"]
+
+
+def test_studio_validate_invalid_semver_422(studio_env: TestClient) -> None:
+    a_token, _ = _create_user(studio_env, "admin1", "pw", "admin")
+    r = studio_env.post(
+        "/admin/tasks/F1/studio/validate",
+        json=_validate_payload(markdown=_valid_candidate_md(version="1.0")),
+        headers=_auth_headers(a_token),
+    )
+    assert r.status_code == 422
+    assert "semver" in r.json()["detail"].lower()
+
+
+def test_studio_validate_malformed_solution_422_no_write(studio_env: TestClient) -> None:
+    a_token, _ = _create_user(studio_env, "admin1", "pw", "admin")
+    before = _read_canonical(studio_env)
+    r = studio_env.post(
+        "/admin/tasks/F1/studio/validate",
+        json=_validate_payload(solution_py="def task_f1(\n    return 42\n"),
+        headers=_auth_headers(a_token),
+    )
+    assert r.status_code == 422
+    assert "solution" in r.json()["detail"].lower()
+    # Canonical files must remain byte-identical.
+    assert _read_canonical(studio_env) == before
+
+
+def test_studio_validate_malformed_tests_422(studio_env: TestClient) -> None:
+    a_token, _ = _create_user(studio_env, "admin1", "pw", "admin")
+    r = studio_env.post(
+        "/admin/tasks/F1/studio/validate",
+        json=_validate_payload(tests_py="def (\n"),
+        headers=_auth_headers(a_token),
+    )
+    assert r.status_code == 422
+    assert "tests" in r.json()["detail"].lower()
+
+
+def test_studio_validate_stale_expected_version_409(studio_env: TestClient) -> None:
+    a_token, _ = _create_user(studio_env, "admin1", "pw", "admin")
+    r = studio_env.post(
+        "/admin/tasks/F1/studio/validate",
+        json=_validate_payload(expected_version="0.9.0"),
+        headers=_auth_headers(a_token),
+    )
+    assert r.status_code == 409
+    assert "expected_version" in r.json()["detail"]
+
+
+def test_studio_validate_non_bumped_declared_version_409(studio_env: TestClient) -> None:
+    """Content changed + version_policy=declare → version must be > current."""
+    a_token, _ = _create_user(studio_env, "admin1", "pw", "admin")
+    # Candidate version == current (1.0.0), but content differs → 409.
+    r = studio_env.post(
+        "/admin/tasks/F1/studio/validate",
+        json=_validate_payload(
+            markdown=_valid_candidate_md(version="1.0.0", title="Changed"),
+        ),
+        headers=_auth_headers(a_token),
+    )
+    assert r.status_code == 409
+    assert "declare" in r.json()["detail"]
+
+
+def test_studio_validate_traversal_409(studio_env: TestClient) -> None:
+    from ego_server.db import get_connection
+
+    conn = get_connection()
+    try:
+        conn.execute("UPDATE tasks SET md_path = ? WHERE id = 'F1'", ("../secret.md",))
+        conn.commit()
+    finally:
+        conn.close()
+
+    a_token, _ = _create_user(studio_env, "admin1", "pw", "admin")
+    r = studio_env.post(
+        "/admin/tasks/F1/studio/validate",
+        json=_validate_payload(),
+        headers=_auth_headers(a_token),
+    )
+    assert r.status_code == 409
+    assert "escapes" in r.json()["detail"]
+
+
+def test_studio_validate_read_only_unconfigured_409(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("EGO_DB_PATH", str(tmp_path / "test.db"))
+    monkeypatch.delenv("EGO_TASKS_REPO_URL", raising=False)
+
+    import ego_server.config
+    import ego_server.content_config
+    import ego_server.db
+
+    importlib.reload(ego_server.config)
+    importlib.reload(ego_server.content_config)
+    importlib.reload(ego_server.db)
+    from ego_server.db import init_db
+
+    init_db()
+    _insert_task_row()
+
+    import ego_server.main
+
+    importlib.reload(ego_server.main)
+    from ego_server.main import app
+
+    with TestClient(app) as c:
+        a_token, _ = _create_user(c, "admin1", "pw", "admin")
+        r = c.post(
+            "/admin/tasks/F1/studio/validate",
+            json=_validate_payload(),
+            headers=_auth_headers(a_token),
+        )
+        assert r.status_code == 409
+        assert "read-only" in r.json()["detail"].lower()
+
+
+def test_studio_validate_task_not_found_404(studio_env: TestClient) -> None:
+    a_token, _ = _create_user(studio_env, "admin1", "pw", "admin")
+    r = studio_env.post(
+        "/admin/tasks/NOPE/studio/validate",
+        json=_validate_payload(),
+        headers=_auth_headers(a_token),
+    )
+    assert r.status_code == 404
