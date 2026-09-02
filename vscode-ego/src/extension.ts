@@ -288,20 +288,17 @@ async function cmdLogin(context: vscode.ExtensionContext): Promise<void> {
     });
     if (!password) return;
 
-    const role = await vscode.window.showQuickPick(
-        ['student', 'mentor', 'admin'],
-        { placeHolder: 'Select role (student for practice)' }
-    );
-    if (!role) return;
-
+    // Registration always creates a student — the server ignores any client-
+    // supplied role and self-registration must never escalate to mentor/admin.
+    // Existing users fall back to login below.
     try {
-        const resp = await api.register(username, password, role);
+        const resp = await api.register(username, password, 'student');
         await context.secrets.store(SECRET_KEY, resp.access_token);
         api.setToken(resp.access_token);
         vscode.commands.executeCommand('setContext', 'ego.loggedIn', true);
         statusBar.setMode('server');
         treeProvider.refresh();
-        vscode.window.showInformationMessage(`Ego: Logged in as ${username} (${role})`);
+        vscode.window.showInformationMessage(`Ego: Logged in as ${username} (student)`);
     } catch (e) {
         // Maybe already registered — try login.
         try {
