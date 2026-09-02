@@ -16,7 +16,8 @@ import { pullTasksToWorkspace } from './pullTasks';
 import { DashboardView } from './dashboardView';
 import { TaskViewPanel } from './taskViewPanel';
 import { openTaskPy, openTaskWithView } from './openTask';
-import { hasEgoDir, readEgoConfig, readManifest, type EgoMode } from './egoWorkspace';
+import { readEgoConfig, readManifest, type EgoMode } from './egoWorkspace';
+import { decideSession } from './sessionDecision';
 import { EgoStatusBar } from './statusBar';
 import { runOfflineCheck } from './offlineCheck';
 import { switchMode } from './modeSwitch';
@@ -29,25 +30,28 @@ let treeProvider: EgoTaskTreeProvider;
 let statusBar: EgoStatusBar;
 
 async function recreateApi(context: vscode.ExtensionContext): Promise<void> {
-    const serverUrl = vscode.workspace
+    const settingsUrl = vscode.workspace
         .getConfiguration('ego')
         .get<string>('serverUrl', 'http://localhost:8000');
-    const token = await context.secrets.get(SECRET_KEY);
-    api = new EgoApi(serverUrl, token);
+    const workspaceConfig = await readEgoConfig();
+    const session = decideSession(workspaceConfig, await context.secrets.get(SECRET_KEY));
+    api = new EgoApi(settingsUrl, session.apiToken);
     treeProvider.updateApi(api);
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
     // Load config.
     const config = vscode.workspace.getConfiguration('ego');
-    const serverUrl = config.get<string>('serverUrl', 'http://localhost:8000');
+    const settingsUrl = config.get<string>('serverUrl', 'http://localhost:8000');
+    const workspaceConfig = await readEgoConfig();
+    const storedToken = await context.secrets.get(SECRET_KEY);
+    const session = decideSession(workspaceConfig, storedToken);
+    const serverUrl = settingsUrl;
 
     // Svelte webview bundles live under out/webview/ (ADR-0015).
     TestResultsPanel.configure(context.extensionUri);
 
-    // Load token from SecretStorage.
-    const token = await context.secrets.get(SECRET_KEY);
-    api = new EgoApi(serverUrl, token);
+    api = new EgoApi(serverUrl, session.apiToken);
 
     // Tree view.
     treeProvider = new EgoTaskTreeProvider(api);
@@ -244,37 +248,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         })
     );
 
-    // Check if logged in / offline ready.
-    if (token) {
+    // Config mode is authoritative for auth and readiness.
+    await vscode.commands.executeCommand('setContext', 'ego.offline', session.offline);
+    await vscode.commands.executeCommand('setContext', 'ego.loggedIn', false);
+    await vscode.commands.executeCommand('setContext', 'ego.ready', session.ready);
+    if (session.validateToken) {
         try {
             await api.me();
             await vscode.commands.executeCommand('setContext', 'ego.loggedIn', true);
-            await vscode.commands.executeCommand('setContext', 'ego.ready', true);
-            statusBar.setMode('server');
         } catch {
-            // Token invalid — clear it.
+            // Invalid tokens are cleared only while operating in server mode.
             await context.secrets.delete(SECRET_KEY);
         }
-    } else if (await hasEgoDir()) {
-        const egoCfg = await readEgoConfig();
-        if (egoCfg?.mode === 'offline') {
-            await vscode.commands.executeCommand('setContext', 'ego.offline', true);
-            await vscode.commands.executeCommand('setContext', 'ego.ready', true);
-            statusBar.setMode('offline');
-        } else if (egoCfg) {
-            await vscode.commands.executeCommand('setContext', 'ego.ready', true);
-            statusBar.setMode('server');
-        }
     }
+    statusBar.setMode(session.status);
 
     // Auto-reload when serverUrl config changes (e.g. via Settings UI).
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration(async (e) => {
             if (e.affectsConfiguration('ego.serverUrl')) {
                 const newUrl = vscode.workspace.getConfiguration('ego').get<string>('serverUrl', 'http://localhost:8000');
-                const tok = await context.secrets.get(SECRET_KEY);
-                api = new EgoApi(newUrl, tok);
-                treeProvider.updateApi(api);
+                await recreateApi(context);
                 vscode.window.showInformationMessage(`Ego: Server URL changed to ${newUrl}`);
             }
         })
@@ -374,9 +368,7 @@ async function cmdSetServer(context: vscode.ExtensionContext): Promise<void> {
     if (!url) return;
 
     await vscode.workspace.getConfiguration('ego').update('serverUrl', url, vscode.ConfigurationTarget.Global);
-    const token = await context.secrets.get(SECRET_KEY);
-    api = new EgoApi(url, token);
-    treeProvider.updateApi(api);
+    await recreateApi(context);
     vscode.window.showInformationMessage(`Ego: Server set to ${url}`);
 }
 

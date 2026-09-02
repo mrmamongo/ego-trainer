@@ -2,11 +2,13 @@
 
 import * as vscode from 'vscode';
 import { studentStubFromSolution } from './studentStub';
+import { planEgoSkeleton } from './sessionDecision';
 import type { ManifestTaskEntry } from './pullSafety';
 
 export type EgoMode = 'server' | 'offline';
 
 export interface EgoConfigFile {
+    [key: string]: unknown;
     server_url: string;
     token: string;
     student_id: string;
@@ -69,46 +71,64 @@ export async function writeEgoConfig(config: EgoConfigFile, root?: vscode.Uri): 
     );
 }
 
-/** Create .ego/ skeleton (config, empty manifest/progress, runs/, cache/). */
+/** Create .ego/ skeleton without removing existing user data. */
 export async function createEgoSkeleton(
-    config: EgoConfigFile,
-    opts?: { force?: boolean; root?: vscode.Uri }
+    supplied: EgoConfigFile,
+    opts?: { root?: vscode.Uri }
 ): Promise<vscode.Uri> {
     const root = opts?.root ?? workspaceRoot();
     if (!root) throw new Error('No workspace folder open.');
     const dir = vscode.Uri.joinPath(root, '.ego');
 
-    if (await hasEgoDir(root)) {
-        if (!opts?.force) {
-            throw new Error('.ego/ already exists. Re-run init with overwrite if needed.');
+    // Ensure directories
+    const ensureDirectory = async (uri: vscode.Uri): Promise<void> => {
+        try {
+            await vscode.workspace.fs.stat(uri);
+        } catch {
+            await vscode.workspace.fs.createDirectory(uri);
         }
-        await vscode.workspace.fs.delete(dir, { recursive: true });
+    };
+    await ensureDirectory(dir);
+    await ensureDirectory(vscode.Uri.joinPath(dir, 'runs'));
+    await ensureDirectory(vscode.Uri.joinPath(dir, 'cache'));
+    await ensureDirectory(vscode.Uri.joinPath(dir, 'cache', 'sol'));
+
+    // Detect existence of critical files
+    const manifestExists = await manifestFileExists(root);
+    let progressExists = false;
+    try {
+        await vscode.workspace.fs.stat(vscode.Uri.joinPath(dir, 'progress.json'));
+        progressExists = true;
+    } catch {}
+
+    // Read previous config and plan
+    const existingConfig = await readEgoConfig(root);
+    const plan = planEgoSkeleton(
+        existingConfig,
+        supplied,
+        { manifest: manifestExists, progress: progressExists }
+    );
+    await writeEgoConfig(plan.config, root);
+
+    // Write manifest/progress only if not present (plan)
+    const manifest = vscode.Uri.joinPath(dir, 'manifest.yaml');
+    if (plan.writeManifest) {
+        await vscode.workspace.fs.writeFile(
+            manifest,
+            Buffer.from(JSON.stringify({ tasks: [], server_version: '', last_pull_at: null }, null, 2), 'utf-8')
+        );
     }
-
-    await vscode.workspace.fs.createDirectory(dir);
-    await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(dir, 'runs'));
-    await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(dir, 'cache', 'sol'));
-
-    await writeEgoConfig(config, root);
-    await vscode.workspace.fs.writeFile(
-        vscode.Uri.joinPath(dir, 'manifest.yaml'),
-        Buffer.from(JSON.stringify({ tasks: [], server_version: '', last_pull_at: null }, null, 2), 'utf-8')
-    );
-    await vscode.workspace.fs.writeFile(
-        vscode.Uri.joinPath(dir, 'progress.json'),
-        Buffer.from(
-            JSON.stringify(
-                {
-                    student_id: config.student_id,
-                    student_username: config.student_username,
-                    entries: [],
-                },
-                null,
-                2
-            ),
-            'utf-8'
-        )
-    );
+    const progress = vscode.Uri.joinPath(dir, 'progress.json');
+    if (plan.writeProgress) {
+        await vscode.workspace.fs.writeFile(
+            progress,
+            Buffer.from(JSON.stringify({
+                student_id: plan.config.student_id,
+                student_username: plan.config.student_username,
+                entries: [],
+            }, null, 2), 'utf-8')
+        );
+    }
     return dir;
 }
 
