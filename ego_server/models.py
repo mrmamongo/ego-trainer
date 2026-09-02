@@ -224,3 +224,60 @@ class OverviewDTO(BaseModel):
     server: str = "ok"
     counts: OverviewCounts
     latest_sync: SyncLogRow | None = None
+
+
+# === Catalog browse (GET /admin/catalog) ===
+
+
+class CatalogTaskDTO(BaseModel):
+    """One task in the catalog hierarchy (GET /admin/catalog).
+
+    Only columns that exist on the ``tasks`` table are exposed — no
+    invented schema. ``breaking`` is normalised to a bool from the 0/1 int.
+    """
+
+    id: str
+    task_id: str
+    title: str
+    block: str
+    slug: str
+    level: str
+    version: str
+    breaking: bool = False
+    md_path: str
+    folder_id: str | None = None
+    project_id: str | None = None
+
+
+class CatalogFolderDTO(BaseModel):
+    """One folder in the catalog hierarchy (GET /admin/catalog)."""
+
+    id: str
+    project_id: str
+    code: str
+    name: str
+    order: int
+    level: str | None = None
+    tasks: list[CatalogTaskDTO] = Field(default_factory=list)
+
+
+class CatalogProjectDTO(BaseModel):
+    """One project in the catalog hierarchy (GET /admin/catalog)."""
+
+    id: str
+    name: str
+    order: int
+    version: str
+    folders: list[CatalogFolderDTO] = Field(default_factory=list)
+
+
+class CatalogDTO(BaseModel):
+    """Full catalog hierarchy for GET /admin/catalog (mentor/admin only).
+
+    ``projects`` is ordered by (``order``, ``id``); folders by
+    (``order``, ``id``); tasks by (``task_id``, ``id``). When ``q`` is
+    supplied, unmatched leaves are pruned but ancestors of matches are
+    retained. An empty DB yields ``{"projects": []}``.
+    """
+
+    projects: list[CatalogProjectDTO] = Field(default_factory=list)
