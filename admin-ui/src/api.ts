@@ -36,6 +36,72 @@ export interface MeResponse {
 	role: string;
 }
 
+// === Overview / Catalog (GET /admin/overview, GET /admin/catalog) ===
+
+export interface SyncLogRow {
+	id: number;
+	started_at: string;
+	finished_at: string | null;
+	source: string;
+	repo_url: string;
+	git_sha: string | null;
+	status: string;
+	added: number;
+	updated: number;
+	skipped: number;
+	errors: number;
+	error_details: string;
+}
+
+export interface OverviewCounts {
+	projects: number;
+	folders: number;
+	tasks: number;
+	students: number;
+}
+
+export interface OverviewDTO {
+	server: string;
+	counts: OverviewCounts;
+	latest_sync: SyncLogRow | null;
+}
+
+export interface CatalogTaskDTO {
+	id: string;
+	task_id: string;
+	title: string;
+	block: string;
+	slug: string;
+	level: string;
+	version: string;
+	breaking: boolean;
+	md_path: string;
+	folder_id: string | null;
+	project_id: string | null;
+}
+
+export interface CatalogFolderDTO {
+	id: string;
+	project_id: string;
+	code: string;
+	name: string;
+	order: number;
+	level: string | null;
+	tasks: CatalogTaskDTO[];
+}
+
+export interface CatalogProjectDTO {
+	id: string;
+	name: string;
+	order: number;
+	version: string;
+	folders: CatalogFolderDTO[];
+}
+
+export interface CatalogDTO {
+	projects: CatalogProjectDTO[];
+}
+
 let _token: string | null = null;
 
 export function setToken(token: string | null): void {
@@ -112,4 +178,16 @@ export async function resetPassword(userId: string, password: string): Promise<u
 
 export async function deleteUser(userId: string): Promise<void> {
 	return request<void>('DELETE', `/admin/users/${userId}`);
+}
+
+// === Overview & Catalog ===
+
+export async function getOverview(): Promise<OverviewDTO> {
+	return request<OverviewDTO>('GET', '/admin/overview');
+}
+
+export async function getCatalog(q?: string): Promise<CatalogDTO> {
+	const needle = (q ?? '').trim();
+	const path = needle ? `/admin/catalog?q=${encodeURIComponent(needle)}` : '/admin/catalog';
+	return request<CatalogDTO>('GET', path);
 }

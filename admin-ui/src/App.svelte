@@ -1,14 +1,20 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { getToken, setToken, me, type AuthResponse } from './api';
+	import { getToken, setToken, me, type AuthResponse, type CatalogTaskDTO } from './api';
 	import Login from './components/Login.svelte';
+	import Overview from './components/Overview.svelte';
 	import StudentList from './components/StudentList.svelte';
 	import StudentDetail from './components/StudentDetail.svelte';
+	import Catalog from './components/Catalog.svelte';
+
+	type View = 'overview' | 'students' | 'catalog';
 
 	let loggedIn = $state(false);
 	let userRole = $state('');
 	let authError = $state('');
+	let view = $state<View>('overview');
 	let selectedStudent = $state<{ id: string; username: string } | null>(null);
+	let selectedTask = $state<CatalogTaskDTO | null>(null);
 
 	async function restoreSession() {
 		if (!getToken()) return;
@@ -40,6 +46,7 @@
 		authError = '';
 		userRole = data.role;
 		loggedIn = true;
+		view = 'overview';
 	}
 
 	function handleSelect(studentId: string, username: string) {
@@ -48,6 +55,24 @@
 
 	function handleBack() {
 		selectedStudent = null;
+	}
+
+	function handleSelectTask(task: CatalogTaskDTO) {
+		selectedTask = task;
+	}
+
+	function navTo(next: View) {
+		view = next;
+		selectedStudent = null;
+		selectedTask = null;
+	}
+
+	function logout() {
+		setToken(null);
+		loggedIn = false;
+		userRole = '';
+		selectedStudent = null;
+		selectedTask = null;
 	}
 </script>
 
@@ -58,16 +83,34 @@
 	<main>
 		<header>
 			<h1>Ego Admin</h1>
+			<nav aria-label="Primary">
+				<button class="nav-btn" class:active={view === 'overview'} onclick={() => navTo('overview')} aria-current={view === 'overview' ? 'page' : undefined}>Overview</button>
+				<button class="nav-btn" class:active={view === 'students'} onclick={() => navTo('students')} aria-current={view === 'students' ? 'page' : undefined}>Students</button>
+				<button class="nav-btn" class:active={view === 'catalog'} onclick={() => navTo('catalog')} aria-current={view === 'catalog' ? 'page' : undefined}>Catalog</button>
+			</nav>
 			<div class="header-actions">
-				<span class="role-pill">{userRole}</span>
-				<button onclick={() => { setToken(null); loggedIn = false; userRole = ''; }}>Logout</button>
+				<span class="role-pill" title="Your role">{userRole}</span>
+				<button onclick={logout} aria-label="Log out">Logout</button>
 			</div>
 		</header>
 
-		{#if selectedStudent}
-			<StudentDetail studentId={selectedStudent.id} username={selectedStudent.username} onBack={handleBack} />
-		{:else}
-			<StudentList {userRole} onSelect={handleSelect} />
+		{#if view === 'overview'}
+			<Overview />
+		{:else if view === 'students'}
+			{#if selectedStudent}
+				<StudentDetail studentId={selectedStudent.id} username={selectedStudent.username} onBack={handleBack} />
+			{:else}
+				<StudentList {userRole} onSelect={handleSelect} />
+			{/if}
+		{:else if view === 'catalog'}
+			<Catalog onSelectTask={handleSelectTask} />
+			{#if selectedTask}
+				<div class="task-preview" role="status" aria-live="polite">
+					<h3>Selected task</h3>
+					<p><strong>{selectedTask.task_id}</strong> — {selectedTask.title || selectedTask.slug}</p>
+					<p class="hint">Task Studio editor opens here in a follow-up commit.</p>
+				</div>
+			{/if}
 		{/if}
 	</main>
 {/if}
@@ -81,14 +124,33 @@
 	:global(#app) { height: 100%; }
 
 	main { max-width: 960px; margin: 0 auto; padding: 24px; }
-	header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+	header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; gap: 16px; flex-wrap: wrap; }
 	h1 { font-size: 1.2rem; font-weight: 700; }
+	nav { display: flex; gap: 4px; flex: 1 1 auto; }
+	.nav-btn {
+		padding: 6px 14px; background: transparent; border: 1px solid transparent; border-radius: 4px;
+		color: #858585; font-family: inherit; font-size: 0.8rem; cursor: pointer;
+	}
+	.nav-btn:hover { color: #d4d4d4; }
+	.nav-btn.active { color: #d4d4d4; border-color: #3c3c3c; background: #2d2d2d; }
 	.header-actions { display: flex; align-items: center; gap: 12px; }
 	.role-pill { color: #858585; font-size: 0.8rem; text-transform: capitalize; }
-	header button {
+	header button:not(.nav-btn) {
 		padding: 6px 12px; background: transparent; border: 1px solid #3c3c3c; border-radius: 4px;
 		color: #858585; font-family: inherit; font-size: 0.8rem; cursor: pointer;
 	}
-	header button:hover { border-color: #007acc; color: #d4d4d4; }
+	header button:not(.nav-btn):hover { border-color: #007acc; color: #d4d4d4; }
 	.auth-error { color: #f87171; text-align: center; margin: 16px 0; }
+
+	.task-preview {
+		margin-top: 24px; padding: 16px; background: #2d2d2d; border: 1px solid #3c3c3c; border-radius: 6px;
+	}
+	.task-preview h3 { font-size: 0.8rem; font-weight: 600; margin: 0 0 8px; color: #858585; text-transform: uppercase; letter-spacing: 0.05em; }
+	.task-preview p { margin: 0 0 6px; }
+	.task-preview .hint { color: #858585; font-size: 0.75rem; }
+
+	@media (max-width: 600px) {
+		header { flex-direction: column; align-items: stretch; }
+		nav { flex-wrap: wrap; }
+	}
 </style>
