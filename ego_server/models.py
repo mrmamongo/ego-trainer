@@ -307,3 +307,36 @@ class TaskStudioDTO(BaseModel):
     tests_py: str = ""
     writable: bool = False
     read_only_reason: str = ""
+
+
+# === Task Studio validate (POST /admin/tasks/{task_id}/studio/validate) ===
+
+
+class StudioValidateRequest(BaseModel):
+    """Request body for POST /admin/tasks/{task_id}/studio/validate.
+
+    The candidate is validated entirely in-memory — no canonical files are
+    modified. ``expected_version`` must match the current DB version of the
+    task (optimistic concurrency); a mismatch yields 409.
+    """
+
+    expected_version: str
+    markdown: str  # full .md including YAML frontmatter
+    solution_py: str
+    tests_py: str = ""
+
+
+class StudioValidateResponse(BaseModel):
+    """Success response for POST /admin/tasks/{task_id}/studio/validate.
+
+    Returned only when the candidate passes all validation checks. The
+    canonical files are guaranteed byte-identical (validation never writes
+    to the content repo — the candidate is parsed from a temp directory).
+    """
+
+    valid: bool = True
+    task_id: str
+    current_version: str
+    candidate_version: str
+    content_changed: bool
+    version_policy: str
