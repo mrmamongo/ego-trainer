@@ -34,6 +34,7 @@ class MeResponse(BaseModel):
 
 class TaskMeta(BaseModel):
     """Метаданные задачи (без контента — контент в git .md)."""
+
     id: str
     block: str
     slug: str
@@ -49,6 +50,7 @@ class TaskMeta(BaseModel):
 
 class TaskFull(TaskMeta):
     """Задача с контентом (отдаётся по GET /tasks/<id>)."""
+
     statement_md: str
     stub_py: str
     solution_py: str
@@ -56,6 +58,7 @@ class TaskFull(TaskMeta):
 
 class ProgressPush(BaseModel):
     """Push прогресса от студента."""
+
     task_id: str
     version: str
     solution_hash: str
@@ -162,3 +165,39 @@ class SyncLogRow(BaseModel):
     skipped: int
     errors: int
     error_details: str = ""
+
+
+# === Admin panel ===
+
+
+class StudentSummaryDTO(BaseModel):
+    """Summary of one student for the admin panel (GET /admin/students)."""
+
+    student_id: str
+    username: str
+    role: str
+    tasks_total: int
+    tasks_passed: int
+    tasks_partial: int
+    tasks_failed: int
+    last_activity: str | None = None
+
+
+class CreateUserRequest(BaseModel):
+    """Request body for POST /admin/users (create user)."""
+
+    username: str
+    password: str
+    role: str = Field(pattern="^(student|mentor|admin)$")
+
+
+class UpdateRoleRequest(BaseModel):
+    """Request body for PUT /admin/users/<id>/role."""
+
+    role: str = Field(pattern="^(student|mentor|admin)$")
+
+
+class ResetPasswordRequest(BaseModel):
+    """Request body for PUT /admin/users/<id>/password."""
+
+    password: str = Field(min_length=1)
