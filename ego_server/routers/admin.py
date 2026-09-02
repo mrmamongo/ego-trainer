@@ -17,6 +17,8 @@ from ego_server.auth import generate_user_id, hash_password
 from ego_server.deps import DbDep, require_role
 from ego_server.models import (
     CreateUserRequest,
+    OverviewCounts,
+    OverviewDTO,
     ResetPasswordRequest,
     StudentSummaryDTO,
     SyncLogRow,
@@ -197,6 +199,45 @@ async def get_sync_status(db: DbDep) -> SyncLogRow | None:
     if row is None:
         return None
     return SyncLogRow(**dict(row))
+
+
+@router.get(
+    "/overview",
+    response_model=OverviewDTO,
+    dependencies=[Depends(require_role("mentor", "admin"))],
+)
+async def get_overview(db: DbDep) -> OverviewDTO:
+    """Aggregate snapshot: server status, catalog/student counts, latest sync.
+
+    Returns a stable JSON shape for the admin/mentor dashboard. ``server`` is
+    always ``"ok"`` (the endpoint would not be reachable otherwise). Counts
+    come from the current DB state; ``latest_sync`` is the newest
+    ``sync_log`` row or ``None`` when no sync has ever run.
+    """
+    projects = db.execute("SELECT COUNT(*) AS n FROM projects").fetchone()["n"]
+    folders = db.execute("SELECT COUNT(*) AS n FROM folders").fetchone()["n"]
+    tasks = db.execute("SELECT COUNT(*) AS n FROM tasks").fetchone()["n"]
+    students = db.execute(
+        "SELECT COUNT(*) AS n FROM students WHERE role = 'student'"
+    ).fetchone()["n"]
+
+    sync_row = db.execute(
+        """SELECT id, started_at, finished_at, source, repo_url, git_sha,
+                  status, added, updated, skipped, errors, error_details
+           FROM sync_log ORDER BY id DESC LIMIT 1"""
+    ).fetchone()
+    latest_sync = SyncLogRow(**dict(sync_row)) if sync_row is not None else None
+
+    return OverviewDTO(
+        server="ok",
+        counts=OverviewCounts(
+            projects=projects,
+            folders=folders,
+            tasks=tasks,
+            students=students,
+        ),
+        latest_sync=latest_sync,
+    )
 
 
 # === Helpers ===

@@ -201,3 +201,26 @@ class ResetPasswordRequest(BaseModel):
     """Request body for PUT /admin/users/<id>/password."""
 
     password: str = Field(min_length=1)
+
+
+class OverviewCounts(BaseModel):
+    """Row counts for the overview snapshot (GET /admin/overview)."""
+
+    projects: int
+    folders: int
+    tasks: int
+    students: int
+
+
+class OverviewDTO(BaseModel):
+    """Aggregate snapshot for GET /admin/overview (mentor/admin only).
+
+    ``server`` is a stable status string (currently always ``"ok"`` — the
+    endpoint itself would not be reachable if the server were down).
+    Counts reflect the current DB state. ``latest_sync`` is the most recent
+    ``sync_log`` row or ``None`` when no sync has ever run.
+    """
+
+    server: str = "ok"
+    counts: OverviewCounts
+    latest_sync: SyncLogRow | None = None
