@@ -664,6 +664,11 @@ https://svelte.dev/e/svelte_boundary_reset_onerror`);
   var legacy_is_updating_store = false;
 
   // node_modules/svelte/src/internal/client/dom/elements/misc.js
+  function remove_textarea_child(dom) {
+    if (hydrating && get_first_child(dom) !== null) {
+      clear_text_content(dom);
+    }
+  }
   var listening_to_form_reset = false;
   function add_form_reset_listener() {
     if (!listening_to_form_reset) {
@@ -1293,11 +1298,11 @@ https://svelte.dev/e/svelte_boundary_reset_onerror`);
       var effects = collected_effects = [];
       var render_effects = [];
       var updates = legacy_updates = [];
-      for (const root7 of roots) {
+      for (const root8 of roots) {
         try {
-          this.#traverse(root7, effects, render_effects);
+          this.#traverse(root8, effects, render_effects);
         } catch (e) {
-          reset_all(root7);
+          reset_all(root8);
           if (!this.#is_deferred()) this.discard();
           throw e;
         }
@@ -1371,9 +1376,9 @@ https://svelte.dev/e/svelte_boundary_reset_onerror`);
      * @param {Effect[]} effects
      * @param {Effect[]} render_effects
      */
-    #traverse(root7, effects, render_effects) {
-      root7.f ^= CLEAN;
-      var effect2 = root7.first;
+    #traverse(root8, effects, render_effects) {
+      root8.f ^= CLEAN;
+      var effect2 = root8.first;
       while (effect2 !== null) {
         var flags2 = effect2.f;
         var is_branch = (flags2 & (BRANCH_EFFECT | ROOT_EFFECT)) !== 0;
@@ -1618,8 +1623,8 @@ https://svelte.dev/e/svelte_boundary_reset_onerror`);
           }
           if (batch.#roots.length > 0 && !batch.#decrement_queued) {
             batch.apply();
-            for (var root7 of batch.#roots) {
-              batch.#traverse(root7, [], []);
+            for (var root8 of batch.#roots) {
+              batch.#traverse(root8, [], []);
             }
             batch.#roots = [];
           }
@@ -3137,7 +3142,7 @@ ${component_stack}
     }
     return false;
   }
-  function schedule_possible_effect_self_invalidation(signal, effect2, root7 = true) {
+  function schedule_possible_effect_self_invalidation(signal, effect2, root8 = true) {
     var reactions = signal.reactions;
     if (reactions === null) return;
     if (!async_mode_flag && current_sources !== null && current_sources.has(signal)) {
@@ -3153,7 +3158,7 @@ ${component_stack}
           false
         );
       } else if (effect2 === reaction) {
-        if (root7) {
+        if (root8) {
           set_signal_status(reaction, DIRTY);
         } else if ((reaction.f & CLEAN) !== 0) {
           set_signal_status(reaction, MAYBE_DIRTY);
@@ -5201,16 +5206,16 @@ ${component_stack}
   function append_styles(anchor, css) {
     effect(() => {
       anchor = active_effect?.parent?.nodes?.start ?? anchor;
-      var root7 = anchor.getRootNode();
+      var root8 = anchor.getRootNode();
       var target2 = (
         /** @type {ShadowRoot} */
-        root7.host ? (
+        root8.host ? (
           /** @type {ShadowRoot} */
-          root7
+          root8
         ) : (
           /** @type {Document} */
-          root7.head ?? /** @type {Document} */
-          root7.ownerDocument.head
+          root8.head ?? /** @type {Document} */
+          root8.ownerDocument.head
         )
       );
       if (!target2.querySelector("#" + css.hash)) {
@@ -6027,6 +6032,23 @@ ${component_stack}
     const needle = (q ?? "").trim();
     const path = needle ? `/admin/catalog?q=${encodeURIComponent(needle)}` : "/admin/catalog";
     return request("GET", path);
+  }
+  async function getTaskStudio(taskId) {
+    return request("GET", `/admin/tasks/${encodeURIComponent(taskId)}/studio`);
+  }
+  async function validateTaskStudio(taskId, body) {
+    return request(
+      "POST",
+      `/admin/tasks/${encodeURIComponent(taskId)}/studio/validate`,
+      body
+    );
+  }
+  async function saveTaskStudio(taskId, body) {
+    return request(
+      "PUT",
+      `/admin/tasks/${encodeURIComponent(taskId)}/studio`,
+      body
+    );
   }
 
   // src/components/Login.svelte
@@ -6936,18 +6958,401 @@ ${component_stack}
   }
   delegate(["click", "input"]);
 
-  // src/App.svelte
-  var root6 = from_html(`<p class="auth-error svelte-1n46o8q"> </p>`);
-  var root_16 = from_html(`<!> <!>`, 1);
-  var root_25 = from_html(`<div class="task-preview svelte-1n46o8q" role="status" aria-live="polite"><h3 class="svelte-1n46o8q">Selected task</h3> <p class="svelte-1n46o8q"><strong> </strong> </p> <p class="hint svelte-1n46o8q">Task Studio editor opens here in a follow-up commit.</p></div>`);
-  var root_35 = from_html(`<main class="svelte-1n46o8q"><header class="svelte-1n46o8q"><h1 class="svelte-1n46o8q">Ego Admin</h1> <nav aria-label="Primary" class="svelte-1n46o8q"><button>Overview</button> <button>Students</button> <button>Catalog</button></nav> <div class="header-actions svelte-1n46o8q"><span class="role-pill svelte-1n46o8q" title="Your role"> </span> <button aria-label="Log out" class="svelte-1n46o8q">Logout</button></div></header> <!></main>`);
+  // src/components/TaskStudio.svelte
+  var root6 = from_html(`<div class="loading svelte-1ci3929">Loading task studio\u2026</div>`);
+  var root_16 = from_html(`<div class="error svelte-1ci3929"> </div> <button class="btn svelte-1ci3929" type="button" aria-label="Retry loading">Retry</button>`, 1);
+  var root_25 = from_html(`<span class="dirty svelte-1ci3929" title="Unsaved changes">\u25CF dirty</span>`);
+  var root_35 = from_html(`<div class="readonly-banner svelte-1ci3929" role="alert"> </div>`);
+  var root_44 = from_html(`<div class="readonly-banner svelte-1ci3929" role="alert">Browse-only: mentors may view but not edit task content.</div>`);
+  var root_54 = from_html(`<p class="notice svelte-1ci3929" role="status" aria-live="polite"> </p>`);
+  var root_63 = from_html(`<p class="error svelte-1ci3929" role="alert"> </p>`);
+  var root_73 = from_html(`<p class="success svelte-1ci3929" role="status"> </p>`);
+  var root_83 = from_html(`<button class="btn primary svelte-1ci3929" type="button" aria-label="Validate candidate"> </button> <button class="btn primary svelte-1ci3929" type="button" aria-label="Save candidate to canonical files"> </button> <button class="btn svelte-1ci3929" type="button" aria-label="Revert to server state">Revert</button>`, 1);
+  var root_93 = from_html(`<span class="hint svelte-1ci3929">Mentor role: browse-only. No write actions available.</span>`);
+  var root_103 = from_html(`<dl class="meta svelte-1ci3929"><div class="svelte-1ci3929"><dt class="svelte-1ci3929">Task</dt><dd class="svelte-1ci3929"><strong> </strong></dd></div> <div class="svelte-1ci3929"><dt class="svelte-1ci3929">ID</dt><dd class="svelte-1ci3929"><code class="svelte-1ci3929"> </code></dd></div> <div class="svelte-1ci3929"><dt class="svelte-1ci3929">Version</dt><dd class="svelte-1ci3929"><code class="svelte-1ci3929"> </code><!></dd></div> <div class="svelte-1ci3929"><dt class="svelte-1ci3929">Canonical path</dt><dd class="svelte-1ci3929"><code class="svelte-1ci3929"> </code></dd></div></dl> <!> <div class="tabs svelte-1ci3929" role="tablist" aria-label="Task content"><button role="tab" id="tab-statement" aria-controls="panel-statement" type="button">Statement Markdown</button> <button role="tab" id="tab-solution" aria-controls="panel-solution" type="button">Reference Solution</button> <button role="tab" id="tab-tests" aria-controls="panel-tests" type="button">Tests</button></div> <div id="panel-statement" role="tabpanel" aria-labelledby="tab-statement" class="svelte-1ci3929"><textarea class="editor svelte-1ci3929" spellcheck="false" wrap="off" aria-label="Statement markdown (full, including frontmatter)"></textarea></div> <div id="panel-solution" role="tabpanel" aria-labelledby="tab-solution" class="svelte-1ci3929"><textarea class="editor svelte-1ci3929" spellcheck="false" wrap="off" aria-label="Reference solution Python"></textarea></div> <div id="panel-tests" role="tabpanel" aria-labelledby="tab-tests" class="svelte-1ci3929"><textarea class="editor svelte-1ci3929" spellcheck="false" wrap="off" aria-label="Tests Python"></textarea></div> <!> <!> <!> <!> <!> <div class="actions svelte-1ci3929"><!></div>`, 1);
+  var root_112 = from_html(`<div class="section"><div class="section-header svelte-1ci3929"><button class="btn back svelte-1ci3929" type="button" aria-label="Back to Catalog">\u2190 Catalog</button> <h2 class="svelte-1ci3929">Task Studio</h2> <button class="btn svelte-1ci3929" type="button" aria-label="Reload task studio"> </button></div> <!></div>`);
   var $$css6 = {
+    hash: "svelte-1ci3929",
+    code: `.section-header.svelte-1ci3929 {display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px;}h2.svelte-1ci3929 {font-size:0.9rem;font-weight:600;}.btn.svelte-1ci3929 {padding:4px 12px;background:transparent;border:1px solid #3c3c3c;border-radius:4px;color:#d4d4d4;font-family:inherit;font-size:0.8rem;cursor:pointer;}.btn.svelte-1ci3929:hover:not(:disabled) {border-color:#007acc;}.btn.svelte-1ci3929:disabled {opacity:0.5;cursor:not-allowed;}.btn.primary.svelte-1ci3929 {border-color:#007acc;color:#007acc;}.btn.primary.svelte-1ci3929:hover:not(:disabled) {background:rgba(0,122,204,0.12);}.btn.back.svelte-1ci3929 {border-color:transparent;color:#858585;}.btn.back.svelte-1ci3929:hover:not(:disabled) {color:#d4d4d4;}.meta.svelte-1ci3929 {display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:8px 16px;margin:0 0 12px;padding:12px;background:#2d2d2d;border:1px solid #3c3c3c;border-radius:6px;}.meta.svelte-1ci3929 div:where(.svelte-1ci3929) {display:flex;flex-direction:column;gap:2px;min-width:0;}.meta.svelte-1ci3929 dt:where(.svelte-1ci3929) {font-size:0.65rem;text-transform:uppercase;letter-spacing:0.05em;color:#858585;}.meta.svelte-1ci3929 dd:where(.svelte-1ci3929) {margin:0;font-size:0.8rem;word-break:break-all;}.meta.svelte-1ci3929 code:where(.svelte-1ci3929) {font-family:inherit;color:#d4d4d4;}.dirty.svelte-1ci3929 {color:#eab308;font-size:0.7rem;}.readonly-banner.svelte-1ci3929 {padding:8px 12px;margin-bottom:12px;background:rgba(234,179,8,0.08);border:1px solid #eab308;border-radius:4px;color:#eab308;font-size:0.8rem;}.tabs.svelte-1ci3929 {display:flex;gap:2px;border-bottom:1px solid #3c3c3c;margin-bottom:0;}.tabs.svelte-1ci3929 button:where(.svelte-1ci3929) {padding:6px 14px;background:transparent;border:1px solid transparent;border-bottom:none;border-radius:4px 4px 0 0;color:#858585;font-family:inherit;font-size:0.8rem;cursor:pointer;}.tabs.svelte-1ci3929 button:where(.svelte-1ci3929):hover {color:#d4d4d4;}.tabs.svelte-1ci3929 button.active:where(.svelte-1ci3929) {color:#d4d4d4;background:#2d2d2d;border-color:#3c3c3c;}.tabs.svelte-1ci3929 button[aria-selected="true"]:where(.svelte-1ci3929) {color:#d4d4d4;}div[role="tabpanel"].svelte-1ci3929 {margin:0;}.editor.svelte-1ci3929 {width:100%;min-height:420px;box-sizing:border-box;resize:vertical;padding:12px;background:#1e1e1e;border:1px solid #3c3c3c;border-radius:0 4px 4px 4px;color:#d4d4d4;font-family:'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;font-size:0.8rem;line-height:1.5;white-space:pre;overflow:auto;}.editor.svelte-1ci3929:focus {outline:none;border-color:#007acc;}.editor.svelte-1ci3929:disabled {opacity:0.85;cursor:not-allowed;background:#252525;}.actions.svelte-1ci3929 {display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center;}.hint.svelte-1ci3929 {color:#858585;font-size:0.75rem;}.notice.svelte-1ci3929 {color:#858585;font-size:0.75rem;margin:12px 0 0;}.success.svelte-1ci3929 {color:#4ade80;font-size:0.78rem;margin:12px 0 0;word-break:break-word;}.error.svelte-1ci3929 {color:#f87171;font-size:0.78rem;margin:12px 0 0;word-break:break-word;}.loading.svelte-1ci3929 {padding:24px;text-align:center;color:#858585;}\r
+\r
+	@media (max-width: 600px) {.meta.svelte-1ci3929 {grid-template-columns:1fr;}.tabs.svelte-1ci3929 button:where(.svelte-1ci3929) {padding:6px 10px;font-size:0.75rem;}.editor.svelte-1ci3929 {min-height:320px;}\r
+	}`
+  };
+  function TaskStudio($$anchor, $$props) {
+    push($$props, true);
+    append_styles($$anchor, $$css6);
+    const canEdit = user_derived(() => $$props.role === "admin");
+    let studio = state(null);
+    let loading = state(true);
+    let loadError = state("");
+    let mdBuffer = state("");
+    let solBuffer = state("");
+    let testsBuffer = state("");
+    let expectedVersion = state("");
+    let activeTab = state("statement");
+    let validating = state(false);
+    let validateError = state("");
+    let validateResult = state(null);
+    let saving = state(false);
+    let saveError = state("");
+    let saveResult = state(null);
+    let notice = state(
+      ""
+      // generic transient status (e.g. reloaded)
+    );
+    function isDirty() {
+      if (!get2(studio)) return false;
+      return get2(mdBuffer) !== get2(studio).markdown || get2(solBuffer) !== get2(studio).solution_py || get2(testsBuffer) !== get2(studio).tests_py;
+    }
+    const editable = user_derived(() => !!get2(studio) && get2(studio).writable && get2(canEdit));
+    async function load() {
+      set(loading, true);
+      set(loadError, "");
+      set(validateResult, null);
+      set(validateError, "");
+      set(saveResult, null);
+      set(saveError, "");
+      set(notice, "");
+      try {
+        const data = await getTaskStudio($$props.taskId);
+        set(studio, data, true);
+        set(mdBuffer, data.markdown, true);
+        set(solBuffer, data.solution_py, true);
+        set(testsBuffer, data.tests_py, true);
+        set(expectedVersion, data.version, true);
+      } catch (e) {
+        set(studio, null);
+        set(loadError, e.message, true);
+      } finally {
+        set(loading, false);
+      }
+    }
+    function resetBuffers() {
+      if (!get2(studio)) return;
+      set(mdBuffer, get2(studio).markdown, true);
+      set(solBuffer, get2(studio).solution_py, true);
+      set(testsBuffer, get2(studio).tests_py, true);
+      set(expectedVersion, get2(studio).version, true);
+      set(validateResult, null);
+      set(validateError, "");
+      set(saveResult, null);
+      set(saveError, "");
+      set(notice, "Reverted to server state");
+    }
+    function selectTab(tab) {
+      set(activeTab, tab, true);
+    }
+    async function doValidate() {
+      if (!get2(editable) || !get2(studio)) return;
+      set(validating, true);
+      set(validateError, "");
+      set(validateResult, null);
+      set(notice, "");
+      try {
+        const res = await validateTaskStudio($$props.taskId, {
+          expected_version: get2(expectedVersion),
+          markdown: get2(mdBuffer),
+          solution_py: get2(solBuffer),
+          tests_py: get2(testsBuffer)
+        });
+        set(validateResult, res, true);
+      } catch (e) {
+        set(validateError, e.message, true);
+      } finally {
+        set(validating, false);
+      }
+    }
+    async function doSave() {
+      if (!get2(editable) || !get2(studio)) return;
+      set(saving, true);
+      set(saveError, "");
+      set(saveResult, null);
+      set(validateResult, null);
+      set(validateError, "");
+      set(notice, "");
+      try {
+        const res = await saveTaskStudio($$props.taskId, {
+          expected_version: get2(expectedVersion),
+          markdown: get2(mdBuffer),
+          solution_py: get2(solBuffer),
+          tests_py: get2(testsBuffer)
+        });
+        set(saveResult, res, true);
+        await load();
+        set(expectedVersion, res.new_version, true);
+        set(notice, `Saved (v${res.new_version}) \u2014 reloaded from server`);
+      } catch (e) {
+        set(saveError, e.message, true);
+      } finally {
+        set(saving, false);
+      }
+    }
+    onMount(() => {
+      load();
+    });
+    var div = root_112();
+    var div_1 = child(div);
+    var button = child(div_1);
+    var button_1 = sibling(button, 4);
+    var text2 = only_child(button_1, true);
+    reset(div_1);
+    var node = sibling(div_1, 2);
+    {
+      var consequent = ($$anchor2) => {
+        var div_2 = root6();
+        append($$anchor2, div_2);
+      };
+      var consequent_1 = ($$anchor2) => {
+        var fragment = root_16();
+        var div_3 = first_child(fragment);
+        var text_1 = only_child(div_3, true);
+        var button_2 = sibling(div_3, 2);
+        template_effect(() => set_text(text_1, get2(loadError)));
+        delegated("click", button_2, load);
+        append($$anchor2, fragment);
+      };
+      var consequent_11 = ($$anchor2) => {
+        var fragment_1 = root_103();
+        var dl = first_child(fragment_1);
+        var div_4 = child(dl);
+        var dd = sibling(child(div_4));
+        var strong = child(dd);
+        var text_2 = only_child(strong, true);
+        reset(dd);
+        reset(div_4);
+        var div_5 = sibling(div_4, 2);
+        var dd_1 = sibling(child(div_5));
+        var code = child(dd_1);
+        var text_3 = only_child(code, true);
+        reset(dd_1);
+        reset(div_5);
+        var div_6 = sibling(div_5, 2);
+        var dd_2 = sibling(child(div_6));
+        var code_1 = child(dd_2);
+        var text_4 = only_child(code_1);
+        var node_1 = sibling(code_1);
+        {
+          var consequent_2 = ($$anchor3) => {
+            var span = root_25();
+            append($$anchor3, span);
+          };
+          var d = user_derived(() => isDirty());
+          if_block(node_1, ($$render) => {
+            if (get2(d)) $$render(consequent_2);
+          });
+        }
+        reset(dd_2);
+        reset(div_6);
+        var div_7 = sibling(div_6, 2);
+        var dd_3 = sibling(child(div_7));
+        var code_2 = child(dd_3);
+        var text_5 = only_child(code_2, true);
+        reset(dd_3);
+        reset(div_7);
+        reset(dl);
+        var node_2 = sibling(dl, 2);
+        {
+          var consequent_3 = ($$anchor3) => {
+            var div_8 = root_35();
+            var text_6 = only_child(div_8);
+            template_effect(() => set_text(text_6, `Read-only: ${(get2(studio).read_only_reason || "content repo is not writable") ?? ""}`));
+            append($$anchor3, div_8);
+          };
+          var consequent_4 = ($$anchor3) => {
+            var div_9 = root_44();
+            append($$anchor3, div_9);
+          };
+          if_block(node_2, ($$render) => {
+            if (!get2(studio).writable) $$render(consequent_3);
+            else if (!get2(canEdit)) $$render(consequent_4, 1);
+          });
+        }
+        var div_10 = sibling(node_2, 2);
+        var button_3 = child(div_10);
+        let classes;
+        var button_4 = sibling(button_3, 2);
+        let classes_1;
+        var button_5 = sibling(button_4, 2);
+        let classes_2;
+        reset(div_10);
+        var div_11 = sibling(div_10, 2);
+        var textarea = child(div_11);
+        remove_textarea_child(textarea);
+        reset(div_11);
+        var div_12 = sibling(div_11, 2);
+        var textarea_1 = child(div_12);
+        remove_textarea_child(textarea_1);
+        reset(div_12);
+        var div_13 = sibling(div_12, 2);
+        var textarea_2 = child(div_13);
+        remove_textarea_child(textarea_2);
+        reset(div_13);
+        var node_3 = sibling(div_13, 2);
+        {
+          var consequent_5 = ($$anchor3) => {
+            var p = root_54();
+            var text_7 = only_child(p, true);
+            template_effect(() => set_text(text_7, get2(notice)));
+            append($$anchor3, p);
+          };
+          if_block(node_3, ($$render) => {
+            if (get2(notice)) $$render(consequent_5);
+          });
+        }
+        var node_4 = sibling(node_3, 2);
+        {
+          var consequent_6 = ($$anchor3) => {
+            var p_1 = root_63();
+            var text_8 = only_child(p_1);
+            template_effect(() => set_text(text_8, `Validate failed: ${get2(validateError) ?? ""}`));
+            append($$anchor3, p_1);
+          };
+          if_block(node_4, ($$render) => {
+            if (get2(validateError)) $$render(consequent_6);
+          });
+        }
+        var node_5 = sibling(node_4, 2);
+        {
+          var consequent_7 = ($$anchor3) => {
+            var p_2 = root_63();
+            var text_9 = only_child(p_2);
+            template_effect(() => set_text(text_9, `Save failed: ${get2(saveError) ?? ""}`));
+            append($$anchor3, p_2);
+          };
+          if_block(node_5, ($$render) => {
+            if (get2(saveError)) $$render(consequent_7);
+          });
+        }
+        var node_6 = sibling(node_5, 2);
+        {
+          var consequent_8 = ($$anchor3) => {
+            var p_3 = root_73();
+            var text_10 = only_child(p_3);
+            template_effect(() => set_text(text_10, `Valid \u2713 \u2014 task ${get2(validateResult).task_id ?? ""},
+				current v${get2(validateResult).current_version ?? ""},
+				candidate v${get2(validateResult).candidate_version ?? ""},
+				${get2(validateResult).content_changed ? "content changed" : "no content change"},
+				policy: ${get2(validateResult).version_policy ?? ""}`));
+            append($$anchor3, p_3);
+          };
+          if_block(node_6, ($$render) => {
+            if (get2(validateResult)) $$render(consequent_8);
+          });
+        }
+        var node_7 = sibling(node_6, 2);
+        {
+          var consequent_9 = ($$anchor3) => {
+            var p_4 = root_73();
+            var text_11 = only_child(p_4);
+            template_effect(() => set_text(text_11, `Saved \u2713 \u2014 task ${get2(saveResult).task_id ?? ""}, new version v${get2(saveResult).new_version ?? ""},
+				sync: ${get2(saveResult).sync.status ?? ""}
+				(+${get2(saveResult).sync.added ?? ""}/~${get2(saveResult).sync.updated ?? ""}/=${get2(saveResult).sync.skipped ?? ""},
+				${get2(saveResult).sync.errors ?? ""} error${get2(saveResult).sync.errors === 1 ? "" : "s"})`));
+            append($$anchor3, p_4);
+          };
+          if_block(node_7, ($$render) => {
+            if (get2(saveResult)) $$render(consequent_9);
+          });
+        }
+        var div_14 = sibling(node_7, 2);
+        var node_8 = child(div_14);
+        {
+          var consequent_10 = ($$anchor3) => {
+            var fragment_2 = root_83();
+            var button_6 = first_child(fragment_2);
+            var text_12 = only_child(button_6, true);
+            var button_7 = sibling(button_6, 2);
+            var text_13 = only_child(button_7, true);
+            var button_8 = sibling(button_7, 2);
+            template_effect(
+              ($0, $1, $2) => {
+                button_6.disabled = $0;
+                set_text(text_12, get2(validating) ? "Validating\u2026" : "Validate");
+                button_7.disabled = $1;
+                set_text(text_13, get2(saving) ? "Saving\u2026" : "Save");
+                button_8.disabled = $2;
+              },
+              [
+                () => !get2(editable) || get2(validating) || get2(saving) || !isDirty(),
+                () => !get2(editable) || get2(saving) || get2(validating) || !isDirty(),
+                () => !get2(editable) || get2(saving) || get2(validating) || !isDirty()
+              ]
+            );
+            delegated("click", button_6, doValidate);
+            delegated("click", button_7, doSave);
+            delegated("click", button_8, resetBuffers);
+            append($$anchor3, fragment_2);
+          };
+          var alternate = ($$anchor3) => {
+            var span_1 = root_93();
+            append($$anchor3, span_1);
+          };
+          if_block(node_8, ($$render) => {
+            if (get2(canEdit)) $$render(consequent_10);
+            else $$render(alternate, -1);
+          });
+        }
+        reset(div_14);
+        template_effect(() => {
+          set_text(text_2, $$props.taskLabel || get2(studio).task_id);
+          set_text(text_3, $$props.taskId);
+          set_text(text_4, `v${get2(studio).version ?? ""}`);
+          set_text(text_5, get2(studio).md_path || "\u2014");
+          set_attribute2(button_3, "aria-selected", get2(activeTab) === "statement");
+          classes = set_class(button_3, 1, "svelte-1ci3929", null, classes, { active: get2(activeTab) === "statement" });
+          set_attribute2(button_4, "aria-selected", get2(activeTab) === "solution");
+          classes_1 = set_class(button_4, 1, "svelte-1ci3929", null, classes_1, { active: get2(activeTab) === "solution" });
+          set_attribute2(button_5, "aria-selected", get2(activeTab) === "tests");
+          classes_2 = set_class(button_5, 1, "svelte-1ci3929", null, classes_2, { active: get2(activeTab) === "tests" });
+          set_attribute2(div_11, "hidden", get2(activeTab) !== "statement");
+          set_value(textarea, get2(mdBuffer));
+          textarea.disabled = !get2(editable);
+          set_attribute2(div_12, "hidden", get2(activeTab) !== "solution");
+          set_value(textarea_1, get2(solBuffer));
+          textarea_1.disabled = !get2(editable);
+          set_attribute2(div_13, "hidden", get2(activeTab) !== "tests");
+          set_value(textarea_2, get2(testsBuffer));
+          textarea_2.disabled = !get2(editable);
+        });
+        delegated("click", button_3, () => selectTab("statement"));
+        delegated("click", button_4, () => selectTab("solution"));
+        delegated("click", button_5, () => selectTab("tests"));
+        delegated("input", textarea, (e) => set(mdBuffer, e.target.value, true));
+        delegated("input", textarea_1, (e) => set(solBuffer, e.target.value, true));
+        delegated("input", textarea_2, (e) => set(testsBuffer, e.target.value, true));
+        append($$anchor2, fragment_1);
+      };
+      if_block(node, ($$render) => {
+        if (get2(loading) && !get2(studio)) $$render(consequent);
+        else if (get2(loadError)) $$render(consequent_1, 1);
+        else if (get2(studio)) $$render(consequent_11, 2);
+      });
+    }
+    reset(div);
+    template_effect(() => {
+      button_1.disabled = get2(loading);
+      set_text(text2, get2(loading) ? "Reloading\u2026" : "Reload");
+    });
+    delegated("click", button, function(...$$args) {
+      $$props.onBack?.apply(this, $$args);
+    });
+    delegated("click", button_1, load);
+    append($$anchor, div);
+    pop();
+  }
+  delegate(["click", "input"]);
+
+  // src/App.svelte
+  var root7 = from_html(`<p class="auth-error svelte-1n46o8q"> </p>`);
+  var root_17 = from_html(`<!> <!>`, 1);
+  var root_26 = from_html(`<main class="svelte-1n46o8q"><header class="svelte-1n46o8q"><h1 class="svelte-1n46o8q">Ego Admin</h1> <nav aria-label="Primary" class="svelte-1n46o8q"><button>Overview</button> <button>Students</button> <button>Catalog</button></nav> <div class="header-actions svelte-1n46o8q"><span class="role-pill svelte-1n46o8q" title="Your role"> </span> <button aria-label="Log out" class="svelte-1n46o8q">Logout</button></div></header> <!></main>`);
+  var $$css7 = {
     hash: "svelte-1n46o8q",
-    code: "html, body {margin:0;height:100%;font-family:'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;background:#1e1e1e;color:#d4d4d4;font-size:14px;line-height:1.5;}#app {height:100%;}main.svelte-1n46o8q {max-width:960px;margin:0 auto;padding:24px;}header.svelte-1n46o8q {display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;gap:16px;flex-wrap:wrap;}h1.svelte-1n46o8q {font-size:1.2rem;font-weight:700;}nav.svelte-1n46o8q {display:flex;gap:4px;flex:1 1 auto;}.nav-btn.svelte-1n46o8q {padding:6px 14px;background:transparent;border:1px solid transparent;border-radius:4px;color:#858585;font-family:inherit;font-size:0.8rem;cursor:pointer;}.nav-btn.svelte-1n46o8q:hover {color:#d4d4d4;}.nav-btn.active.svelte-1n46o8q {color:#d4d4d4;border-color:#3c3c3c;background:#2d2d2d;}.header-actions.svelte-1n46o8q {display:flex;align-items:center;gap:12px;}.role-pill.svelte-1n46o8q {color:#858585;font-size:0.8rem;text-transform:capitalize;}header.svelte-1n46o8q button:where(.svelte-1n46o8q):not(.nav-btn) {padding:6px 12px;background:transparent;border:1px solid #3c3c3c;border-radius:4px;color:#858585;font-family:inherit;font-size:0.8rem;cursor:pointer;}header.svelte-1n46o8q button:where(.svelte-1n46o8q):not(.nav-btn):hover {border-color:#007acc;color:#d4d4d4;}.auth-error.svelte-1n46o8q {color:#f87171;text-align:center;margin:16px 0;}.task-preview.svelte-1n46o8q {margin-top:24px;padding:16px;background:#2d2d2d;border:1px solid #3c3c3c;border-radius:6px;}.task-preview.svelte-1n46o8q h3:where(.svelte-1n46o8q) {font-size:0.8rem;font-weight:600;margin:0 0 8px;color:#858585;text-transform:uppercase;letter-spacing:0.05em;}.task-preview.svelte-1n46o8q p:where(.svelte-1n46o8q) {margin:0 0 6px;}.task-preview.svelte-1n46o8q .hint:where(.svelte-1n46o8q) {color:#858585;font-size:0.75rem;}\r\n\r\n	@media (max-width: 600px) {header.svelte-1n46o8q {flex-direction:column;align-items:stretch;}nav.svelte-1n46o8q {flex-wrap:wrap;}\r\n	}"
+    code: "html, body {margin:0;height:100%;font-family:'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;background:#1e1e1e;color:#d4d4d4;font-size:14px;line-height:1.5;}#app {height:100%;}main.svelte-1n46o8q {max-width:960px;margin:0 auto;padding:24px;}header.svelte-1n46o8q {display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;gap:16px;flex-wrap:wrap;}h1.svelte-1n46o8q {font-size:1.2rem;font-weight:700;}nav.svelte-1n46o8q {display:flex;gap:4px;flex:1 1 auto;}.nav-btn.svelte-1n46o8q {padding:6px 14px;background:transparent;border:1px solid transparent;border-radius:4px;color:#858585;font-family:inherit;font-size:0.8rem;cursor:pointer;}.nav-btn.svelte-1n46o8q:hover {color:#d4d4d4;}.nav-btn.active.svelte-1n46o8q {color:#d4d4d4;border-color:#3c3c3c;background:#2d2d2d;}.header-actions.svelte-1n46o8q {display:flex;align-items:center;gap:12px;}.role-pill.svelte-1n46o8q {color:#858585;font-size:0.8rem;text-transform:capitalize;}header.svelte-1n46o8q button:where(.svelte-1n46o8q):not(.nav-btn) {padding:6px 12px;background:transparent;border:1px solid #3c3c3c;border-radius:4px;color:#858585;font-family:inherit;font-size:0.8rem;cursor:pointer;}header.svelte-1n46o8q button:where(.svelte-1n46o8q):not(.nav-btn):hover {border-color:#007acc;color:#d4d4d4;}.auth-error.svelte-1n46o8q {color:#f87171;text-align:center;margin:16px 0;}\r\n\r\n	@media (max-width: 600px) {header.svelte-1n46o8q {flex-direction:column;align-items:stretch;}nav.svelte-1n46o8q {flex-wrap:wrap;}\r\n	}"
   };
   function App($$anchor, $$props) {
     push($$props, true);
-    append_styles($$anchor, $$css6);
+    append_styles($$anchor, $$css7);
     let loggedIn = state(false);
     let userRole = state("");
     let authError = state("");
@@ -6995,6 +7400,9 @@ ${component_stack}
     function handleSelectTask(task) {
       set(selectedTask, task, true);
     }
+    function handleBackToCatalog() {
+      set(selectedTask, null);
+    }
     function navTo(next2) {
       set(view, next2, true);
       set(selectedStudent, null);
@@ -7011,11 +7419,11 @@ ${component_stack}
     var node = first_child(fragment);
     {
       var consequent_1 = ($$anchor2) => {
-        var fragment_1 = root_16();
+        var fragment_1 = root_17();
         var node_1 = first_child(fragment_1);
         {
           var consequent = ($$anchor3) => {
-            var p = root6();
+            var p = root7();
             var text2 = only_child(p, true);
             template_effect(() => set_text(text2, get2(authError)));
             append($$anchor3, p);
@@ -7028,8 +7436,8 @@ ${component_stack}
         Login(node_2, { onLogin: handleLogin });
         append($$anchor2, fragment_1);
       };
-      var alternate_1 = ($$anchor2) => {
-        var main = root_35();
+      var alternate_2 = ($$anchor2) => {
+        var main = root_26();
         var header = child(main);
         var nav = sibling(child(header), 2);
         var button = child(nav);
@@ -7081,28 +7489,29 @@ ${component_stack}
             append($$anchor3, fragment_3);
           };
           var consequent_6 = ($$anchor3) => {
-            var fragment_6 = root_16();
+            var fragment_6 = comment();
             var node_5 = first_child(fragment_6);
-            Catalog(node_5, { onSelectTask: handleSelectTask });
-            var node_6 = sibling(node_5, 2);
             {
               var consequent_5 = ($$anchor4) => {
-                var div_1 = root_25();
-                var p_1 = sibling(child(div_1), 2);
-                var strong = child(p_1);
-                var text_2 = only_child(strong, true);
-                var text_3 = sibling(strong);
-                reset(p_1);
-                next(2);
-                reset(div_1);
-                template_effect(() => {
-                  set_text(text_2, get2(selectedTask).task_id);
-                  set_text(text_3, ` \u2014 ${(get2(selectedTask).title || get2(selectedTask).slug) ?? ""}`);
+                TaskStudio($$anchor4, {
+                  get taskId() {
+                    return get2(selectedTask).id;
+                  },
+                  get taskLabel() {
+                    return get2(selectedTask).task_id;
+                  },
+                  get role() {
+                    return get2(userRole);
+                  },
+                  onBack: handleBackToCatalog
                 });
-                append($$anchor4, div_1);
               };
-              if_block(node_6, ($$render) => {
+              var alternate_1 = ($$anchor4) => {
+                Catalog($$anchor4, { onSelectTask: handleSelectTask });
+              };
+              if_block(node_5, ($$render) => {
                 if (get2(selectedTask)) $$render(consequent_5);
+                else $$render(alternate_1, -1);
               });
             }
             append($$anchor3, fragment_6);
@@ -7131,7 +7540,7 @@ ${component_stack}
       };
       if_block(node, ($$render) => {
         if (!get2(loggedIn)) $$render(consequent_1);
-        else $$render(alternate_1, -1);
+        else $$render(alternate_2, -1);
       });
     }
     append($$anchor, fragment);

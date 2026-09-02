@@ -6,6 +6,7 @@
 	import StudentList from './components/StudentList.svelte';
 	import StudentDetail from './components/StudentDetail.svelte';
 	import Catalog from './components/Catalog.svelte';
+	import TaskStudio from './components/TaskStudio.svelte';
 
 	type View = 'overview' | 'students' | 'catalog';
 
@@ -61,6 +62,10 @@
 		selectedTask = task;
 	}
 
+	function handleBackToCatalog() {
+		selectedTask = null;
+	}
+
 	function navTo(next: View) {
 		view = next;
 		selectedStudent = null;
@@ -103,13 +108,15 @@
 				<StudentList {userRole} onSelect={handleSelect} />
 			{/if}
 		{:else if view === 'catalog'}
-			<Catalog onSelectTask={handleSelectTask} />
 			{#if selectedTask}
-				<div class="task-preview" role="status" aria-live="polite">
-					<h3>Selected task</h3>
-					<p><strong>{selectedTask.task_id}</strong> — {selectedTask.title || selectedTask.slug}</p>
-					<p class="hint">Task Studio editor opens here in a follow-up commit.</p>
-				</div>
+				<TaskStudio
+					taskId={selectedTask.id}
+					taskLabel={selectedTask.task_id}
+					role={userRole}
+					onBack={handleBackToCatalog}
+				/>
+			{:else}
+				<Catalog onSelectTask={handleSelectTask} />
 			{/if}
 		{/if}
 	</main>
@@ -141,13 +148,6 @@
 	}
 	header button:not(.nav-btn):hover { border-color: #007acc; color: #d4d4d4; }
 	.auth-error { color: #f87171; text-align: center; margin: 16px 0; }
-
-	.task-preview {
-		margin-top: 24px; padding: 16px; background: #2d2d2d; border: 1px solid #3c3c3c; border-radius: 6px;
-	}
-	.task-preview h3 { font-size: 0.8rem; font-weight: 600; margin: 0 0 8px; color: #858585; text-transform: uppercase; letter-spacing: 0.05em; }
-	.task-preview p { margin: 0 0 6px; }
-	.task-preview .hint { color: #858585; font-size: 0.75rem; }
 
 	@media (max-width: 600px) {
 		header { flex-direction: column; align-items: stretch; }
