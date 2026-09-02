@@ -1,7 +1,7 @@
 /** Load DashboardData from server API or local .ego/ files. */
 
 import * as vscode from 'vscode';
-import { EgoApi } from './api';
+import { EgoApi, isAuthenticationError } from './api';
 import { readEgoConfig, egoDir, type EgoMode } from './egoWorkspace';
 
 /** Mirrors webview DashboardData — keep fields in sync with shared/types.ts */
@@ -140,7 +140,8 @@ async function loadServer(api: EgoApi): Promise<DashboardData> {
                     },
                 ])
             );
-        } catch {
+        } catch (e) {
+            if (isAuthenticationError(e)) throw e;
             // Progress optional.
         }
 
@@ -165,6 +166,11 @@ async function loadServer(api: EgoApi): Promise<DashboardData> {
     } catch (e) {
         // Fall back to local manifest if server unreachable but .ego/ exists.
         const offline = await loadOffline();
+        if (isAuthenticationError(e)) {
+            const error = 'Session expired or unauthorized — run Ego: Login';
+            if (offline.rows.length > 0) return { ...offline, mode: 'server', error };
+            return emptyData('server', error);
+        }
         if (offline.rows.length > 0) {
             return {
                 ...offline,

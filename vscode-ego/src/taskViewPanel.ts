@@ -126,12 +126,10 @@ export class TaskViewPanel {
     }
 
     /** Route check results here when panel is open. */
-    static postResult(result: CheckResponse): void {
-        if (!TaskViewPanel.panel) return;
+    static postResult(result: CheckResponse): boolean {
+        if (!TaskViewPanel.panel || !TaskViewPanel.current) return false;
+        if (result.task_id !== TaskViewPanel.current.id) return false;
         TaskViewPanel.pendingResult = result;
-        if (TaskViewPanel.current && result.task_id !== TaskViewPanel.current.id) {
-            return; // different task
-        }
         // Keep host-side status in sync for later refreshes.
         if (TaskViewPanel.current && result.task_id === TaskViewPanel.current.id) {
             TaskViewPanel.current = { ...TaskViewPanel.current, status: result.status };
@@ -141,7 +139,9 @@ export class TaskViewPanel {
                 type: 'taskView.setResult',
                 payload: result,
             });
+            return true;
         }
+        return true;
     }
 
     private static async onMessage(msg: { type?: string }): Promise<void> {
