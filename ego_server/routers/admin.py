@@ -8,15 +8,133 @@ All endpoints require ``admin`` role (per ADR-0001 D8).
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from ego_server.auth import generate_user_id, hash_password
 from ego_server.deps import DbDep, require_role
-from ego_server.models import SyncLogRow, SyncResultDTO, SyncTasksRequest
+from ego_server.models import (
+    CreateUserRequest,
+    ResetPasswordRequest,
+    StudentSummaryDTO,
+    SyncLogRow,
+    SyncResultDTO,
+    SyncTasksRequest,
+    UpdateRoleRequest,
+)
 from ego_server.sync import sync_from_path
 
 router = APIRouter()
+
+
+# === Mentor ops: student progress tracking ===
+
+
+@router.get(
+    "/students",
+    response_model=list[StudentSummaryDTO],
+    dependencies=[Depends(require_role("mentor", "admin"))],
+)
+async def list_students(db: DbDep) -> list[StudentSummaryDTO]:
+    """List all students with their progress summary."""
+    rows = db.execute(
+        """SELECT s.id, s.username, s.role,
+                  COUNT(p.task_id) AS tasks_total,
+                  SUM(CASE WHEN p.status = 'passed' THEN 1 ELSE 0 END) AS tasks_passed,
+                  SUM(CASE WHEN p.status = 'partial' THEN 1 ELSE 0 END) AS tasks_partial,
+                  SUM(CASE WHEN p.status IN ('failed', 'error', 'timeout') THEN 1 ELSE 0 END) AS tasks_failed,
+                  MAX(p.last_run_at) AS last_activity
+           FROM students s
+           LEFT JOIN progress p ON p.student_id = s.id
+           WHERE s.role = 'student'
+           GROUP BY s.id, s.username, s.role
+           ORDER BY s.username"""
+    ).fetchall()
+    return [
+        StudentSummaryDTO(
+            student_id=r["id"],
+            username=r["username"],
+            role=r["role"],
+            tasks_total=r["tasks_total"],
+            tasks_passed=r["tasks_passed"] or 0,
+            tasks_partial=r["tasks_partial"] or 0,
+            tasks_failed=r["tasks_failed"] or 0,
+            last_activity=r["last_activity"],
+        )
+        for r in rows
+    ]
+
+
+@router.post(
+    "/users",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_role("admin"))],
+)
+async def create_user(body: CreateUserRequest, db: DbDep) -> dict:
+    """Create a new user (student/mentor/admin)."""
+    existing = db.execute("SELECT id FROM students WHERE username = ?", (body.username,)).fetchone()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Username already taken",
+        )
+    user_id = generate_user_id()
+    pwd_hash = hash_password(body.password)
+
+    db.execute(
+        "INSERT INTO students (id, username, role, password_hash, created_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (user_id, body.username, body.role, pwd_hash, datetime.now(timezone.utc).isoformat()),
+    )
+    db.commit()
+    return {"id": user_id, "username": body.username, "role": body.role}
+
+
+@router.put(
+    "/users/{user_id}/role",
+    dependencies=[Depends(require_role("admin"))],
+)
+async def update_user_role(user_id: str, body: UpdateRoleRequest, db: DbDep) -> dict:
+    """Change a user's role."""
+    row = db.execute("SELECT id FROM students WHERE id = ?", (user_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    db.execute("UPDATE students SET role = ? WHERE id = ?", (body.role, user_id))
+    db.commit()
+    return {"id": user_id, "role": body.role}
+
+
+@router.put(
+    "/users/{user_id}/password",
+    dependencies=[Depends(require_role("admin"))],
+)
+async def reset_user_password(user_id: str, body: ResetPasswordRequest, db: DbDep) -> dict:
+    """Reset a user's password."""
+    row = db.execute("SELECT id FROM students WHERE id = ?", (user_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    pwd_hash = hash_password(body.password)
+    db.execute("UPDATE students SET password_hash = ? WHERE id = ?", (pwd_hash, user_id))
+    db.commit()
+    return {"id": user_id, "password_reset": True}
+
+
+@router.delete(
+    "/users/{user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_role("admin"))],
+)
+async def delete_user(user_id: str, db: DbDep) -> None:
+    """Delete a user and their progress."""
+    row = db.execute("SELECT id FROM students WHERE id = ?", (user_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    db.execute("DELETE FROM progress WHERE student_id = ?", (user_id,))
+    db.execute("DELETE FROM runs WHERE student_id = ?", (user_id,))
+    db.execute("DELETE FROM students WHERE id = ?", (user_id,))
+    db.commit()
 
 
 @router.post(
@@ -40,9 +158,7 @@ async def sync_tasks(req: SyncTasksRequest, db: DbDep) -> SyncResultDTO:
             detail=f"path not found or not a directory: {repo_path}",
         )
 
-    result = sync_from_path(
-        db, repo_path, source=req.source, repo_url=str(repo_path)
-    )
+    result = sync_from_path(db, repo_path, source=req.source, repo_url=str(repo_path))
     db.commit()
 
     return _to_dto(result, repo_url=str(repo_path))
@@ -100,7 +216,12 @@ def _resolve_path(path_str: str) -> Path:
         parsed = urlparse(path_str)
         # Reconstruct path: on Windows, urlparse may put 'C:' in netloc
         # for 'file://C:/path' (non-RFC form). Prefer netloc+path if so.
-        if parsed.netloc and sys.platform == "win32" and len(parsed.netloc) >= 2 and parsed.netloc[1] == ":":
+        if (
+            parsed.netloc
+            and sys.platform == "win32"
+            and len(parsed.netloc) >= 2
+            and parsed.netloc[1] == ":"
+        ):
             p = parsed.netloc + parsed.path
         else:
             p = parsed.path
