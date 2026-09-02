@@ -2,6 +2,7 @@
 
 import * as vscode from 'vscode';
 import { studentStubFromSolution } from './studentStub';
+import type { ManifestTaskEntry } from './pullSafety';
 
 export type EgoMode = 'server' | 'offline';
 
@@ -111,24 +112,67 @@ export async function createEgoSkeleton(
     return dir;
 }
 
-export async function writeManifest(
-    manifest: {
-        tasks: Array<{
-            id: string;
-            block: string;
-            slug: string;
-            version: string;
-            content_hash: string;
-            pulled_at: string;
-            md_path: string;
-            md_modified?: boolean;
-            stub_modified?: boolean;
-        }>;
-        server_version?: string;
-        last_pull_at?: string | null;
-    },
-    root?: vscode.Uri
-): Promise<void> {
+export interface EgoManifest {
+    tasks: ManifestTaskEntry[];
+    server_version?: string;
+    last_pull_at?: string | null;
+}
+
+export async function manifestFileExists(root?: vscode.Uri): Promise<boolean> {
+    const dir = egoDir(root);
+    if (!dir) return false;
+    try {
+        await vscode.workspace.fs.stat(vscode.Uri.joinPath(dir, 'manifest.yaml'));
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+export async function readManifest(root?: vscode.Uri): Promise<EgoManifest | undefined> {
+    const dir = egoDir(root);
+    if (!dir) return undefined;
+    try {
+        const raw = JSON.parse(
+            Buffer.from(
+                await vscode.workspace.fs.readFile(vscode.Uri.joinPath(dir, 'manifest.yaml'))
+            ).toString('utf-8')
+        ) as unknown;
+        if (!raw || typeof raw !== 'object') return undefined;
+
+        const candidate = raw as Partial<EgoManifest>;
+        const tasks = candidate.tasks;
+        if (!Array.isArray(tasks)) return undefined;
+        if (
+            (candidate.server_version !== undefined && typeof candidate.server_version !== 'string') ||
+            (candidate.last_pull_at !== undefined &&
+                candidate.last_pull_at !== null &&
+                typeof candidate.last_pull_at !== 'string') ||
+            !tasks.every((task) => {
+                if (!task || typeof task !== 'object') return false;
+                const entry = task as Partial<ManifestTaskEntry>;
+                return (
+                    typeof entry.id === 'string' &&
+                    typeof entry.block === 'string' &&
+                    typeof entry.slug === 'string' &&
+                    typeof entry.version === 'string' &&
+                    typeof entry.content_hash === 'string' &&
+                    typeof entry.pulled_at === 'string' &&
+                    typeof entry.md_path === 'string' &&
+                    (entry.md_modified === undefined || typeof entry.md_modified === 'boolean') &&
+                    (entry.stub_modified === undefined || typeof entry.stub_modified === 'boolean')
+                );
+            })
+        ) {
+            return undefined;
+        }
+        return { ...candidate, tasks: tasks as ManifestTaskEntry[] } as EgoManifest;
+    } catch {
+        return undefined;
+    }
+}
+
+export async function writeManifest(manifest: EgoManifest, root?: vscode.Uri): Promise<void> {
     const dir = egoDir(root);
     if (!dir) throw new Error('No workspace folder open.');
     await vscode.workspace.fs.writeFile(
