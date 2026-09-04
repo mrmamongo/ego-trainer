@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 from pydantic import BaseModel, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -62,14 +63,34 @@ class TasksRepoConfig(BaseModel):
         For ``file://`` URLs, this is the parsed path. For bare local
         paths, it's the path itself. For git URLs (PR 2), this would be
         the clone directory.
+
+        File-URL conversion is standards-correct (RFC 8089) and
+        platform-aware:
+
+        - ``file:///C:/path`` -> ``C:\\path`` on Windows (no leading slash)
+        - ``file://server/share/path`` -> ``\\\\server\\share\\path`` UNC
+          on Windows
+        - ``file:///var/data`` -> ``/var/data`` on POSIX
+        - percent escapes are decoded (e.g. ``%20`` -> space)
+        - file URLs with a query or fragment are rejected with a clear
+          :class:`ValueError` rather than silently mangled
         """
         if not self.url:
             return self.local_path
         if self.url.startswith("file://"):
             parsed = urlparse(self.url)
-            # file:///C:/path -> /C:/path -> strip leading slash on Windows
-            p = Path(parsed.path)
-            return p
+            if parsed.query or parsed.fragment:
+                raise ValueError(f"file:// URL must not contain a query or fragment: {self.url!r}")
+            # Reconstruct the URL path portion that url2pathname expects.
+            # On Windows it converts '/C:/path' -> 'C:\\path' and
+            # '//server/share/path' -> '\\\\server\\share\\path' (UNC).
+            # url2pathname also percent-decodes the path.
+            if parsed.netloc:
+                # file://server/share/path -> //server/share/path
+                url_path = f"//{parsed.netloc}{parsed.path}"
+            else:
+                url_path = parsed.path
+            return Path(url2pathname(url_path))
         # Bare local path.
         return Path(self.url)
 

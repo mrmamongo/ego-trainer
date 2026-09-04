@@ -201,3 +201,192 @@ class ResetPasswordRequest(BaseModel):
     """Request body for PUT /admin/users/<id>/password."""
 
     password: str = Field(min_length=1)
+
+
+class OverviewCounts(BaseModel):
+    """Row counts for the overview snapshot (GET /admin/overview)."""
+
+    projects: int
+    folders: int
+    tasks: int
+    students: int
+
+
+class OverviewDTO(BaseModel):
+    """Aggregate snapshot for GET /admin/overview (mentor/admin only).
+
+    ``server`` is a stable status string (currently always ``"ok"`` — the
+    endpoint itself would not be reachable if the server were down).
+    Counts reflect the current DB state. ``latest_sync`` is the most recent
+    ``sync_log`` row or ``None`` when no sync has ever run.
+    """
+
+    server: str = "ok"
+    counts: OverviewCounts
+    latest_sync: SyncLogRow | None = None
+
+
+# === Catalog browse (GET /admin/catalog) ===
+
+
+class CatalogTaskDTO(BaseModel):
+    """One task in the catalog hierarchy (GET /admin/catalog).
+
+    Only columns that exist on the ``tasks`` table are exposed — no
+    invented schema. ``breaking`` is normalised to a bool from the 0/1 int.
+    """
+
+    id: str
+    task_id: str
+    title: str
+    block: str
+    slug: str
+    level: str
+    version: str
+    breaking: bool = False
+    md_path: str
+    folder_id: str | None = None
+    project_id: str | None = None
+
+
+class CatalogFolderDTO(BaseModel):
+    """One folder in the catalog hierarchy (GET /admin/catalog)."""
+
+    id: str
+    project_id: str
+    code: str
+    name: str
+    order: int
+    level: str | None = None
+    tasks: list[CatalogTaskDTO] = Field(default_factory=list)
+
+
+class CatalogProjectDTO(BaseModel):
+    """One project in the catalog hierarchy (GET /admin/catalog)."""
+
+    id: str
+    name: str
+    order: int
+    version: str
+    folders: list[CatalogFolderDTO] = Field(default_factory=list)
+
+
+class CatalogDTO(BaseModel):
+    """Full catalog hierarchy for GET /admin/catalog (mentor/admin only).
+
+    ``projects`` is ordered by (``order``, ``id``); folders by
+    (``order``, ``id``); tasks by (``task_id``, ``id``). When ``q`` is
+    supplied, unmatched leaves are pruned but ancestors of matches are
+    retained. An empty DB yields ``{"projects": []}``.
+    """
+
+    projects: list[CatalogProjectDTO] = Field(default_factory=list)
+
+
+# === Task Studio read (GET /admin/tasks/{task_id}/studio) ===
+
+
+class TaskStudioDTO(BaseModel):
+    """Canonical task content for the Task Studio read view.
+
+    Content (``markdown`` / ``solution_py`` / ``tests_py``) is read
+    directly from the configured local content-repo root — never from
+    SQLite blobs. ``writable`` is ``False`` with a concise
+    ``read_only_reason`` when the repo is unconfigured/non-local/
+    missing/unwritable, or when any resolved task/sidecar path escapes
+    the canonical root via ``..`` or a symlink. When content cannot be
+    read safely, the string fields are empty and only the DB identity
+    metadata is returned.
+
+    ``content_etag`` is a deterministic lowercase SHA-256 over the
+    tagged, length-delimited exact bytes AND existence/missing state
+    of all three canonical files (``.md``, ``.solution.py``,
+    ``.tests.py``). It is returned whenever all three paths are safely
+    resolved and readable (a missing optional ``.tests.py`` is encoded
+    as an explicit missing state, not an error). It is empty when any
+    path escapes the root or content cannot be read safely. Clients
+    must send it back as ``expected_content_etag`` on validate/save
+    for optimistic concurrency.
+    """
+
+    task_id: str
+    version: str
+    md_path: str
+    markdown: str = ""
+    solution_py: str = ""
+    tests_py: str = ""
+    content_etag: str = ""
+    version_policy: str | None = None
+    writable: bool = False
+    read_only_reason: str = ""
+
+
+# === Task Studio validate (POST /admin/tasks/{task_id}/studio/validate) ===
+
+
+class StudioValidateRequest(BaseModel):
+    """Request body for POST /admin/tasks/{task_id}/studio/validate.
+
+    The candidate is validated entirely in-memory — no canonical files are
+    modified. ``expected_version`` must match the current DB version of the
+    task and ``expected_content_etag`` must match the deterministic SHA-256
+    over the current canonical files' exact bytes + existence state
+    (optimistic concurrency); a mismatch on either yields 409.
+    """
+
+    expected_version: str
+    expected_content_etag: str
+    markdown: str  # full .md including YAML frontmatter
+    solution_py: str
+    tests_py: str = ""
+
+
+class StudioValidateResponse(BaseModel):
+    """Success response for POST /admin/tasks/{task_id}/studio/validate.
+
+    Returned only when the candidate passes all validation checks. The
+    canonical files are guaranteed byte-identical (validation never writes
+    to the content repo — the candidate is parsed from a temp directory).
+    """
+
+    valid: bool = True
+    task_id: str
+    current_version: str
+    candidate_version: str
+    content_changed: bool
+    version_policy: str
+
+
+# === Task Studio save (PUT /admin/tasks/{task_id}/studio) ===
+
+
+class StudioSaveRequest(StudioValidateRequest):
+    """Request body for PUT /admin/tasks/{task_id}/studio.
+
+    Identical typed candidate fields as :class:`StudioValidateRequest`:
+    ``expected_version``, ``expected_content_etag``, ``markdown``,
+    ``solution_py``, ``tests_py``. The same validation checks run
+    before any canonical file is touched.
+    """
+
+
+class StudioSaveResponse(BaseModel):
+    """Success response for PUT /admin/tasks/{task_id}/studio.
+
+    Returned only after the candidate passes validation, canonical files
+    are replaced (each ``os.replace`` is per-file atomic; in-process
+    exceptions attempt best-effort restoration; a process/host crash can
+    leave the three files in a mixed state), and the subsequent
+    ``sync_from_path`` run succeeds with zero errors. ``new_version`` is
+    the task version now stored in the DB (which equals the candidate
+    version when content changed, or the unchanged current version when
+    nothing changed). ``content_etag`` is the new deterministic etag over
+    the post-save canonical files' exact bytes + existence state, for the
+    UI to send on the next request. ``sync`` carries the sync counts from
+    the post-save re-sync.
+    """
+
+    task_id: str
+    new_version: str
+    content_etag: str = ""
+    sync: SyncResultDTO

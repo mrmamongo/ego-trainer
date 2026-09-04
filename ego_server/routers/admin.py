@@ -8,21 +8,46 @@ All endpoints require ``admin`` role (per ADR-0001 D8).
 
 from __future__ import annotations
 
+import ast
+import hashlib
+import os
+import re
+import sqlite3
+import tempfile
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from ego.content_repo import DiscoveredTask, discover_repo
 from ego_server.auth import generate_user_id, hash_password
 from ego_server.deps import DbDep, require_role
 from ego_server.models import (
+    CatalogDTO,
+    CatalogFolderDTO,
+    CatalogProjectDTO,
+    CatalogTaskDTO,
     CreateUserRequest,
+    OverviewCounts,
+    OverviewDTO,
     ResetPasswordRequest,
+    StudioSaveRequest,
+    StudioSaveResponse,
+    StudioValidateRequest,
+    StudioValidateResponse,
     StudentSummaryDTO,
     SyncLogRow,
     SyncResultDTO,
     SyncTasksRequest,
+    TaskStudioDTO,
     UpdateRoleRequest,
+)
+from ego_server.authoring import (
+    contained_path,
+    is_writable,
+    resolve_root,
+    safe_config,
 )
 from ego_server.sync import sync_from_path
 
@@ -197,6 +222,1232 @@ async def get_sync_status(db: DbDep) -> SyncLogRow | None:
     if row is None:
         return None
     return SyncLogRow(**dict(row))
+
+
+@router.get(
+    "/overview",
+    response_model=OverviewDTO,
+    dependencies=[Depends(require_role("mentor", "admin"))],
+)
+async def get_overview(db: DbDep) -> OverviewDTO:
+    """Aggregate snapshot: server status, catalog/student counts, latest sync.
+
+    Returns a stable JSON shape for the admin/mentor dashboard. ``server`` is
+    always ``"ok"`` (the endpoint would not be reachable otherwise). Counts
+    come from the current DB state; ``latest_sync`` is the newest
+    ``sync_log`` row or ``None`` when no sync has ever run.
+    """
+    projects = db.execute("SELECT COUNT(*) AS n FROM projects").fetchone()["n"]
+    folders = db.execute("SELECT COUNT(*) AS n FROM folders").fetchone()["n"]
+    tasks = db.execute("SELECT COUNT(*) AS n FROM tasks").fetchone()["n"]
+    students = db.execute("SELECT COUNT(*) AS n FROM students WHERE role = 'student'").fetchone()[
+        "n"
+    ]
+
+    sync_row = db.execute(
+        """SELECT id, started_at, finished_at, source, repo_url, git_sha,
+                  status, added, updated, skipped, errors, error_details
+           FROM sync_log ORDER BY id DESC LIMIT 1"""
+    ).fetchone()
+    latest_sync = SyncLogRow(**dict(sync_row)) if sync_row is not None else None
+
+    return OverviewDTO(
+        server="ok",
+        counts=OverviewCounts(
+            projects=projects,
+            folders=folders,
+            tasks=tasks,
+            students=students,
+        ),
+        latest_sync=latest_sync,
+    )
+
+
+@router.get(
+    "/catalog",
+    response_model=CatalogDTO,
+    dependencies=[Depends(require_role("mentor", "admin"))],
+)
+async def get_catalog(db: DbDep, q: str | None = None) -> CatalogDTO:
+    """Browse the catalog hierarchy: projects -> folders -> tasks.
+
+    Reads the existing ``projects``/``folders``/``tasks`` tables and returns
+    a deterministic, nested snapshot. Ordering is stable:
+
+    * projects by (``order``, ``id``)
+    * folders  by (``order``, ``id``)
+    * tasks    by (``task_id``, ``id``)
+
+    Only columns that already exist on the tables are exposed — no schema
+    is invented. ``breaking`` is normalised from the 0/1 int to a bool.
+
+    Optional ``q`` performs a case-insensitive substring match against
+    project/folder/task identifiers and names (project ``id``/``name``,
+    folder ``id``/``code``/``name``, task ``id``/``task_id``/``title``/
+    ``slug``/``md_path``). Unmatched leaves are pruned, but ancestors of
+    any match are retained so the hierarchy stays connected. An empty DB
+    (or a ``q`` that matches nothing) yields ``{"projects": []}``.
+    """
+    projects_rows = db.execute(
+        'SELECT id, name, "order", version FROM projects ORDER BY "order", id'
+    ).fetchall()
+    folders_rows = db.execute(
+        'SELECT id, project_id, code, name, "order", level '
+        'FROM folders ORDER BY "order", id, project_id'
+    ).fetchall()
+    tasks_rows = db.execute(
+        "SELECT id, task_id, title, block, slug, level, version, breaking, "
+        "md_path, folder_id, project_id FROM tasks ORDER BY task_id, id"
+    ).fetchall()
+
+    # Folders are keyed by the composite (project_id, folder_id) — the
+    # ``folders`` table has PRIMARY KEY (id, project_id), so a folder id is
+    # NOT globally unique. Two projects may share a folder id (e.g. the
+    # slug "shared"), and keying folder-related maps by ``folder_id`` alone
+    # would mix tasks from different projects' same-named folders. Every
+    # folder map below is therefore keyed by (project_id, folder_id).
+    tasks_by_folder: dict[tuple[str, str], list[dict]] = {}
+    for r in tasks_rows:
+        t = dict(r)
+        t["breaking"] = bool(t["breaking"])
+        key = (t["project_id"] or "", t["folder_id"] or "")
+        tasks_by_folder.setdefault(key, []).append(t)
+
+    needle = (q or "").strip().lower()
+    searching = needle != ""
+
+    def task_hits(t: dict) -> bool:
+        if not searching:
+            return True
+        return (
+            needle in " ".join([t["id"], t["task_id"], t["title"], t["slug"], t["md_path"]]).lower()
+        )
+
+    def folder_hits(f: dict) -> bool:
+        if not searching:
+            return True
+        return needle in " ".join([f["id"], f["code"], f["name"]]).lower()
+
+    def project_hits(p: dict) -> bool:
+        if not searching:
+            return True
+        return needle in " ".join([p["id"], p["name"]]).lower()
+
+    # Direct (self) match flags, computed once. Folder maps are keyed by
+    # (project_id, folder_id) to avoid cross-project leakage through a
+    # shared folder id.
+    proj_direct = {p["id"]: project_hits(dict(p)) for p in projects_rows}
+    folder_direct = {(f["project_id"], f["id"]): folder_hits(dict(f)) for f in folders_rows}
+    # Does any task in this folder match directly?
+    folder_has_match_task = {
+        key: any(task_hits(t) for t in ts) for key, ts in tasks_by_folder.items()
+    }
+
+    # Subtree-aware retention: a node is kept if it matches, any ancestor
+    # matches, or any descendant matches. This keeps the hierarchy connected
+    # both upward (ancestors of a matching task) and downward (the full
+    # subtree of a matching project/folder).
+    projects_out: list[CatalogProjectDTO] = []
+    for p in projects_rows:
+        p = dict(p)
+        pm = proj_direct[p["id"]]
+        folders_out: list[CatalogFolderDTO] = []
+        for f in folders_rows:
+            if f["project_id"] != p["id"]:
+                continue
+            f = dict(f)
+            folder_key = (f["project_id"], f["id"])
+            fm = folder_direct[folder_key]
+            keep_folder = pm or fm or folder_has_match_task.get(folder_key, False)
+            if not keep_folder:
+                continue
+            kept_tasks: list[CatalogTaskDTO] = []
+            for t in tasks_by_folder.get(folder_key, []):
+                if pm or fm or task_hits(t):
+                    kept_tasks.append(CatalogTaskDTO(**t))
+            folders_out.append(
+                CatalogFolderDTO(
+                    id=f["id"],
+                    project_id=f["project_id"],
+                    code=f["code"],
+                    name=f["name"],
+                    order=f["order"],
+                    level=f["level"],
+                    tasks=kept_tasks,
+                )
+            )
+        if not (pm or folders_out):
+            continue
+        projects_out.append(
+            CatalogProjectDTO(
+                id=p["id"],
+                name=p["name"],
+                order=p["order"],
+                version=p["version"],
+                folders=folders_out,
+            )
+        )
+
+    return CatalogDTO(projects=projects_out)
+
+
+# === Task Studio read (GET /admin/tasks/{task_id}/studio) ===
+
+
+def _compute_content_etag(
+    md_bytes: bytes | None,
+    sol_bytes: bytes | None,
+    tests_bytes: bytes | None,
+) -> str:
+    """Deterministic lowercase SHA-256 over the three canonical files.
+
+    Each file is encoded as a tagged, length-delimited frame that captures
+    both its exact bytes and its existence/missing state, avoiding any
+    concatenation ambiguity:
+
+        <tag> \x00 <present: "1"|"0"> \x00 <len: decimal or "-1"> \x00 <bytes> \x00
+
+    A missing file (``None``) is encoded with ``present="0"`` and ``len="-1"``
+    and no bytes field, so ``md=""`` (empty file) and ``md=None`` (missing
+    file) produce distinct hashes. The three frames are hashed in fixed
+    order: ``md``, ``sol``, ``tests``.
+    """
+    h = hashlib.sha256()
+    for tag, data in (("md", md_bytes), ("sol", sol_bytes), ("tests", tests_bytes)):
+        h.update(tag.encode("ascii"))
+        h.update(b"\x00")
+        h.update(b"1" if data is not None else b"0")
+        h.update(b"\x00")
+        if data is None:
+            h.update(b"-1")
+        else:
+            h.update(str(len(data)).encode("ascii"))
+        h.update(b"\x00")
+        if data is not None:
+            h.update(data)
+        h.update(b"\x00")
+    return h.hexdigest()
+
+
+@router.get(
+    "/tasks/{task_id}/studio",
+    response_model=TaskStudioDTO,
+    dependencies=[Depends(require_role("mentor", "admin"))],
+)
+async def get_task_studio(task_id: str, db: DbDep) -> TaskStudioDTO:
+    """Read a task's canonical markdown + .solution.py/.tests.py sidecars.
+
+    Content is read directly from the configured LOCAL content-repo root
+    (:class:`ego_server.content_config.TasksRepoConfig`) — never from
+    SQLite blobs. The DB row supplies only identity metadata (``id``,
+    ``version``, ``md_path``).
+
+    ``writable`` is ``False`` with a concise ``read_only_reason`` when the
+    repo is unconfigured / non-local / missing / unwritable, or when any
+    resolved task/sidecar path escapes the canonical root via ``..`` or a
+    symlink. When content cannot be read safely, the string fields are
+    empty and only the DB identity metadata is returned.
+
+    Per the Task Studio writability policy, ``writable`` is also ``False``
+    unless **both** the DB metadata and the canonical content-repo
+    discovery (:func:`ego.content_repo.discover_repo`) resolve this exact
+    task to the same existing project whose ``version_policy`` is exactly
+    ``"declare"``. ``auto_minor`` projects, missing project rows, legacy
+    ``NULL`` ``project_id`` tasks, legacy (no ``catalog.yaml``) repos, and
+    any DB/canonical project or policy mismatch are read-only with an
+    actionable ``read_only_reason`` but still return canonical content for
+    browse. ``version_policy`` is ``None`` for legacy/missing-project
+    tasks.
+
+    A missing optional ``.tests.py`` sidecar yields an empty string. A
+    missing required ``.md`` returns 404; a missing required
+    ``.solution.py`` returns 409 (task exists in DB but its solution
+    sidecar is inconsistent).
+    """
+    row = db.execute(
+        "SELECT id, task_id, version, md_path, project_id FROM tasks WHERE id = ?",
+        (task_id,),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found",
+        )
+
+    md_path_str = row["md_path"] or ""
+    base = TaskStudioDTO(
+        task_id=row["task_id"],
+        version=row["version"],
+        md_path=md_path_str,
+    )
+
+    root_status = resolve_root(safe_config())
+    if not root_status.ok or root_status.path is None:
+        return base.model_copy(update={"writable": False, "read_only_reason": root_status.reason})
+    root = root_status.path
+
+    # --- markdown containment (resolved before policy so discovery can
+    #     match the exact canonical md path against the content repo) ---
+    md = contained_path(root, md_path_str)
+
+    # --- version_policy: writable only when DB + canonical discovery agree
+    #     on an existing 'declare' project for this exact task ---
+    version_policy, writable, reason = _resolve_policy_writability(db, root, md, row["project_id"])
+    if writable and not is_writable(root):
+        writable = False
+        reason = "content repo root is not writable"
+
+    if md is None:
+        return base.model_copy(
+            update={
+                "version_policy": version_policy,
+                "writable": False,
+                "read_only_reason": "task markdown path escapes content root",
+            }
+        )
+    if not md.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="task markdown not found in content repo",
+        )
+    md_bytes = md.read_bytes()
+    markdown = md_bytes.decode("utf-8")
+
+    # --- solution sidecar (required) ---
+    sol_rel = _sidecar_rel(md_path_str, ".solution.py")
+    sol = contained_path(root, sol_rel)
+    if sol is None:
+        return base.model_copy(
+            update={
+                "markdown": markdown,
+                "version_policy": version_policy,
+                "writable": False,
+                "read_only_reason": "solution path escapes content root",
+            }
+        )
+    if not sol.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="solution sidecar missing in content repo",
+        )
+    sol_bytes = sol.read_bytes()
+    solution_py = sol_bytes.decode("utf-8")
+
+    # --- tests sidecar (optional) ---
+    tests_rel = _sidecar_rel(md_path_str, ".tests.py")
+    tests = contained_path(root, tests_rel)
+    tests_py = ""
+    tests_bytes: bytes | None = None
+    if tests is None:
+        writable = False
+        reason = "tests path escapes content root"
+    elif tests.is_file():
+        tests_bytes = tests.read_bytes()
+        tests_py = tests_bytes.decode("utf-8")
+    else:
+        # Missing optional tests sidecar — explicit missing state for etag.
+        tests_bytes = None
+
+    # content_etag is returned whenever all three paths are safely resolved
+    # (contained). A missing optional tests sidecar is encoded as an explicit
+    # missing state. When the tests path escapes, no etag is returned.
+    content_etag = (
+        _compute_content_etag(md_bytes, sol_bytes, tests_bytes) if tests is not None else ""
+    )
+
+    return base.model_copy(
+        update={
+            "markdown": markdown,
+            "solution_py": solution_py,
+            "tests_py": tests_py,
+            "content_etag": content_etag,
+            "version_policy": version_policy,
+            "writable": writable,
+            "read_only_reason": reason,
+        }
+    )
+
+
+def _sidecar_rel(md_path_str: str, suffix: str) -> str:
+    """Derive a sidecar path string from the task's ``md_path``.
+
+    ``task_f1.md`` + ``.solution.py`` → ``task_f1.solution.py``. Preserves
+    any relative directory component of ``md_path_str``.
+    """
+    return str(Path(md_path_str).with_suffix(suffix))
+
+
+def _resolve_policy_writability(
+    db: sqlite3.Connection,
+    root: Path,
+    md_canonical: Path | None,
+    db_project_id: str | None,
+) -> tuple[str | None, bool, str]:
+    """Resolve Studio writability by cross-checking DB + canonical discovery.
+
+    Studio is writable only when **both** the DB metadata and the canonical
+    content-repo discovery resolve this exact task to the same existing
+    project whose ``version_policy`` is exactly ``"declare"``:
+
+    - The DB ``projects`` row for ``db_project_id`` must exist and have
+      ``version_policy == "declare"``.
+    - :func:`ego.content_repo.discover_repo` must run in catalog mode (not
+      legacy), must discover a task whose canonical md path matches the
+      safely resolved ``md_canonical`` exactly, that task's discovered
+      ``project_id`` must equal ``db_project_id``, and the canonical
+      project's ``version_policy`` must be ``"declare"``.
+
+    Any divergence — legacy discovery (no ``catalog.yaml``), a missing or
+    unmatched task/project, a canonical ``auto_minor`` policy, or a
+    DB/canonical project mismatch — yields ``writable=False`` with an
+    actionable migration/resync reason. Canonical content remains visible
+    to the caller for browse; this helper never reads task candidate
+    frontmatter or trusts the DB alone for policy.
+
+    Returns ``(version_policy, writable, reason)``. ``version_policy`` is
+    the DB project's policy when that row exists (for browse display),
+    else ``None``. ``reason`` is empty when writable.
+    """
+    # --- DB project row ---
+    if not db_project_id:
+        return (
+            None,
+            False,
+            "legacy task has no project; assign it to a project with "
+            "version_policy='declare' to edit in Studio",
+        )
+    prow = db.execute(
+        "SELECT version_policy FROM projects WHERE id = ?",
+        (db_project_id,),
+    ).fetchone()
+    if prow is None:
+        return (
+            None,
+            False,
+            f"task references missing project {db_project_id!r}; create the "
+            f"project or reassign the task to a 'declare' project",
+        )
+    db_policy = prow["version_policy"]
+    if db_policy != "declare":
+        return (
+            db_policy,
+            False,
+            f"project version_policy is {db_policy!r}; only 'declare' tasks are editable in Studio",
+        )
+
+    # --- canonical content-repo discovery cross-check ---
+    if md_canonical is None:
+        return (
+            db_policy,
+            False,
+            "task markdown path escapes content root",
+        )
+    try:
+        catalog = discover_repo(root)
+    except Exception as e:  # noqa: BLE001 — discovery failure → browse-only
+        return (
+            db_policy,
+            False,
+            f"content-repo discovery failed: {e}",
+        )
+    if catalog.is_legacy:
+        return (
+            db_policy,
+            False,
+            "content repo is legacy (no catalog.yaml); migrate to a catalog "
+            "layout with version_policy='declare' to edit in Studio",
+        )
+    target = md_canonical.resolve()
+    matched: DiscoveredTask | None = None
+    for dtask in catalog.all_tasks:
+        try:
+            if dtask.md_path.resolve() == target:
+                matched = dtask
+                break
+        except (OSError, RuntimeError):
+            continue
+    if matched is None:
+        return (
+            db_policy,
+            False,
+            "task not found in canonical content-repo discovery; resync the content repo",
+        )
+    if matched.project_id != db_project_id:
+        return (
+            db_policy,
+            False,
+            f"DB project {db_project_id!r} does not match canonical project "
+            f"{matched.project_id!r}; resync the content repo",
+        )
+    canon_policy: str | None = None
+    for proj in catalog.projects:
+        if proj.project.id == matched.project_id:
+            canon_policy = proj.project.version_policy
+            break
+    if canon_policy != "declare":
+        return (
+            db_policy,
+            False,
+            f"canonical project version_policy is {canon_policy!r}; only "
+            f"'declare' tasks are editable in Studio",
+        )
+    return db_policy, True, ""
+
+
+def _has_smoke_case(tests_py: str) -> bool:
+    """Return True if ``tests_py`` defines at least one smoke ``@case``.
+
+    Deterministically inspects the Python AST without executing the code.
+    A case counts as smoke unless it is explicitly ``@case(level="full")``:
+
+    - a bare ``@case`` decorator (no call) → default smoke, or
+    - a called ``@case(...)`` with no ``level`` keyword → default smoke, or
+    - a called ``@case(level="smoke")`` → smoke.
+
+    Only ``@case(level="full")`` cases do not count; a candidate whose
+    every case is full is rejected by the caller.
+    """
+    tree = ast.parse(tests_py)
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        for dec in node.decorator_list:
+            if _decorator_is_smoke_case(dec):
+                return True
+    return False
+
+
+def _decorator_is_smoke_case(dec: ast.expr) -> bool:
+    """Return True if ``dec`` is a ``@case`` decorator at smoke level."""
+    # Bare @case (no call) → default smoke.
+    if isinstance(dec, ast.Name) and dec.id == "case":
+        return True
+    # Called @case(...). Counts as smoke unless level is explicitly "full".
+    if isinstance(dec, ast.Call) and isinstance(dec.func, ast.Name) and dec.func.id == "case":
+        return _case_level(dec) != "full"
+    return False
+
+
+def _case_level(call: ast.Call) -> str:
+    """Extract the ``level`` from a ``@case(...)`` call; default ``"smoke"``.
+
+    Returns the string value of a ``level="..."`` keyword when it is a
+    string literal; otherwise (absent or non-string) returns ``"smoke"``
+    so only an explicit ``level="full"`` excludes a case from smoke.
+    """
+    for kw in call.keywords:
+        if kw.arg == "level" and isinstance(kw.value, ast.Constant):
+            value = kw.value.value
+            if isinstance(value, str):
+                return value
+    return "smoke"
+
+
+# === Task Studio validate (POST /admin/tasks/{task_id}/studio/validate) ===
+
+
+_STRICT_SEMVER_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
+
+
+def _is_strict_semver(v: str) -> bool:
+    """True iff ``v`` is a clean ``MAJOR.MINOR.PATCH`` (no pre-release/build)."""
+    return bool(_STRICT_SEMVER_RE.match(v))
+
+
+def _semver_tuple(v: str) -> tuple[int, int, int] | None:
+    """Parse ``'1.2.3'`` → ``(1, 2, 3)``. Returns ``None`` if not 3 int parts."""
+    parts = v.split(".")
+    if len(parts) != 3:
+        return None
+    try:
+        return (int(parts[0]), int(parts[1]), int(parts[2]))
+    except ValueError:
+        return None
+
+
+def _semver_gt(a: str, b: str) -> bool:
+    """True iff SemVer ``a`` > ``b`` (string fallback for non-SemVer values)."""
+    ta = _semver_tuple(a)
+    tb = _semver_tuple(b)
+    if ta is None or tb is None:
+        return a > b
+    return ta > tb
+
+
+@dataclass(frozen=True)
+class _StudioCandidate:
+    """Result of validating a Task Studio candidate (shared by validate + save).
+
+    Carries every value the save endpoint needs to write files and verify
+    the post-sync DB state, without re-reading or re-validating.
+    """
+
+    row: sqlite3.Row
+    root: Path
+    md_canonical: Path
+    sol_canonical: Path
+    tests_canonical: Path
+    canonical_md: str
+    canonical_sol: str
+    canonical_tests: str
+    tests_existed: bool
+    candidate_version: str
+    current_version: str
+    content_changed: bool
+    version_policy: str
+    fresh_content_etag: str
+    candidate_content_hash: str
+
+
+def _validate_studio_candidate(
+    db: sqlite3.Connection, task_id: str, body: StudioValidateRequest
+) -> _StudioCandidate:
+    """Run all Task Studio validation checks and return a typed result.
+
+    Raises :class:`fastapi.HTTPException` on any validation failure.
+    Shared by POST ``/studio/validate`` (read-only) and PUT ``/studio``
+    (write + sync). No canonical files are modified here — the candidate
+    is parsed from a temp isolated directory.
+
+    Failure modes (same as :func:`validate_task_studio`):
+
+    - **404** — task ``task_id`` not found in the DB.
+    - **409** — content repo unconfigured / non-local / missing / not
+      writable; ``md_path`` or a sidecar path escapes the canonical root;
+      ``expected_version`` mismatch; ``expected_content_etag`` mismatch
+      (concurrent edit or stale GET); the DB and canonical content-repo
+      discovery do not agree on an existing ``version_policy=declare``
+      project for this exact task (missing / legacy NULL project, legacy
+      repo with no ``catalog.yaml``, unmatched task, or DB/canonical
+      project or policy mismatch); or ``version_policy=declare`` with
+      changed content but candidate version not strictly greater.
+    - **422** — frontmatter missing/malformed; frontmatter ``id`` mismatch;
+      candidate version not strict SemVer; candidate fails to parse;
+      solution / tests do not compile as Python; ``tests_py`` is empty /
+      whitespace; or ``tests_py`` defines no smoke ``@case`` (only full
+      cases).
+    """
+    row = db.execute(
+        "SELECT id, task_id, version, md_path, project_id FROM tasks WHERE id = ?",
+        (task_id,),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Task not found",
+        )
+
+    # --- root + writability (409 on read-only / unconfigured) ---
+    root_status = resolve_root(safe_config())
+    if not root_status.ok or root_status.path is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"content repo is read-only: {root_status.reason}",
+        )
+    root = root_status.path
+    if not is_writable(root):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="content repo root is not writable",
+        )
+
+    # --- canonical path containment (409 on traversal / symlink escape) ---
+    md_path_str = row["md_path"] or ""
+    md_canonical = contained_path(root, md_path_str)
+    if md_canonical is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="task markdown path escapes content root",
+        )
+    sol_canonical = contained_path(root, _sidecar_rel(md_path_str, ".solution.py"))
+    if sol_canonical is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="solution sidecar path escapes content root",
+        )
+    tests_canonical = contained_path(root, _sidecar_rel(md_path_str, ".tests.py"))
+    if tests_canonical is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="tests sidecar path escapes content root",
+        )
+
+    # --- expected_version optimistic concurrency (409 on mismatch) ---
+    current_version = row["version"]
+    if body.expected_version != current_version:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"expected_version {body.expected_version!r} does not match "
+                f"current version {current_version!r}"
+            ),
+        )
+
+    # --- frontmatter parse + id match (422 on malformed / mismatch) ---
+    from ego.catalog import parse_task_frontmatter
+
+    try:
+        fm, _body = parse_task_frontmatter(body.markdown)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"malformed frontmatter: {e}",
+        )
+    if fm is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="candidate markdown must include YAML frontmatter",
+        )
+    if fm.id != row["id"]:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"frontmatter id {fm.id!r} does not match task id {row['id']!r}",
+        )
+
+    # --- candidate version: strict SemVer (422 on invalid) ---
+    candidate_version = fm.version
+    if not _is_strict_semver(candidate_version):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                f"candidate version {candidate_version!r} is not valid strict "
+                f"SemVer (expected MAJOR.MINOR.PATCH)"
+            ),
+        )
+
+    # --- version_policy: Studio writable only when DB + canonical discovery
+    #     agree on an existing 'declare' project for this exact task (409) ---
+    version_policy, writable, policy_reason = _resolve_policy_writability(
+        db, root, md_canonical, row["project_id"]
+    )
+    if not writable:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=policy_reason,
+        )
+
+    # --- content changed? (read canonical bytes for etag + comparison; no writes) ---
+    md_bytes = md_canonical.read_bytes() if md_canonical.is_file() else None
+    sol_bytes = sol_canonical.read_bytes() if sol_canonical.is_file() else None
+    tests_existed = tests_canonical.is_file()
+    tests_bytes = tests_canonical.read_bytes() if tests_existed else None
+    canonical_md = md_bytes.decode("utf-8") if md_bytes is not None else ""
+    canonical_sol = sol_bytes.decode("utf-8") if sol_bytes is not None else ""
+    canonical_tests = tests_bytes.decode("utf-8") if tests_bytes is not None else ""
+    # Compare raw canonical bytes against the candidate's UTF-8 encoding
+    # directly (not newline-normalized text). On platforms where the
+    # canonical files carry CRLF (e.g. files written via text mode on
+    # Windows), a string comparison against LF-normalized candidate text
+    # would misclassify an unchanged roundtrip as changed. A missing
+    # canonical file (None) is treated as empty bytes, matching the
+    # existing string semantics (canonical_* == "" when bytes is None).
+    content_changed = (
+        body.markdown.encode("utf-8") != (md_bytes if md_bytes is not None else b"")
+        or body.solution_py.encode("utf-8") != (sol_bytes if sol_bytes is not None else b"")
+        or body.tests_py.encode("utf-8") != (tests_bytes if tests_bytes is not None else b"")
+    )
+
+    # --- version_policy=declare + changed content → must bump (409) ---
+    if version_policy == "declare" and content_changed:
+        if not _semver_gt(candidate_version, current_version):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"version_policy=declare requires candidate version > current "
+                    f"({current_version}) when content changed, got {candidate_version}"
+                ),
+            )
+
+    # --- parse through the existing parser using a temp isolated candidate (422) ---
+    from ego.parser import parse_task_file
+
+    md_name = Path(md_path_str).name
+    sol_name = Path(md_path_str).with_suffix(".solution.py").name
+    candidate_content_hash = ""
+    with tempfile.TemporaryDirectory(prefix="ego-studio-validate-") as tmp:
+        tmp_dir = Path(tmp)
+        (tmp_dir / md_name).write_text(body.markdown, encoding="utf-8")
+        (tmp_dir / sol_name).write_text(body.solution_py, encoding="utf-8")
+        if body.tests_py:
+            tests_name = Path(md_path_str).with_suffix(".tests.py").name
+            (tmp_dir / tests_name).write_text(body.tests_py, encoding="utf-8")
+        try:
+            parsed = parse_task_file(tmp_dir / md_name)
+            candidate_content_hash = parsed.content_hash
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"candidate failed to parse: {e}",
+            )
+
+    # --- Python compile: solution (required) (422) ---
+    try:
+        compile(body.solution_py, "<candidate.solution.py>", "exec")
+    except SyntaxError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"solution_py has a syntax error: {e}",
+        )
+
+    # --- tests_py: mandatory, non-empty, compiles, has smoke @case (422) ---
+    if not body.tests_py.strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="tests_py is required and must not be empty",
+        )
+    try:
+        compile(body.tests_py, "<candidate.tests.py>", "exec")
+    except SyntaxError as e:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"tests_py has a syntax error: {e}",
+        )
+    if not _has_smoke_case(body.tests_py):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=(
+                "tests_py must define at least one smoke @case "
+                '(bare @case or @case(level="smoke")); '
+                "found only full cases"
+            ),
+        )
+
+    # --- expected_content_etag optimistic concurrency (409 on mismatch) ---
+    # Checked AFTER all candidate 422 validations so a malformed candidate
+    # gets 422 regardless of canonical-file concurrency. The etag is computed
+    # from the canonical bytes read above.
+    fresh_content_etag = _compute_content_etag(md_bytes, sol_bytes, tests_bytes)
+    if body.expected_content_etag != fresh_content_etag:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"expected_content_etag {body.expected_content_etag!r} does not "
+                f"match fresh canonical etag {fresh_content_etag!r} (concurrent "
+                f"edit or stale GET)"
+            ),
+        )
+
+    return _StudioCandidate(
+        row=row,
+        root=root,
+        md_canonical=md_canonical,
+        sol_canonical=sol_canonical,
+        tests_canonical=tests_canonical,
+        canonical_md=canonical_md,
+        canonical_sol=canonical_sol,
+        canonical_tests=canonical_tests,
+        tests_existed=tests_existed,
+        candidate_version=candidate_version,
+        current_version=current_version,
+        content_changed=content_changed,
+        version_policy=version_policy,
+        fresh_content_etag=fresh_content_etag,
+        candidate_content_hash=candidate_content_hash,
+    )
+
+
+@router.post(
+    "/tasks/{task_id}/studio/validate",
+    response_model=StudioValidateResponse,
+    dependencies=[Depends(require_role("admin"))],
+)
+async def validate_task_studio(
+    task_id: str, body: StudioValidateRequest, db: DbDep
+) -> StudioValidateResponse:
+    """Validate a Task Studio candidate without modifying canonical files.
+
+    Accepts the full candidate markdown (with YAML frontmatter), solution,
+    and tests sidecars. Validation is entirely read-only with respect to the
+    content repo — the candidate is parsed from a temporary isolated
+    directory, so canonical files remain byte-identical.
+
+    Failure modes:
+
+    - **404** — task ``task_id`` not found in the DB.
+    - **409** — content repo is unconfigured / non-local / missing / not
+      writable; the DB-stored ``md_path`` escapes the canonical root via
+      ``..`` or a symlink; ``expected_version`` does not match the current
+      DB version (optimistic concurrency); ``expected_content_etag`` does
+      not match the fresh canonical bytes etag (concurrent edit or stale
+      GET); the task's project is missing / legacy NULL / not
+      ``version_policy=declare`` (Studio is writable only for existing
+      ``declare`` projects); or the project uses
+      ``version_policy=declare``, content changed, and the candidate
+      version is not strictly greater than the current version.
+    - **422** — frontmatter is missing/malformed; frontmatter ``id`` does
+      not match the DB task identity; candidate version is not valid
+      strict SemVer; the candidate markdown + sidecars fail to parse
+      through :func:`ego.parser.parse_task_file`; the solution / tests do
+      not compile as Python; ``tests_py`` is empty / whitespace; or
+      ``tests_py`` defines no smoke ``@case`` (only full cases).
+    """
+    cand = _validate_studio_candidate(db, task_id, body)
+    return StudioValidateResponse(
+        valid=True,
+        task_id=cand.row["task_id"],
+        current_version=cand.current_version,
+        candidate_version=cand.candidate_version,
+        content_changed=cand.content_changed,
+        version_policy=cand.version_policy,
+    )
+
+
+# === Task Studio save (PUT /admin/tasks/{task_id}/studio) ===
+
+
+@dataclass
+class _FileBackup:
+    """Snapshot of a canonical file's pre-write state for rollback restore."""
+
+    path: Path
+    existed: bool = False
+    data: bytes | None = None  # original bytes if the file existed
+    replaced: bool = False  # whether os.replace was applied to this file
+
+
+@dataclass
+class _RestoreResult:
+    """Outcome of a best-effort file restoration attempt.
+
+    ``ok`` is ``True`` only when every replaced file was restored (or
+    there was nothing to restore). When ``ok`` is ``False``,
+    ``failed_paths`` lists the paths that could not be restored and
+    ``error`` carries the accumulated error messages. Callers must NOT
+    claim "all changes rolled back" when ``ok`` is ``False``.
+    """
+
+    ok: bool
+    failed_paths: list[str] = field(default_factory=list)
+    error: str = ""
+
+
+class _SaveAbort(Exception):
+    """Internal: abort a save after files were written (sync / post-sync check).
+
+    The final HTTP status + detail is decided by the save endpoint after
+    file restoration completes, so the error detail can honestly report
+    whether rollback succeeded or not. ``base_detail`` is the
+    pre-restoration message; the handler appends restoration status.
+    """
+
+    def __init__(self, status_code: int, base_detail: str) -> None:
+        self.status_code = status_code
+        self.base_detail = base_detail
+        super().__init__(base_detail)
+
+
+def _atomic_replace(path: Path, content: str, backup: _FileBackup) -> None:
+    """Write ``content`` to ``path`` via temp file + ``os.replace``.
+
+    The temp file is created in the same directory (so the rename is
+    atomic on the same filesystem), flushed and fsync'd before the
+    replace. The backup snapshot is recorded for potential rollback.
+
+    Each individual ``os.replace`` is per-file atomic. A multi-file save
+    is NOT atomic as a whole: if a later replace fails, earlier files
+    are already changed on disk and must be restored by the caller.
+    """
+    backup.data = path.read_bytes() if path.is_file() else None
+    backup.existed = backup.data is not None
+
+    tmp_fd, tmp_name = tempfile.mkstemp(
+        dir=str(path.parent), prefix=".ego-studio-tmp-", suffix=path.suffix
+    )
+    try:
+        with os.fdopen(tmp_fd, "wb") as f:
+            f.write(content.encode("utf-8"))
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_name, str(path))
+        backup.replaced = True
+    except BaseException:
+        # Clean up the temp file if replace failed.
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
+
+
+def _restore_files(backups: list[_FileBackup]) -> _RestoreResult:
+    """Best-effort restore of each replaced file to its pre-write state.
+
+    For files that existed before: write the original bytes via temp +
+    ``os.replace``. For files that did not exist but were created: remove
+    them. Files that were never replaced are skipped.
+
+    Returns :class:`_RestoreResult` so the caller can honestly report
+    whether restoration succeeded. If any restore fails, the result is
+    ``ok=False`` with the failed paths and accumulated errors; the
+    original exception context is preserved by the caller.
+    """
+    failed_paths: list[str] = []
+    errors: list[str] = []
+    for b in backups:
+        if not b.replaced:
+            continue
+        if b.existed and b.data is not None:
+            tmp_fd, tmp_name = tempfile.mkstemp(
+                dir=str(b.path.parent), prefix=".ego-studio-restore-", suffix=b.path.suffix
+            )
+            try:
+                with os.fdopen(tmp_fd, "wb") as f:
+                    f.write(b.data)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp_name, str(b.path))
+            except BaseException:
+                try:
+                    os.unlink(tmp_name)
+                except OSError:
+                    pass
+                failed_paths.append(str(b.path))
+                errors.append(f"restore {b.path}: {sys_exc_info()}")
+        else:
+            # File did not exist before our write — remove what we created.
+            try:
+                os.unlink(str(b.path))
+            except FileNotFoundError:
+                pass
+            except OSError as e:
+                failed_paths.append(str(b.path))
+                errors.append(f"unlink {b.path}: {e}")
+    if failed_paths:
+        return _RestoreResult(ok=False, failed_paths=failed_paths, error="; ".join(errors))
+    return _RestoreResult(ok=True)
+
+
+def sys_exc_info() -> str:
+    """Return the current exception as a short string (for restore error messages)."""
+    import sys
+
+    exc = sys.exc_info()[1]
+    return repr(exc) if exc is not None else "unknown error"
+
+
+def _rollback_quiet(db: sqlite3.Connection) -> None:
+    """Rollback the active SQLite transaction, ignoring errors if none is active."""
+    try:
+        db.execute("ROLLBACK")
+    except sqlite3.Error:
+        pass
+
+
+@router.put(
+    "/tasks/{task_id}/studio",
+    response_model=StudioSaveResponse,
+    dependencies=[Depends(require_role("admin"))],
+)
+async def save_task_studio(task_id: str, body: StudioSaveRequest, db: DbDep) -> StudioSaveResponse:
+    """Save a Task Studio candidate to canonical files + re-sync the DB.
+
+    Admin-only (mentor/student forbidden). Reuses the same typed candidate
+    fields and validation as POST ``/studio/validate``. After validation
+    passes:
+
+    1. Acquire a cross-process SQLite write lock via ``BEGIN IMMEDIATE``
+       so that at most one save transaction is active at a time. Re-read
+       the DB version and the exact three canonical file states
+       (bytes + existence) immediately before the first write. If the DB
+       version or the fresh content etag does not match the request's
+       ``expected_version`` / ``expected_content_etag``, return 409 with
+       zero writes.
+    2. Replace the canonical ``.md``, ``.solution.py``, and ``.tests.py``
+       via temp file + ``os.replace`` (flush + fsync). Each ``os.replace``
+       is per-file atomic; the multi-file save is NOT atomic as a whole.
+       The original bytes/existence of every file are retained for
+       best-effort rollback. A process/host crash mid-save can leave the
+       three files in a mixed state — there is no journaling across
+       files.
+    3. Trigger :func:`ego_server.sync.sync_from_path` against the
+       configured repo root with ``source='admin-studio'`` (inside the
+       ``BEGIN IMMEDIATE`` transaction).
+    4. Verify sync reported zero errors, the DB version is exactly the
+       candidate version (when content changed), and the DB
+       ``content_hash`` is exactly the candidate's parsed content hash.
+       If any check fails, roll back the DB transaction and attempt
+       best-effort file restoration. The error detail honestly reports
+       whether restoration succeeded or is incomplete.
+    5. Commit the DB transaction only after all checks pass.
+
+    No malformed, version-conflict, read-only, traversal, or non-declare
+    request may change canonical bytes — validation (including the
+    ``version_policy=declare`` writability gate and the mandatory
+    ``tests_py`` smoke-case check) runs before any write, and the
+    pre-write version + etag checks guard against concurrent edits.
+
+    Failure modes (in addition to those from validate):
+
+    - **409** — stale ``expected_version`` or ``expected_content_etag``
+      detected at write time (concurrent edit); sync reported errors; or
+      sync completed but the DB version/content_hash did not match the
+      candidate. When file restoration succeeds, the detail says
+      "canonical files restored"; it never claims "all changes rolled
+      back" unconditionally.
+    - **500** — an unexpected exception during write or sync triggers a
+      DB rollback and best-effort file restoration. If restoration
+      succeeds, the detail says "canonical files restored (best-effort)".
+      If restoration fails, the detail says "rollback incomplete, manual
+      recovery required" with the failed paths — it never claims all
+      changes were rolled back.
+    """
+    cand = _validate_studio_candidate(db, task_id, body)
+
+    # --- files to write (md + solution always; tests only if non-empty) ---
+    writes: list[tuple[Path, str]] = [
+        (cand.md_canonical, body.markdown),
+        (cand.sol_canonical, body.solution_py),
+    ]
+    if body.tests_py:
+        writes.append((cand.tests_canonical, body.tests_py))
+
+    backups: list[_FileBackup] = [_FileBackup(path=p) for p, _ in writes]
+
+    # --- cross-process write serialization via BEGIN IMMEDIATE ---
+    # Switch to autocommit mode so Python's sqlite3 does not auto-begin a
+    # transaction that would conflict with our explicit BEGIN IMMEDIATE.
+    old_isolation = db.isolation_level
+    db.isolation_level = None
+    new_content_etag = ""
+    try:
+        try:
+            db.execute("BEGIN IMMEDIATE")
+        except sqlite3.OperationalError as e:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"database write lock unavailable: {e}",
+            ) from e
+
+        try:
+            # --- re-read DB version immediately before write ---
+            fresh = db.execute(
+                "SELECT version FROM tasks WHERE id = ?", (cand.row["id"],)
+            ).fetchone()
+            if fresh is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Task not found (deleted before save)",
+                )
+            if fresh["version"] != body.expected_version:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"expected_version {body.expected_version!r} does not match "
+                        f"current version {fresh['version']!r} (concurrent edit)"
+                    ),
+                )
+
+            # --- re-read exact three canonical file states before first write ---
+            f_md = cand.md_canonical.read_bytes() if cand.md_canonical.is_file() else None
+            f_sol = cand.sol_canonical.read_bytes() if cand.sol_canonical.is_file() else None
+            f_tests = cand.tests_canonical.read_bytes() if cand.tests_canonical.is_file() else None
+            fresh_etag = _compute_content_etag(f_md, f_sol, f_tests)
+            if body.expected_content_etag != fresh_etag:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"expected_content_etag {body.expected_content_etag!r} does "
+                        f"not match fresh canonical etag {fresh_etag!r} (concurrent "
+                        f"edit or stale GET)"
+                    ),
+                )
+
+            # --- replace canonical files (per-file atomic; not multi-file atomic) ---
+            for (target, content), backup in zip(writes, backups, strict=True):
+                _atomic_replace(target, content, backup)
+
+            # --- trigger sync against the configured repo root ---
+            result = sync_from_path(db, cand.root, source="admin-studio", repo_url=str(cand.root))
+
+            # --- verify sync succeeded ---
+            if result.errors > 0:
+                raise _SaveAbort(
+                    status.HTTP_409_CONFLICT,
+                    f"sync reported {result.errors} error(s) after save: "
+                    f"{result.error_details_text}",
+                )
+
+            # --- verify DB version + content_hash match candidate (when changed) ---
+            post = db.execute(
+                "SELECT version, content_hash FROM tasks WHERE id = ?", (cand.row["id"],)
+            ).fetchone()
+            if post is None:
+                raise _SaveAbort(
+                    status.HTTP_409_CONFLICT,
+                    "task row missing after sync",
+                )
+            new_version = post["version"]
+            new_hash = post["content_hash"]
+            if cand.content_changed:
+                if new_version != cand.candidate_version:
+                    raise _SaveAbort(
+                        status.HTTP_409_CONFLICT,
+                        f"expected task version {cand.candidate_version} but DB "
+                        f"shows {new_version}",
+                    )
+                if new_hash != cand.candidate_content_hash:
+                    raise _SaveAbort(
+                        status.HTTP_409_CONFLICT,
+                        f"expected content_hash {cand.candidate_content_hash} but "
+                        f"DB shows {new_hash}",
+                    )
+
+            # --- compute new content_etag from the actual written files ---
+            n_md = cand.md_canonical.read_bytes() if cand.md_canonical.is_file() else None
+            n_sol = cand.sol_canonical.read_bytes() if cand.sol_canonical.is_file() else None
+            n_tests = cand.tests_canonical.read_bytes() if cand.tests_canonical.is_file() else None
+            new_content_etag = _compute_content_etag(n_md, n_sol, n_tests)
+
+            # --- commit DB only after all checks pass ---
+            db.execute("COMMIT")
+        except HTTPException:
+            # Pre-write checks (404/409) — no files were replaced yet.
+            _rollback_quiet(db)
+            _restore_files(backups)  # no-op when nothing was replaced
+            raise
+        except _SaveAbort as exc:
+            # Post-write failure (sync / version / hash). Files were replaced;
+            # attempt best-effort restoration and report honestly.
+            _rollback_quiet(db)
+            restore = _restore_files(backups)
+            if restore.ok:
+                raise HTTPException(
+                    status_code=exc.status_code,
+                    detail=f"{exc.base_detail}; canonical files restored",
+                ) from exc
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=(
+                    f"{exc.base_detail}; rollback incomplete, manual recovery "
+                    f"required for {restore.failed_paths}: {restore.error}"
+                ),
+            ) from exc
+        except Exception as e:
+            # Unexpected error (e.g. OSError during file write, sync crash).
+            # Files may be partially replaced; attempt best-effort restoration.
+            _rollback_quiet(db)
+            restore = _restore_files(backups)
+            if restore.ok:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"save failed; canonical files restored (best-effort): {e}",
+                ) from e
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=(
+                    f"save failed; rollback incomplete, manual recovery required "
+                    f"for {restore.failed_paths}: {restore.error}; original error: {e}"
+                ),
+            ) from e
+    finally:
+        db.isolation_level = old_isolation
+
+    return StudioSaveResponse(
+        task_id=cand.row["task_id"],
+        new_version=new_version,
+        content_etag=new_content_etag,
+        sync=_to_dto(result, repo_url=str(cand.root)),
+    )
 
 
 # === Helpers ===
