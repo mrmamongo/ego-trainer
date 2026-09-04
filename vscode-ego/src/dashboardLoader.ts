@@ -1,7 +1,7 @@
 /** Load DashboardData from server API or local .ego/ files. */
 
 import * as vscode from 'vscode';
-import { EgoApi } from './api';
+import { EgoApi, isAuthenticationError } from './api';
 import { readEgoConfig, egoDir, type EgoMode } from './egoWorkspace';
 
 /** Mirrors webview DashboardData — keep fields in sync with shared/types.ts */
@@ -12,6 +12,7 @@ export interface DashboardRow {
     slug: string;
     version: string;
     status: string;
+    stale: boolean;
     passed_tests: number;
     total_tests: number;
     attempts: number;
@@ -118,6 +119,7 @@ async function loadServer(api: EgoApi): Promise<DashboardData> {
         let progressMap = new Map<
             string,
             {
+                version: string;
                 status: string;
                 attempts: number;
                 passed_tests: number;
@@ -132,6 +134,7 @@ async function loadServer(api: EgoApi): Promise<DashboardData> {
                 progress.map((p) => [
                     p.task_id,
                     {
+                        version: p.version,
                         status: p.status,
                         attempts: p.attempts,
                         passed_tests: p.passed_tests,
@@ -140,7 +143,8 @@ async function loadServer(api: EgoApi): Promise<DashboardData> {
                     },
                 ])
             );
-        } catch {
+        } catch (e) {
+            if (isAuthenticationError(e)) throw e;
             // Progress optional.
         }
 
@@ -152,6 +156,7 @@ async function loadServer(api: EgoApi): Promise<DashboardData> {
                 block: t.block,
                 slug: t.slug,
                 version: t.version,
+                stale: p !== undefined && p.version !== t.version,
                 status: p?.status || 'new',
                 passed_tests: p?.passed_tests ?? 0,
                 total_tests: p?.total_tests ?? 0,
@@ -165,6 +170,11 @@ async function loadServer(api: EgoApi): Promise<DashboardData> {
     } catch (e) {
         // Fall back to local manifest if server unreachable but .ego/ exists.
         const offline = await loadOffline();
+        if (isAuthenticationError(e)) {
+            const error = 'Session expired or unauthorized — run Ego: Login';
+            if (offline.rows.length > 0) return { ...offline, mode: 'server', error };
+            return emptyData('server', error);
+        }
         if (offline.rows.length > 0) {
             return {
                 ...offline,
@@ -205,6 +215,7 @@ async function loadOffline(): Promise<DashboardData> {
             block: t.block,
             slug: t.slug,
             version: t.version,
+            stale: p !== undefined && p.version !== t.version,
             status: p?.status || 'new',
             passed_tests: p?.passed_tests ?? 0,
             total_tests: p?.total_tests ?? 0,

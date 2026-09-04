@@ -165,14 +165,34 @@ def test_token_has_expiry(client):
 
 
 def test_token_role_matches_registered_role(client):
+    """Public registration always yields a student, even when a mentor role is
+    requested — the server ignores the client-supplied role (privilege
+    escalation prevention)."""
     r = client.post(
         "/auth/register",
         json={"username": "mentor1", "password": "p", "role": "mentor"},
     )
+    assert r.status_code == 200, r.text
     token = r.json()["access_token"]
     me = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert me.status_code == 200
-    assert me.json()["role"] == "mentor"
+    assert me.json()["role"] == "student"
+
+
+def test_register_ignores_admin_role_and_creates_student(client):
+    """Regression: a client sending role=admin must still receive a student
+    token/user — public self-registration must never escalate privileges."""
+    r = client.post(
+        "/auth/register",
+        json={"username": "eviladmin", "password": "p", "role": "admin"},
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["role"] == "student"
+    token = data["access_token"]
+    me = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert me.status_code == 200
+    assert me.json()["role"] == "student"
 
 
 # ---------------------------------------------------------------------------

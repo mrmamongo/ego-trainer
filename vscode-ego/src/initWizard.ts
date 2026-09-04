@@ -4,11 +4,15 @@ import * as vscode from 'vscode';
 import { EgoApi, TaskMeta } from './api';
 import {
     createEgoSkeleton,
+    generateStudentStubs,
+    importTasksFolder,
+    manifestFileExists,
     scanDocsTasks,
     writeManifest,
     type EgoMode,
 } from './egoWorkspace';
 import { pullTasksToWorkspace } from './pullTasks';
+import { isPythonEnvReady } from './pythonSetup';
 
 const SECRET_KEY = 'ego.token';
 
@@ -75,15 +79,9 @@ export async function runServerInit(
     });
     if (!password) return false;
 
-    let role = 'student';
-    if (authMode.mode === 'register') {
-        const picked = await vscode.window.showQuickPick(
-            ['student', 'mentor', 'admin'],
-            { placeHolder: 'Select role', ignoreFocusOut: true }
-        );
-        if (!picked) return false;
-        role = picked;
-    }
+    // Self-registration always creates a student; the server ignores any
+    // client-supplied role. No role picker is offered.
+    const role = 'student';
 
     return vscode.window.withProgress(
         {
@@ -132,8 +130,7 @@ export async function runServerInit(
                         student_username: auth.username,
                         role: auth.role,
                         mode: 'server' satisfies EgoMode,
-                    },
-                    { force: true }
+                    }
                 );
             } catch (e) {
                 vscode.window.showErrorMessage(
@@ -152,6 +149,7 @@ export async function runServerInit(
                 );
             }
 
+            await vscode.commands.executeCommand('setContext', 'ego.offline', false);
             await vscode.commands.executeCommand('setContext', 'ego.loggedIn', true);
             await vscode.commands.executeCommand('setContext', 'ego.ready', true);
             deps.onApiChanged();
@@ -179,34 +177,80 @@ export async function runOfflineInit(
             cancellable: false,
         },
         async (progress) => {
-            progress.report({ message: 'Scanning docs/tasks/…' });
-            let scanned;
-            try {
-                scanned = await scanDocsTasks();
-            } catch (e) {
-                const pick = await vscode.window.showOpenDialog({
-                    canSelectFiles: false,
-                    canSelectFolders: true,
-                    canSelectMany: false,
-                    openLabel: 'Select docs/tasks folder',
-                });
-                if (!pick?.[0]) {
-                    vscode.window.showErrorMessage(`Ego: ${(e as Error).message}`);
-                    return false;
-                }
-                // If user picked a folder, try relative scan from workspace only for now.
-                vscode.window.showErrorMessage(
-                    'Ego: Please open the repo root as workspace (docs/tasks/ expected).'
-                );
+            const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+            if (!root) {
+                vscode.window.showErrorMessage('Ego: Open a workspace folder before starting offline setup.');
                 return false;
             }
 
-            if (scanned.length === 0) {
-                vscode.window.showWarningMessage('Ego: No task .md files found under docs/tasks/.');
+            const docsTasks = vscode.Uri.joinPath(root, 'docs', 'tasks');
+            let hasTasksFolder = true;
+            try {
+                await vscode.workspace.fs.stat(docsTasks);
+            } catch {
+                hasTasksFolder = false;
+            }
+
+            if (!hasTasksFolder) {
+                const choice = await vscode.window.showQuickPick(
+                    [
+                        {
+                            label: 'Create empty workspace',
+                            description: 'Create docs/tasks/ and continue without tasks',
+                            action: 'create' as const,
+                        },
+                        {
+                            label: 'Import tasks folder',
+                            description: 'Copy task files into this workspace',
+                            action: 'import' as const,
+                        },
+                    ],
+                    { placeHolder: 'Set up offline tasks', ignoreFocusOut: true }
+                );
+                if (!choice) return false;
+
+                if (choice.action === 'create') {
+                    await vscode.workspace.fs.createDirectory(docsTasks);
+                } else {
+                    const pick = await vscode.window.showOpenDialog({
+                        canSelectFiles: false,
+                        canSelectFolders: true,
+                        canSelectMany: false,
+                        openLabel: 'Import tasks folder',
+                    });
+                    if (!pick?.[0]) return false;
+                    try {
+                        const result = await importTasksFolder(pick[0], root);
+                        vscode.window.showInformationMessage(
+                            `Ego: Imported ${result.imported} task files; skipped ${result.skipped} existing files.`
+                        );
+                    } catch (error) {
+                        vscode.window.showErrorMessage(
+                            `Ego: Could not import tasks folder — ${error instanceof Error ? error.message : 'unknown error'}. Original files were not modified.`
+                        );
+                        return false;
+                    }
+                    try {
+                        await vscode.workspace.fs.stat(docsTasks);
+                    } catch {
+                        await vscode.workspace.fs.createDirectory(docsTasks);
+                    }
+                }
+            }
+
+            progress.report({ message: 'Scanning docs/tasks/…' });
+            let scanned;
+            try {
+                scanned = await scanDocsTasks(root);
+            } catch (error) {
+                vscode.window.showErrorMessage(`Ego: Could not scan docs/tasks/ — ${error instanceof Error ? error.message : 'unknown error'}`);
+                return false;
             }
 
             progress.report({ message: 'Creating .ego/…' });
+            let manifestExisted = false;
             try {
+                manifestExisted = await manifestFileExists(root);
                 await createEgoSkeleton(
                     {
                         server_url: '',
@@ -216,38 +260,58 @@ export async function runOfflineInit(
                         role: 'student',
                         mode: 'offline',
                     },
-                    { force: true }
+                    { root }
                 );
-            } catch (e) {
+            } catch (error) {
                 vscode.window.showErrorMessage(
-                    `Ego: Failed to create .ego/ — ${(e as Error).message}`
+                    `Ego: Failed to create .ego/ — ${error instanceof Error ? error.message : 'unknown error'}`
                 );
                 return false;
             }
 
-            const now = new Date().toISOString();
-            await writeManifest({
-                tasks: scanned.map((t) => ({
-                    id: t.id,
-                    block: t.block,
-                    slug: t.slug,
-                    version: '0.0.0',
-                    content_hash: '',
-                    pulled_at: now,
-                    md_path: t.md_path,
-                })),
-                server_version: '',
-                last_pull_at: now,
-            });
+            if (!manifestExisted) {
+                const now = new Date().toISOString();
+                await writeManifest({
+                    tasks: scanned.map((t) => ({
+                        id: t.id,
+                        block: t.block,
+                        slug: t.slug,
+                        version: '0.0.0',
+                        content_hash: '',
+                        pulled_at: now,
+                        md_path: t.md_path,
+                    })),
+                    server_version: '',
+                    last_pull_at: now,
+                }, root);
+            }
 
+            progress.report({ message: 'Generating student stubs…' });
+            const stubs = await generateStudentStubs(scanned, root);
             await vscode.commands.executeCommand('setContext', 'ego.loggedIn', false);
             await vscode.commands.executeCommand('setContext', 'ego.ready', true);
             await vscode.commands.executeCommand('setContext', 'ego.offline', true);
+            await deps.onApiChanged();
             deps.refreshTree();
 
+            const warning = stubs.errors > 0
+                ? ` ${stubs.errors} stub errors — review the warnings and create those files manually.`
+                : '';
             vscode.window.showInformationMessage(
-                `Ego: Offline ready — ${scanned.length} tasks from docs/tasks/.`
+                `Ego: Offline ready — ${scanned.length} tasks; generated ${stubs.generated} stubs, skipped ${stubs.skipped}.${warning}`
             );
+
+            if (scanned.length > 0 && !(await isPythonEnvReady(root.fsPath))) {
+                const choice = await vscode.window.showInformationMessage(
+                    'Ego: Python is not ready for offline checks. Set it up in this workspace now?',
+                    'Setup Python',
+                    'Later'
+                );
+                if (choice === 'Setup Python') {
+                    await vscode.commands.executeCommand('ego.setupPython');
+                }
+            }
+
             await vscode.commands.executeCommand('ego.dashboard');
             return true;
         }

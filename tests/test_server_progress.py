@@ -47,6 +47,11 @@ def client(temp_db, monkeypatch):
 
 
 def _register_and_login(client, username="alice", password="pw", role="student"):
+    if role != "student":
+        from tests.conftest import create_test_user
+
+        return create_test_user(client, username, password, role)
+
     r = client.post(
         "/auth/register",
         json={"username": username, "password": password, "role": role},

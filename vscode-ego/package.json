@@ -11,7 +11,7 @@
     "Education",
     "Other"
   ],
-  "main": "./out/extension.js",
+  "main": "./out/extension.cjs",
   "activationEvents": [
     "onStartupFinished"
   ],
@@ -25,6 +25,11 @@
       {
         "command": "ego.setServer",
         "title": "Ego: Set Server URL",
+        "category": "Ego"
+      },
+      {
+        "command": "ego.setupPython",
+        "title": "Ego: Setup Python",
         "category": "Ego"
       },
       {
@@ -172,20 +177,29 @@
           "default": false,
           "description": "Automatically run check when saving a task .py file",
           "scope": "resource"
+        },
+        "ego.pythonPackageSpec": {
+          "type": "string",
+          "default": "ego-trainer",
+          "description": "Python package to install for Ego checks; may be a published package or a trusted local path/URL",
+          "scope": "resource"
         }
       }
     }
   },
   "scripts": {
-    "compile": "tsc -p ./ && node esbuild.webview.mjs",
-    "compile:ext": "tsc -p ./",
+    "compile": "tsc -p ./ && node esbuild.webview.mjs && node esbuild.extension.mjs",
+    "compile:ext": "node esbuild.extension.mjs",
     "compile:webview": "node esbuild.webview.mjs",
-    "watch": "tsc -watch -p ./ & node esbuild.webview.mjs --watch",
-    "watch:ext": "tsc -watch -p ./",
+    "compile:test": "tsc -p ./",
+    "watch": "tsc -watch -p ./ & node esbuild.webview.mjs --watch & node esbuild.extension.mjs --watch",
+    "watch:ext": "node esbuild.extension.mjs --watch",
     "watch:webview": "node esbuild.webview.mjs --watch",
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js",
-    "package": "vsce package"
+    "test:unit": "node --test out/test/*.test.js",
+    "smoke": "node ./scripts/smoke-activation.cjs",
+    "package": "vsce package --allow-missing-repository"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

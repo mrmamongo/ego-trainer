@@ -115,12 +115,10 @@ def legacy_repo(tmp_path: Path) -> Path:
 
 
 def _register_admin(client, username="admin1", password="pw"):
-    r = client.post(
-        "/auth/register",
-        json={"username": username, "password": password, "role": "admin"},
-    )
-    assert r.status_code == 200, r.text
-    return r.json()["access_token"]
+    from tests.conftest import create_test_user
+
+    token, _ = create_test_user(client, username, password, "admin")
+    return token
 
 
 def _auth_headers(token):
@@ -431,11 +429,9 @@ def test_sync_log_mentor_can_read(client, catalog_repo: Path):
         headers=_auth_headers(admin_token),
     )
     # Mentor reads.
-    r = client.post(
-        "/auth/register",
-        json={"username": "mentor1", "password": "pw", "role": "mentor"},
-    )
-    mentor_token = r.json()["access_token"]
+    from tests.conftest import create_test_user
+
+    mentor_token, _ = create_test_user(client, "mentor1", "pw", "mentor")
     r = client.get("/admin/sync/log", headers=_auth_headers(mentor_token))
     assert r.status_code == 200
     assert len(r.json()) == 1

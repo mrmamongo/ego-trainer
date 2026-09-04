@@ -41,7 +41,14 @@ async def login(body: LoginRequest, db: DbDep) -> TokenResponse:
 
 @router.post("/register", response_model=TokenResponse)
 async def register(body: RegisterRequest, db: DbDep) -> TokenResponse:
-    """Register a new user. Returns a token immediately (no email verification in MVP)."""
+    """Register a new user. Returns a token immediately (no email verification in MVP).
+
+    The public registration endpoint ALWAYS creates a student, regardless of any
+    role supplied by the client. The ``role`` field is kept on the request DTO
+    for backward compatibility but is intentionally ignored here — mentor/admin
+    accounts must be provisioned through a privileged admin flow, not via the
+    public API. This prevents privilege escalation through self-registration.
+    """
     existing = db.execute(
         "SELECT id FROM students WHERE username = ?", (body.username,)
     ).fetchone()
@@ -50,18 +57,19 @@ async def register(body: RegisterRequest, db: DbDep) -> TokenResponse:
             status_code=status.HTTP_409_CONFLICT,
             detail="Username already taken",
         )
+    role = "student"
     user_id = generate_user_id()
     pwd_hash = hash_password(body.password)
     db.execute(
         "INSERT INTO students (id, username, role, password_hash, created_at) "
         "VALUES (?, ?, ?, ?, ?)",
-        (user_id, body.username, body.role, pwd_hash, _now_iso()),
+        (user_id, body.username, role, pwd_hash, _now_iso()),
     )
     db.commit()
-    token = create_token(user_id=user_id, username=body.username, role=body.role)
+    token = create_token(user_id=user_id, username=body.username, role=role)
     return TokenResponse(
         access_token=token,
-        role=body.role,
+        role=role,
         username=body.username,
         user_id=user_id,
     )

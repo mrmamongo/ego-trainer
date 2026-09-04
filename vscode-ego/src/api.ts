@@ -4,7 +4,21 @@
  * SecretStorage and passed as Bearer header.
  */
 
-import * as vscode from 'vscode';
+export class EgoApiError extends Error {
+    readonly status: number;
+    readonly path: string;
+
+    constructor(message: string, status: number, path: string) {
+        super(message);
+        this.name = 'EgoApiError';
+        this.status = status;
+        this.path = path;
+    }
+}
+
+export function isAuthenticationError(error: unknown): error is EgoApiError {
+    return error instanceof EgoApiError && (error.status === 401 || error.status === 403);
+}
 
 export interface TaskMeta {
     id: string;
@@ -108,19 +122,14 @@ export class EgoApi {
             body: body ? JSON.stringify(body) : undefined,
         });
 
-        if (resp.status === 401) {
-            throw new Error('Authentication required. Run "Ego: Login" first.');
-        }
-        if (resp.status === 403) {
-            throw new Error('Forbidden. Your role does not allow this action.');
-        }
-        if (resp.status === 404) {
-            const data = await resp.json().catch(() => ({detail: ''})) as { detail?: string };
-            throw new Error(data.detail || 'Not found');
-        }
         if (!resp.ok) {
-            const data = await resp.json().catch(() => ({detail: ''})) as { detail?: string };
-            throw new Error(data.detail || `HTTP ${resp.status}`);
+            const data = await resp.json().catch(() => ({ detail: '' })) as { detail?: string };
+            const message = resp.status === 401
+                ? 'Authentication required. Run "Ego: Login" first.'
+                : resp.status === 403
+                  ? 'Forbidden. Your role does not allow this action.'
+                  : data.detail || (resp.status === 404 ? 'Not found' : `HTTP ${resp.status}`);
+            throw new EgoApiError(message, resp.status, path);
         }
         return resp.json() as Promise<T>;
     }
