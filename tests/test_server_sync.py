@@ -70,10 +70,7 @@ def catalog_repo(tmp_path: Path) -> Path:
     proj = root / "projects" / "junior-core"
     (proj / "folders").mkdir(parents=True)
     (proj / "project.yaml").write_text(
-        "id: junior-core\n"
-        'name: "Junior Core"\n'
-        'version: "1.0.0"\n'
-        "version_policy: declare\n",
+        'id: junior-core\nname: "Junior Core"\nversion: "1.0.0"\nversion_policy: declare\n',
         encoding="utf-8",
     )
 

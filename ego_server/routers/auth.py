@@ -49,9 +49,7 @@ async def register(body: RegisterRequest, db: DbDep) -> TokenResponse:
     accounts must be provisioned through a privileged admin flow, not via the
     public API. This prevents privilege escalation through self-registration.
     """
-    existing = db.execute(
-        "SELECT id FROM students WHERE username = ?", (body.username,)
-    ).fetchone()
+    existing = db.execute("SELECT id FROM students WHERE username = ?", (body.username,)).fetchone()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
