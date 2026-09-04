@@ -1,13 +1,13 @@
 # Dockerfile for ego-server — FastAPI + SQLite (MVP).
 # See ADR-0001 D7 (FastAPI + SQLite for MVP), D13 (three entry-points).
 #
-# Build:  docker build -t ego-server .
-# Run:    docker run -p 8000:8000 -v ego-data:/app/.ego-server ego-server
+# Build:  docker build -t ego-server:0.1.0 .
+# Run via docker-compose.yml with EGO_JWT_SECRET and EGO_CONTENT_PATH set.
 #
-# The server reads docs/tasks/ from the repo (git canonical, D2).
-# SQLite DB is stored in /app/.ego-server/ego.db (mounted as a volume).
+# Canonical task content is mounted at /content; it is never baked into the
+# image. SQLite is stored in /var/lib/ego/ego.db on a persistent volume.
 
-FROM python:3.11-slim AS base
+FROM python:3.11-slim AS builder
 
 # Prevent Python from writing .pyc files and buffering stdout/stderr.
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -15,37 +15,56 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-WORKDIR /app
+WORKDIR /build
 
-# Install build dependencies (for bcrypt etc.), then clean up.
+# Install wheel build dependencies, then clean apt metadata in the same layer.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libffi-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy project files.
+# Copy only package sources needed to build the wheel.
 COPY pyproject.toml README.md ./
 COPY ego/ ego/
 COPY ego_server/ ego_server/
 COPY ego_tui/ ego_tui/
-COPY docs/tasks/ docs/tasks/
 
-# Install the package with server + dev extras.
-RUN pip install -e ".[server,dev]"
+# Build the application and all runtime dependencies as wheels. Development
+# tools and canonical task solutions are deliberately absent from the image.
+RUN pip wheel --wheel-dir /wheels ".[server]"
 
-# Create data directory for SQLite.
-RUN mkdir -p /app/.ego-server
+FROM python:3.11-slim AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    EGO_ENVIRONMENT=production \
+    EGO_DB_PATH=/var/lib/ego/ego.db \
+    EGO_TASKS_REPO_URL=/content \
+    EGO_BIND_HOST=0.0.0.0 \
+    EGO_BIND_PORT=8000 \
+    EGO_UVICORN_WORKERS=1
+
+RUN groupadd --gid 10001 ego \
+    && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin ego \
+    && mkdir -p /var/lib/ego /content \
+    && chown -R ego:ego /var/lib/ego /content
+
+COPY --from=builder /wheels /wheels
+RUN pip install --no-index --find-links=/wheels "ego-trainer[server]" \
+    && rm -rf /wheels
 
 # Expose the FastAPI port.
 EXPOSE 8000
 
-# Environment defaults (override at runtime).
-ENV EGO_DB_PATH=/app/.ego-server/ego.db \
-    EGO_JWT_SECRET=change-me-in-production
+VOLUME ["/var/lib/ego"]
+
+USER 10001:10001
 
 # Health check via /health endpoint.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
 
-# Run: migrate schema, import tasks, start uvicorn.
-CMD ["sh", "-c", "ego-server migrate && ego-server admin import-tasks --docs-dir docs/tasks && exec uvicorn ego_server.main:app --host 0.0.0.0 --port 8000"]
+# Run: validate production config, migrate, sync mounted content, exec Uvicorn.
+CMD ["python", "-m", "ego_server.entrypoint"]

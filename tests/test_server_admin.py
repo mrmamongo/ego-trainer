@@ -74,7 +74,7 @@ def _make_student(
 
 
 def test_admin_panel_served(client: TestClient) -> None:
-    r = client.get("/admin/")
+    r = client.get("/")
     assert r.status_code == 200
     assert '<div id="app"' in r.text
     assert "/static/admin/bundle.js" in r.text
