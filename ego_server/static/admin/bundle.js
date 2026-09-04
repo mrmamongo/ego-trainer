@@ -6969,7 +6969,7 @@ ${component_stack}
   var root_73 = from_html(`<p class="success svelte-1ci3929" role="status"> </p>`);
   var root_83 = from_html(`<button class="btn primary svelte-1ci3929" type="button" aria-label="Validate candidate"> </button> <button class="btn primary svelte-1ci3929" type="button" aria-label="Save candidate to canonical files"> </button> <button class="btn svelte-1ci3929" type="button" aria-label="Revert to server state">Revert</button>`, 1);
   var root_93 = from_html(`<span class="hint svelte-1ci3929">Mentor role: browse-only. No write actions available.</span>`);
-  var root_103 = from_html(`<dl class="meta svelte-1ci3929"><div class="svelte-1ci3929"><dt class="svelte-1ci3929">Task</dt><dd class="svelte-1ci3929"><strong> </strong></dd></div> <div class="svelte-1ci3929"><dt class="svelte-1ci3929">ID</dt><dd class="svelte-1ci3929"><code class="svelte-1ci3929"> </code></dd></div> <div class="svelte-1ci3929"><dt class="svelte-1ci3929">Version</dt><dd class="svelte-1ci3929"><code class="svelte-1ci3929"> </code><!></dd></div> <div class="svelte-1ci3929"><dt class="svelte-1ci3929">Canonical path</dt><dd class="svelte-1ci3929"><code class="svelte-1ci3929"> </code></dd></div></dl> <!> <div class="tabs svelte-1ci3929" role="tablist" aria-label="Task content"><button role="tab" id="tab-statement" aria-controls="panel-statement" type="button">Statement Markdown</button> <button role="tab" id="tab-solution" aria-controls="panel-solution" type="button">Reference Solution</button> <button role="tab" id="tab-tests" aria-controls="panel-tests" type="button">Tests</button></div> <div id="panel-statement" role="tabpanel" aria-labelledby="tab-statement" class="svelte-1ci3929"><textarea class="editor svelte-1ci3929" spellcheck="false" wrap="off" aria-label="Statement markdown (full, including frontmatter)"></textarea></div> <div id="panel-solution" role="tabpanel" aria-labelledby="tab-solution" class="svelte-1ci3929"><textarea class="editor svelte-1ci3929" spellcheck="false" wrap="off" aria-label="Reference solution Python"></textarea></div> <div id="panel-tests" role="tabpanel" aria-labelledby="tab-tests" class="svelte-1ci3929"><textarea class="editor svelte-1ci3929" spellcheck="false" wrap="off" aria-label="Tests Python"></textarea></div> <!> <!> <!> <!> <!> <div class="actions svelte-1ci3929"><!></div>`, 1);
+  var root_103 = from_html(`<dl class="meta svelte-1ci3929"><div class="svelte-1ci3929"><dt class="svelte-1ci3929">Task</dt><dd class="svelte-1ci3929"><strong> </strong></dd></div> <div class="svelte-1ci3929"><dt class="svelte-1ci3929">ID</dt><dd class="svelte-1ci3929"><code class="svelte-1ci3929"> </code></dd></div> <div class="svelte-1ci3929"><dt class="svelte-1ci3929">Version</dt><dd class="svelte-1ci3929"><code class="svelte-1ci3929"> </code><!></dd></div> <div class="svelte-1ci3929"><dt class="svelte-1ci3929">Version policy</dt><dd class="svelte-1ci3929"><code class="svelte-1ci3929"> </code></dd></div> <div class="svelte-1ci3929"><dt class="svelte-1ci3929">Canonical path</dt><dd class="svelte-1ci3929"><code class="svelte-1ci3929"> </code></dd></div></dl> <!> <div class="tabs svelte-1ci3929" role="tablist" aria-label="Task content"><button role="tab" id="tab-statement" aria-controls="panel-statement" type="button">Statement Markdown</button> <button role="tab" id="tab-solution" aria-controls="panel-solution" type="button">Reference Solution</button> <button role="tab" id="tab-tests" aria-controls="panel-tests" type="button">Tests</button></div> <div id="panel-statement" role="tabpanel" aria-labelledby="tab-statement" class="svelte-1ci3929"><textarea class="editor svelte-1ci3929" spellcheck="false" wrap="off" aria-label="Statement markdown (full, including frontmatter)"></textarea></div> <div id="panel-solution" role="tabpanel" aria-labelledby="tab-solution" class="svelte-1ci3929"><textarea class="editor svelte-1ci3929" spellcheck="false" wrap="off" aria-label="Reference solution Python"></textarea></div> <div id="panel-tests" role="tabpanel" aria-labelledby="tab-tests" class="svelte-1ci3929"><textarea class="editor svelte-1ci3929" spellcheck="false" wrap="off" aria-label="Tests Python"></textarea></div> <!> <!> <!> <!> <!> <div class="actions svelte-1ci3929"><!></div>`, 1);
   var root_112 = from_html(`<div class="section"><div class="section-header svelte-1ci3929"><button class="btn back svelte-1ci3929" type="button" aria-label="Back to Catalog">\u2190 Catalog</button> <h2 class="svelte-1ci3929">Task Studio</h2> <button class="btn svelte-1ci3929" type="button" aria-label="Reload task studio"> </button></div> <!></div>`);
   var $$css6 = {
     hash: "svelte-1ci3929",
@@ -6989,6 +6989,7 @@ ${component_stack}
     let solBuffer = state("");
     let testsBuffer = state("");
     let expectedVersion = state("");
+    let expectedEtag = state("");
     let activeTab = state("statement");
     let validating = state(false);
     let validateError = state("");
@@ -7020,6 +7021,7 @@ ${component_stack}
         set(solBuffer, data.solution_py, true);
         set(testsBuffer, data.tests_py, true);
         set(expectedVersion, data.version, true);
+        set(expectedEtag, data.content_etag, true);
       } catch (e) {
         set(studio, null);
         set(loadError, e.message, true);
@@ -7033,6 +7035,7 @@ ${component_stack}
       set(solBuffer, get2(studio).solution_py, true);
       set(testsBuffer, get2(studio).tests_py, true);
       set(expectedVersion, get2(studio).version, true);
+      set(expectedEtag, get2(studio).content_etag, true);
       set(validateResult, null);
       set(validateError, "");
       set(saveResult, null);
@@ -7051,6 +7054,7 @@ ${component_stack}
       try {
         const res = await validateTaskStudio($$props.taskId, {
           expected_version: get2(expectedVersion),
+          expected_content_etag: get2(expectedEtag),
           markdown: get2(mdBuffer),
           solution_py: get2(solBuffer),
           tests_py: get2(testsBuffer)
@@ -7073,13 +7077,13 @@ ${component_stack}
       try {
         const res = await saveTaskStudio($$props.taskId, {
           expected_version: get2(expectedVersion),
+          expected_content_etag: get2(expectedEtag),
           markdown: get2(mdBuffer),
           solution_py: get2(solBuffer),
           tests_py: get2(testsBuffer)
         });
         set(saveResult, res, true);
         await load();
-        set(expectedVersion, res.new_version, true);
         set(notice, `Saved (v${res.new_version}) \u2014 reloaded from server`);
       } catch (e) {
         set(saveError, e.message, true);
@@ -7149,50 +7153,56 @@ ${component_stack}
         var text_5 = only_child(code_2, true);
         reset(dd_3);
         reset(div_7);
+        var div_8 = sibling(div_7, 2);
+        var dd_4 = sibling(child(div_8));
+        var code_3 = child(dd_4);
+        var text_6 = only_child(code_3, true);
+        reset(dd_4);
+        reset(div_8);
         reset(dl);
         var node_2 = sibling(dl, 2);
         {
           var consequent_3 = ($$anchor3) => {
-            var div_8 = root_35();
-            var text_6 = only_child(div_8);
-            template_effect(() => set_text(text_6, `Read-only: ${(get2(studio).read_only_reason || "content repo is not writable") ?? ""}`));
-            append($$anchor3, div_8);
+            var div_9 = root_35();
+            var text_7 = only_child(div_9);
+            template_effect(() => set_text(text_7, `Read-only: ${(get2(studio).read_only_reason || "content repo is not writable") ?? ""}. Editing is disabled; ask an admin to make the content repo writable (configure a local repo path with write access).`));
+            append($$anchor3, div_9);
           };
           var consequent_4 = ($$anchor3) => {
-            var div_9 = root_44();
-            append($$anchor3, div_9);
+            var div_10 = root_44();
+            append($$anchor3, div_10);
           };
           if_block(node_2, ($$render) => {
             if (!get2(studio).writable) $$render(consequent_3);
             else if (!get2(canEdit)) $$render(consequent_4, 1);
           });
         }
-        var div_10 = sibling(node_2, 2);
-        var button_3 = child(div_10);
+        var div_11 = sibling(node_2, 2);
+        var button_3 = child(div_11);
         let classes;
         var button_4 = sibling(button_3, 2);
         let classes_1;
         var button_5 = sibling(button_4, 2);
         let classes_2;
-        reset(div_10);
-        var div_11 = sibling(div_10, 2);
-        var textarea = child(div_11);
-        remove_textarea_child(textarea);
         reset(div_11);
         var div_12 = sibling(div_11, 2);
-        var textarea_1 = child(div_12);
-        remove_textarea_child(textarea_1);
+        var textarea = child(div_12);
+        remove_textarea_child(textarea);
         reset(div_12);
         var div_13 = sibling(div_12, 2);
-        var textarea_2 = child(div_13);
-        remove_textarea_child(textarea_2);
+        var textarea_1 = child(div_13);
+        remove_textarea_child(textarea_1);
         reset(div_13);
-        var node_3 = sibling(div_13, 2);
+        var div_14 = sibling(div_13, 2);
+        var textarea_2 = child(div_14);
+        remove_textarea_child(textarea_2);
+        reset(div_14);
+        var node_3 = sibling(div_14, 2);
         {
           var consequent_5 = ($$anchor3) => {
             var p = root_54();
-            var text_7 = only_child(p, true);
-            template_effect(() => set_text(text_7, get2(notice)));
+            var text_8 = only_child(p, true);
+            template_effect(() => set_text(text_8, get2(notice)));
             append($$anchor3, p);
           };
           if_block(node_3, ($$render) => {
@@ -7203,8 +7213,8 @@ ${component_stack}
         {
           var consequent_6 = ($$anchor3) => {
             var p_1 = root_63();
-            var text_8 = only_child(p_1);
-            template_effect(() => set_text(text_8, `Validate failed: ${get2(validateError) ?? ""}`));
+            var text_9 = only_child(p_1);
+            template_effect(() => set_text(text_9, `Validate failed: ${get2(validateError) ?? ""}`));
             append($$anchor3, p_1);
           };
           if_block(node_4, ($$render) => {
@@ -7215,8 +7225,8 @@ ${component_stack}
         {
           var consequent_7 = ($$anchor3) => {
             var p_2 = root_63();
-            var text_9 = only_child(p_2);
-            template_effect(() => set_text(text_9, `Save failed: ${get2(saveError) ?? ""}`));
+            var text_10 = only_child(p_2);
+            template_effect(() => set_text(text_10, `Save failed: ${get2(saveError) ?? ""}`));
             append($$anchor3, p_2);
           };
           if_block(node_5, ($$render) => {
@@ -7227,8 +7237,8 @@ ${component_stack}
         {
           var consequent_8 = ($$anchor3) => {
             var p_3 = root_73();
-            var text_10 = only_child(p_3);
-            template_effect(() => set_text(text_10, `Valid \u2713 \u2014 task ${get2(validateResult).task_id ?? ""},
+            var text_11 = only_child(p_3);
+            template_effect(() => set_text(text_11, `Valid \u2713 \u2014 task ${get2(validateResult).task_id ?? ""},
 				current v${get2(validateResult).current_version ?? ""},
 				candidate v${get2(validateResult).candidate_version ?? ""},
 				${get2(validateResult).content_changed ? "content changed" : "no content change"},
@@ -7243,8 +7253,8 @@ ${component_stack}
         {
           var consequent_9 = ($$anchor3) => {
             var p_4 = root_73();
-            var text_11 = only_child(p_4);
-            template_effect(() => set_text(text_11, `Saved \u2713 \u2014 task ${get2(saveResult).task_id ?? ""}, new version v${get2(saveResult).new_version ?? ""},
+            var text_12 = only_child(p_4);
+            template_effect(() => set_text(text_12, `Saved \u2713 \u2014 task ${get2(saveResult).task_id ?? ""}, new version v${get2(saveResult).new_version ?? ""},
 				sync: ${get2(saveResult).sync.status ?? ""}
 				(+${get2(saveResult).sync.added ?? ""}/~${get2(saveResult).sync.updated ?? ""}/=${get2(saveResult).sync.skipped ?? ""},
 				${get2(saveResult).sync.errors ?? ""} error${get2(saveResult).sync.errors === 1 ? "" : "s"})`));
@@ -7254,22 +7264,22 @@ ${component_stack}
             if (get2(saveResult)) $$render(consequent_9);
           });
         }
-        var div_14 = sibling(node_7, 2);
-        var node_8 = child(div_14);
+        var div_15 = sibling(node_7, 2);
+        var node_8 = child(div_15);
         {
           var consequent_10 = ($$anchor3) => {
             var fragment_2 = root_83();
             var button_6 = first_child(fragment_2);
-            var text_12 = only_child(button_6, true);
+            var text_13 = only_child(button_6, true);
             var button_7 = sibling(button_6, 2);
-            var text_13 = only_child(button_7, true);
+            var text_14 = only_child(button_7, true);
             var button_8 = sibling(button_7, 2);
             template_effect(
               ($0, $1, $2) => {
                 button_6.disabled = $0;
-                set_text(text_12, get2(validating) ? "Validating\u2026" : "Validate");
+                set_text(text_13, get2(validating) ? "Validating\u2026" : "Validate");
                 button_7.disabled = $1;
-                set_text(text_13, get2(saving) ? "Saving\u2026" : "Save");
+                set_text(text_14, get2(saving) ? "Saving\u2026" : "Save");
                 button_8.disabled = $2;
               },
               [
@@ -7292,25 +7302,26 @@ ${component_stack}
             else $$render(alternate, -1);
           });
         }
-        reset(div_14);
+        reset(div_15);
         template_effect(() => {
           set_text(text_2, $$props.taskLabel || get2(studio).task_id);
           set_text(text_3, $$props.taskId);
           set_text(text_4, `v${get2(studio).version ?? ""}`);
-          set_text(text_5, get2(studio).md_path || "\u2014");
+          set_text(text_5, get2(studio).version_policy ?? "\u2014");
+          set_text(text_6, get2(studio).md_path || "\u2014");
           set_attribute2(button_3, "aria-selected", get2(activeTab) === "statement");
           classes = set_class(button_3, 1, "svelte-1ci3929", null, classes, { active: get2(activeTab) === "statement" });
           set_attribute2(button_4, "aria-selected", get2(activeTab) === "solution");
           classes_1 = set_class(button_4, 1, "svelte-1ci3929", null, classes_1, { active: get2(activeTab) === "solution" });
           set_attribute2(button_5, "aria-selected", get2(activeTab) === "tests");
           classes_2 = set_class(button_5, 1, "svelte-1ci3929", null, classes_2, { active: get2(activeTab) === "tests" });
-          set_attribute2(div_11, "hidden", get2(activeTab) !== "statement");
+          set_attribute2(div_12, "hidden", get2(activeTab) !== "statement");
           set_value(textarea, get2(mdBuffer));
           textarea.disabled = !get2(editable);
-          set_attribute2(div_12, "hidden", get2(activeTab) !== "solution");
+          set_attribute2(div_13, "hidden", get2(activeTab) !== "solution");
           set_value(textarea_1, get2(solBuffer));
           textarea_1.disabled = !get2(editable);
-          set_attribute2(div_13, "hidden", get2(activeTab) !== "tests");
+          set_attribute2(div_14, "hidden", get2(activeTab) !== "tests");
           set_value(textarea_2, get2(testsBuffer));
           textarea_2.disabled = !get2(editable);
         });

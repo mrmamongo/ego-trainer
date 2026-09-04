@@ -337,9 +337,7 @@ async def get_catalog(db: DbDep, q: str | None = None) -> CatalogDTO:
     # (project_id, folder_id) to avoid cross-project leakage through a
     # shared folder id.
     proj_direct = {p["id"]: project_hits(dict(p)) for p in projects_rows}
-    folder_direct = {
-        (f["project_id"], f["id"]): folder_hits(dict(f)) for f in folders_rows
-    }
+    folder_direct = {(f["project_id"], f["id"]): folder_hits(dict(f)) for f in folders_rows}
     # Does any task in this folder match directly?
     folder_has_match_task = {
         key: any(task_hits(t) for t in ts) for key, ts in tasks_by_folder.items()
@@ -494,9 +492,7 @@ async def get_task_studio(task_id: str, db: DbDep) -> TaskStudioDTO:
 
     # --- version_policy: writable only when DB + canonical discovery agree
     #     on an existing 'declare' project for this exact task ---
-    version_policy, writable, reason = _resolve_policy_writability(
-        db, root, md, row["project_id"]
-    )
+    version_policy, writable, reason = _resolve_policy_writability(db, root, md, row["project_id"])
     if writable and not is_writable(root):
         writable = False
         reason = "content repo root is not writable"
@@ -556,9 +552,7 @@ async def get_task_studio(task_id: str, db: DbDep) -> TaskStudioDTO:
     # (contained). A missing optional tests sidecar is encoded as an explicit
     # missing state. When the tests path escapes, no etag is returned.
     content_etag = (
-        _compute_content_etag(md_bytes, sol_bytes, tests_bytes)
-        if tests is not None
-        else ""
+        _compute_content_etag(md_bytes, sol_bytes, tests_bytes) if tests is not None else ""
     )
 
     return base.model_copy(
@@ -638,8 +632,7 @@ def _resolve_policy_writability(
         return (
             db_policy,
             False,
-            f"project version_policy is {db_policy!r}; only 'declare' "
-            f"tasks are editable in Studio",
+            f"project version_policy is {db_policy!r}; only 'declare' tasks are editable in Studio",
         )
 
     # --- canonical content-repo discovery cross-check ---
@@ -677,8 +670,7 @@ def _resolve_policy_writability(
         return (
             db_policy,
             False,
-            "task not found in canonical content-repo discovery; resync the "
-            "content repo",
+            "task not found in canonical content-repo discovery; resync the content repo",
         )
     if matched.project_id != db_project_id:
         return (
@@ -731,11 +723,7 @@ def _decorator_is_smoke_case(dec: ast.expr) -> bool:
     if isinstance(dec, ast.Name) and dec.id == "case":
         return True
     # Called @case(...). Counts as smoke unless level is explicitly "full".
-    if (
-        isinstance(dec, ast.Call)
-        and isinstance(dec.func, ast.Name)
-        and dec.func.id == "case"
-    ):
+    if isinstance(dec, ast.Call) and isinstance(dec.func, ast.Name) and dec.func.id == "case":
         return _case_level(dec) != "full"
     return False
 
@@ -1018,9 +1006,9 @@ def _validate_studio_candidate(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=(
-                'tests_py must define at least one smoke @case '
+                "tests_py must define at least one smoke @case "
                 '(bare @case or @case(level="smoke")); '
-                'found only full cases'
+                "found only full cases"
             ),
         )
 
@@ -1369,9 +1357,7 @@ async def save_task_studio(task_id: str, body: StudioSaveRequest, db: DbDep) -> 
                 _atomic_replace(target, content, backup)
 
             # --- trigger sync against the configured repo root ---
-            result = sync_from_path(
-                db, cand.root, source="admin-studio", repo_url=str(cand.root)
-            )
+            result = sync_from_path(db, cand.root, source="admin-studio", repo_url=str(cand.root))
 
             # --- verify sync succeeded ---
             if result.errors > 0:
@@ -1409,9 +1395,7 @@ async def save_task_studio(task_id: str, body: StudioSaveRequest, db: DbDep) -> 
             # --- compute new content_etag from the actual written files ---
             n_md = cand.md_canonical.read_bytes() if cand.md_canonical.is_file() else None
             n_sol = cand.sol_canonical.read_bytes() if cand.sol_canonical.is_file() else None
-            n_tests = (
-                cand.tests_canonical.read_bytes() if cand.tests_canonical.is_file() else None
-            )
+            n_tests = cand.tests_canonical.read_bytes() if cand.tests_canonical.is_file() else None
             new_content_etag = _compute_content_etag(n_md, n_sol, n_tests)
 
             # --- commit DB only after all checks pass ---
