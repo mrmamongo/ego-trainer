@@ -5,6 +5,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -38,6 +39,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
 
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
@@ -54,15 +56,9 @@ async def health() -> dict:
 # === Admin panel (static HTML + JS) ===
 
 
-@app.get("/admin", include_in_schema=False)
+@app.get("/", include_in_schema=False)
 async def admin_panel_root() -> FileResponse:
-    """Serve the mentor admin panel at /admin (no trailing slash)."""
-    return FileResponse(_STATIC_DIR / "admin.html")
-
-
-@app.get("/admin/", include_in_schema=False)
-async def admin_panel() -> FileResponse:
-    """Serve the mentor admin panel."""
+    """Serve the mentor admin panel at the site root."""
     return FileResponse(_STATIC_DIR / "admin.html")
 
 

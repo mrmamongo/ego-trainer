@@ -1,4 +1,4 @@
-# docker-compose for ego-server — local dev + production.
+# Reproducible production candidate for ego-server.
 #
 # Usage:
 #   docker-compose up -d        # start server in background
@@ -6,14 +6,12 @@
 #   docker-compose down         # stop
 #   docker-compose down -v      # stop + wipe DB
 #
-# Server: http://localhost:8000
+# Admin:  http://localhost:${EGO_PORT:-8000}/
 # Docs:   http://localhost:8000/docs (Swagger UI)
 # Health: http://localhost:8000/health
 #
-# The server reads docs/tasks/ from the repo. In dev mode, docs/tasks/
-# is mounted as a volume — edit tasks and restart to pick up changes.
-# To re-import tasks without restart:
-#   docker-compose exec ego-server ego-server admin import-tasks --docs-dir docs/tasks
+# Canonical content is an explicit read-write mount because Task Studio edits
+# it. Set EGO_CONTENT_PATH to a disposable checkout/copy for local evaluation.
 
 services:
   ego-server:
@@ -21,19 +19,27 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "${EGO_PORT:-8000}:8000"
     volumes:
       # Persist SQLite database across container restarts.
-      - ego-data:/app/.ego-server
-      # Mount docs/tasks/ for live task updates (no rebuild needed).
-      - ./docs/tasks:/app/docs/tasks:ro
+      - ego-data:/var/lib/ego
+      - ${EGO_CONTENT_PATH:-./docs/tasks}:/content
     environment:
-      - EGO_DB_PATH=/app/.ego-server/ego.db
-      - EGO_JWT_SECRET=${EGO_JWT_SECRET:-dev-secret-change-in-production}
-      # CORS: allow all origins for dev (VSCode extension, browser, etc).
-      # For production, set to specific origins: ["https://your-domain.com"]
-      - EGO_CORS_ORIGINS=["*"]
+      EGO_ENVIRONMENT: production
+      EGO_DB_PATH: /var/lib/ego/ego.db
+      EGO_TASKS_REPO_URL: /content
+      EGO_JWT_SECRET: ${EGO_JWT_SECRET:?Set EGO_JWT_SECRET to at least 32 random characters}
+      # Same-origin Admin UI and the VS Code extension need no browser CORS.
+      # Set an explicit JSON list only when a separate browser origin is used.
+      EGO_CORS_ORIGINS: ${EGO_CORS_ORIGINS:-[]}
+      EGO_ALLOWED_HOSTS: ${EGO_ALLOWED_HOSTS:-["localhost","127.0.0.1"]}
+      EGO_UVICORN_WORKERS: ${EGO_UVICORN_WORKERS:-1}
     restart: unless-stopped
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s

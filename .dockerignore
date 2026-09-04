@@ -12,6 +12,7 @@ __pycache__
 build
 dist
 tests
+*.log
 docs/adr
 docs/JUNIOR.md
 docs/MENTOR.md

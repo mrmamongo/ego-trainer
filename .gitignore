@@ -18,4 +18,5 @@ venv/
 *.egg-info/
 dist/
 build/
+node_modules/
 vscode-ego/*.vsix
