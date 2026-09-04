@@ -211,10 +211,35 @@ def test_push_truncates_long_log(client, temp_db):
 # === GET /progress/<student_id> ===
 
 
-def test_get_progress_requires_mentor(client):
-    """Student should get 403 when trying to view progress."""
+def test_get_progress_student_can_view_own(client):
+    """Student can view their own progress (used by VSCode extension)."""
     token, student_id = _register_and_login(client, role="student")
+    client.post(
+        "/progress/push",
+        json={
+            "task_id": "F1",
+            "version": "1.0.0",
+            "solution_hash": "d" * 64,
+            "status": "passed",
+            "log": "",
+            "passed_tests": 3,
+            "total_tests": 3,
+        },
+        headers=_auth_headers(token),
+    )
     r = client.get(f"/progress/{student_id}", headers=_auth_headers(token))
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data) == 1
+    assert data[0]["task_id"] == "F1"
+    assert data[0]["status"] == "passed"
+
+
+def test_get_progress_student_cannot_view_other(client):
+    """Student cannot view another student's progress."""
+    token_a, _ = _register_and_login(client, username="alice", role="student")
+    token_b, student_b = _register_and_login(client, username="bob", role="student")
+    r = client.get(f"/progress/{student_b}", headers=_auth_headers(token_a))
     assert r.status_code == 403
 
 
