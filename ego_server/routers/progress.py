@@ -8,18 +8,19 @@ POST /progress/push:
   - Returns the stored ProgressRow.
 
 GET /progress/<student_id>:
-  - Mentor/admin only: list all progress entries for a student.
-  - Implemented in bmh.5 (currently 501).
+  - Mentor/admin can list any student's progress.
+  - Students can list their own progress (used by the VSCode extension).
+  - Implemented in bmh.5.
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
 
-from ego_server.deps import CurrentUser, DbDep, require_role
+from fastapi import APIRouter, HTTPException, status
+
+from ego_server.deps import CurrentUser, DbDep
 from ego_server.models import ProgressPush, ProgressRow
 
 
@@ -36,9 +37,7 @@ async def push_progress(body: ProgressPush, db: DbDep, user: CurrentUser) -> Pro
     student_id = user["sub"]
 
     # Validate task exists.
-    task_row = db.execute(
-        "SELECT id FROM tasks WHERE id = ?", (body.task_id,)
-    ).fetchone()
+    task_row = db.execute("SELECT id FROM tasks WHERE id = ?", (body.task_id,)).fetchone()
     if task_row is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -135,12 +134,18 @@ async def push_progress(body: ProgressPush, db: DbDep, user: CurrentUser) -> Pro
 async def get_progress(
     student_id: str,
     db: DbDep,
-    user: Annotated[dict, Depends(require_role("mentor", "admin"))],
+    user: CurrentUser,
 ) -> list[ProgressRow]:
-    """List all progress entries for a student. Mentors/admins only.
+    """List all progress entries for a student.
 
-    Implemented in bmh.5.
+    Mentors/admins can view any student's progress; a student may also view
+    their own progress (needed by the VSCode extension dashboard).
     """
+    if user["role"] not in ("mentor", "admin") and user["sub"] != student_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Requires role: mentor, admin",
+        )
     rows = db.execute(
         """SELECT student_id, task_id, version, status, attempts,
                   passed_tests, total_tests, last_run_at
