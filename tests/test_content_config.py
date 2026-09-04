@@ -56,9 +56,7 @@ class TestWindowsFileURLs:
         assert cfg.resolved_local_path == Path(r"\\server\share\tasks")
 
 
-@pytest.mark.skipif(
-    sys.platform == "win32", reason="POSIX file-URL conversion"
-)
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX file-URL conversion")
 class TestPosixFileURLs:
     def test_absolute_file_url(self) -> None:
         cfg = TasksRepoConfig(url="file:///var/lib/tasks")

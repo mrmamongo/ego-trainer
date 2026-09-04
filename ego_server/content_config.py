@@ -80,10 +80,7 @@ class TasksRepoConfig(BaseModel):
         if self.url.startswith("file://"):
             parsed = urlparse(self.url)
             if parsed.query or parsed.fragment:
-                raise ValueError(
-                    f"file:// URL must not contain a query or fragment: "
-                    f"{self.url!r}"
-                )
+                raise ValueError(f"file:// URL must not contain a query or fragment: {self.url!r}")
             # Reconstruct the URL path portion that url2pathname expects.
             # On Windows it converts '/C:/path' -> 'C:\\path' and
             # '//server/share/path' -> '\\\\server\\share\\path' (UNC).

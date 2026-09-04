@@ -1222,9 +1222,7 @@ def _read_canonical(studio_env: TestClient) -> dict[str, str]:
     return files
 
 
-def _get_studio_etag(
-    client: TestClient, token: str, task_id: str = "F1"
-) -> str:
+def _get_studio_etag(client: TestClient, token: str, task_id: str = "F1") -> str:
     """GET the Task Studio content and return the fresh content_etag."""
     r = client.get(f"/admin/tasks/{task_id}/studio", headers=_auth_headers(token))
     assert r.status_code == 200, f"GET studio failed: {r.text}"
@@ -1940,11 +1938,7 @@ def test_studio_validate_bare_case_smoke_ok(studio_env: TestClient) -> None:
     """Bare @case (no call) counts as smoke → validate 200."""
     a_token, _ = _create_user(studio_env, "admin1", "pw", "admin")
     etag = _get_studio_etag(studio_env, a_token)
-    bare = (
-        "from solution import task_f1\n\n"
-        "@case\n"
-        "def t():\n    assert task_f1() == 42\n"
-    )
+    bare = "from solution import task_f1\n\n@case\ndef t():\n    assert task_f1() == 42\n"
     r = studio_env.post(
         "/admin/tasks/F1/studio/validate",
         json=_validate_payload(expected_content_etag=etag, tests_py=bare),
@@ -2077,7 +2071,7 @@ def test_studio_save_external_mutation_etag_mismatch_409(
 
     repo = content_settings.to_config().resolved_local_path
     md_path = repo / _STUDIO_FOLDER_REL / "task_f1.md"
-    md_path.write_text("# Externally mutated\n", encoding="utf-8")
+    md_path.write_bytes(b"# Externally mutated\n")
 
     r = studio_env.put(
         "/admin/tasks/F1/studio",
@@ -2103,8 +2097,6 @@ def test_studio_save_parallel_one_wins_one_409(studio_env: TestClient) -> None:
     """
     a_token, _ = _create_user(studio_env, "admin1", "pw", "admin")
     etag = _get_studio_etag(studio_env, a_token)
-    before = _read_canonical(studio_env)
-
     # Two distinct valid candidates with different bumped versions.
     cand_a_md = _valid_candidate_md(version="2.0.0", title="Alpha")
     cand_b_md = _valid_candidate_md(version="3.0.0", title="Beta")
@@ -2142,7 +2134,10 @@ def test_studio_save_parallel_one_wins_one_409(studio_env: TestClient) -> None:
         winner_md, winner_sol = cand_b_md, cand_b_sol
 
     # Loser: 409 with etag or version mismatch detail.
-    assert "expected_version" in loser.json()["detail"] or "expected_content_etag" in loser.json()["detail"]
+    assert (
+        "expected_version" in loser.json()["detail"]
+        or "expected_content_etag" in loser.json()["detail"]
+    )
 
     # Winner: canonical bytes match the winner's candidate.
     after = _read_canonical(studio_env)
