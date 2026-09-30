@@ -10,7 +10,7 @@
 
 	async function submit() {
 		if (!username.trim() || !password) {
-			error = 'Enter username and password';
+			error = 'Введи имя пользователя и пароль';
 			return;
 		}
 		error = '';
@@ -27,13 +27,13 @@
 </script>
 
 <div class="login">
-	<h1>Ego Admin</h1>
-	<p class="sub">Sign in with admin/mentor account</p>
+	<h1>Панель управления</h1>
+	<p class="sub">Вход для администратора или наставника</p>
 	<form onsubmit={(e) => { e.preventDefault(); submit(); }}>
-		<input type="text" bind:value={username} placeholder="Username" autocomplete="username" />
-		<input type="password" bind:value={password} placeholder="Password" autocomplete="current-password" />
+		<input type="text" bind:value={username} placeholder="Имя пользователя" autocomplete="username" />
+		<input type="password" bind:value={password} placeholder="Пароль" autocomplete="current-password" />
 		<button type="submit" disabled={loading}>
-			{loading ? 'Signing in…' : 'Sign in'}
+			{loading ? 'Вхожу…' : 'Войти'}
 		</button>
 		{#if error}<div class="error">{error}</div>{/if}
 	</form>

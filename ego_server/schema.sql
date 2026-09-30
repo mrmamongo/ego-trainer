@@ -123,5 +123,45 @@ CREATE INDEX IF NOT EXISTS idx_runs_task ON runs(task_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_block ON tasks(block);
 CREATE INDEX IF NOT EXISTS idx_tasks_folder ON tasks(folder_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(project_id);
+
+CREATE TABLE IF NOT EXISTS service_settings (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  revision INTEGER NOT NULL,
+  config_json TEXT NOT NULL,
+  api_key_encrypted TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS admin_chat_sessions (
+  id TEXT PRIMARY KEY,
+  owner_id TEXT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chat_owner ON admin_chat_sessions(owner_id, updated_at);
+
+CREATE TABLE IF NOT EXISTS admin_chat_messages (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES admin_chat_sessions(id) ON DELETE CASCADE,
+  role TEXT NOT NULL,
+  content TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'complete',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chat_messages ON admin_chat_messages(session_id, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_active ON admin_chat_messages(session_id)
+  WHERE status = 'streaming';
+
+CREATE TABLE IF NOT EXISTS admin_chat_proposals (
+  id TEXT PRIMARY KEY,
+  message_id TEXT NOT NULL REFERENCES admin_chat_messages(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_folders_project ON folders(project_id);
 CREATE INDEX IF NOT EXISTS idx_sync_log_started ON sync_log(started_at);

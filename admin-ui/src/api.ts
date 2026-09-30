@@ -131,11 +131,15 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 	if (resp.status === 401) {
 		setToken(null);
+		window.dispatchEvent(new CustomEvent('ego:session-expired'));
 		throw new Error('Session expired. Please log in again.');
 	}
 	if (!resp.ok) {
 		const data = await resp.json().catch(() => ({}));
-		throw new Error(data.detail || `HTTP ${resp.status}`);
+		const detail = typeof data.detail === 'string' ? data.detail
+			: Array.isArray(data.detail) ? data.detail.map((e: { msg?: string }) => e.msg || 'Invalid field').join('; ')
+			: `HTTP ${resp.status}`;
+		throw new Error(detail);
 	}
 	if (resp.status === 204) {
 		return undefined as T;

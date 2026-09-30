@@ -9,21 +9,18 @@ import sqlite3
 def prepare_startup() -> None:
     """Validate production settings and prepare persistent state."""
     from ego_server.config import settings, validate_runtime_settings
-    from ego_server.content_config import content_settings
+    from ego_server.service_settings import effective_content_config
     from ego_server.db import get_connection, init_db
     from ego_server.sync import sync_from_config
 
     validate_runtime_settings(settings)
     init_db()
 
-    content_config = content_settings.to_config()
-    if not content_config.url:
-        raise RuntimeError(
-            "EGO_TASKS_REPO_URL must point to a mounted local content directory"
-        )
-
     conn: sqlite3.Connection = get_connection()
     try:
+        content_config = effective_content_config(conn)
+        if not content_config.url:
+            raise RuntimeError("Configure a local content directory before starting the service")
         result = sync_from_config(conn, content_config, source="startup")
         if result.errors or result.status == "failed":
             conn.rollback()

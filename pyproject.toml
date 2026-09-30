@@ -15,7 +15,7 @@ ego-server = "ego_server.cli:main"
 ego-tui = "ego_tui.cli:main"
 
 [project.optional-dependencies]
-server = ["fastapi>=0.110", "uvicorn[standard]>=0.27", "pydantic>=2.6", "pydantic-settings>=2", "pyjwt>=2.8", "passlib[bcrypt]>=1.7", "bcrypt<5.0"]
+server = ["fastapi>=0.110", "uvicorn[standard]>=0.27", "pydantic>=2.6", "pydantic-settings>=2", "pyjwt>=2.8", "passlib[bcrypt]>=1.7", "bcrypt<5.0", "httpx>=0.27", "cryptography>=43"]
 tui = ["textual>=0.50", "rich>=13.7"]
 dev = ["pytest>=8.0", "pytest-cov>=4.1", "ruff>=0.3", "httpx>=0.27"]
 

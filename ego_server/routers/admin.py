@@ -966,11 +966,11 @@ def _validate_studio_candidate(
     candidate_content_hash = ""
     with tempfile.TemporaryDirectory(prefix="ego-studio-validate-") as tmp:
         tmp_dir = Path(tmp)
-        (tmp_dir / md_name).write_text(body.markdown, encoding="utf-8")
-        (tmp_dir / sol_name).write_text(body.solution_py, encoding="utf-8")
+        (tmp_dir / md_name).write_text(body.markdown, encoding="utf-8", newline="")
+        (tmp_dir / sol_name).write_text(body.solution_py, encoding="utf-8", newline="")
         if body.tests_py:
             tests_name = Path(md_path_str).with_suffix(".tests.py").name
-            (tmp_dir / tests_name).write_text(body.tests_py, encoding="utf-8")
+            (tmp_dir / tests_name).write_text(body.tests_py, encoding="utf-8", newline="")
         try:
             parsed = parse_task_file(tmp_dir / md_name)
             candidate_content_hash = parsed.content_hash

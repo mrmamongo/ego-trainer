@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import {
 		getTaskStudio,
 		validateTaskStudio,
@@ -11,16 +11,30 @@
 
 	type Tab = 'statement' | 'solution' | 'tests';
 
+	type TaskStudioDraft = {
+		expected_version: string;
+		expected_content_etag: string;
+		markdown: string;
+		solution_py: string;
+		tests_py: string;
+	};
+
 	let {
 		taskId,
 		taskLabel,
 		role,
 		onBack,
+		onDirtyChange,
+		onBusyChange,
+		draft = null,
 	}: {
 		taskId: string;
 		taskLabel: string;
 		role: string;
 		onBack: () => void;
+		onDirtyChange?: (dirty: boolean) => void;
+		onBusyChange?: (busy: boolean) => void;
+		draft?: TaskStudioDraft | null;
 	} = $props();
 
 	// admin-only role may edit/validate/save; mentor is browse-only.
@@ -48,8 +62,13 @@
 	let saveResult = $state<StudioSaveResponse | null>(null);
 
 	let notice = $state(''); // generic transient status (e.g. reloaded)
+	let draftConflict = $state(false);
+	let draftConflictMessage = $state('');
+	let appliedDraft: TaskStudioDraft | null = null;
+	let isBusy = $derived(loading || saving || validating);
 
 	function isDirty(): boolean {
+		if (draftConflict) return true;
 		if (!studio) return false;
 		return (
 			mdBuffer !== studio.markdown ||
@@ -61,7 +80,31 @@
 	// writable gate: backend writable=false OR mentor role → read-only
 	const editable = $derived(!!studio && studio.writable && canEdit);
 
-	async function load() {
+	$effect(() => {
+		const dirty = isDirty();
+		onDirtyChange?.(dirty);
+
+		if (!dirty) return;
+		const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+			event.preventDefault();
+			event.returnValue = '';
+		};
+		window.addEventListener('beforeunload', warnBeforeUnload);
+		return () => window.removeEventListener('beforeunload', warnBeforeUnload);
+	});
+
+	$effect(() => {
+		const busy = saving || validating;
+		onBusyChange?.(busy);
+	});
+
+	function confirmDiscard(action: string): boolean {
+		return !isDirty() || confirm(`You have unsaved task changes. ${action} and discard them?`);
+	}
+
+	async function load({ confirmDirty = true, allowBusy = false }: { confirmDirty?: boolean; allowBusy?: boolean } = {}) {
+		if (!allowBusy && (saving || validating || (loading && !!studio))) return;
+		if (confirmDirty && !confirmDiscard('Reload')) return;
 		loading = true;
 		loadError = '';
 		validateResult = null;
@@ -69,16 +112,33 @@
 		saveResult = null;
 		saveError = '';
 		notice = '';
+		draftConflict = false;
+		draftConflictMessage = '';
 		try {
 			const data = await getTaskStudio(taskId);
 			studio = data;
-			mdBuffer = data.markdown;
-			solBuffer = data.solution_py;
-			testsBuffer = data.tests_py;
-			expectedVersion = data.version;
-			expectedEtag = data.content_etag;
+			const incomingDraft = draft && draft !== appliedDraft ? draft : null;
+			if (incomingDraft) {
+				appliedDraft = incomingDraft;
+				const matchesServer = incomingDraft.expected_version === data.version
+					&& incomingDraft.expected_content_etag === data.content_etag;
+				mdBuffer = incomingDraft.markdown;
+				solBuffer = incomingDraft.solution_py;
+				testsBuffer = incomingDraft.tests_py;
+				expectedVersion = incomingDraft.expected_version;
+				expectedEtag = incomingDraft.expected_content_etag;
+				draftConflict = !matchesServer;
+				if (!matchesServer) {
+					draftConflictMessage = `Draft is based on v${incomingDraft.expected_version}; server is now v${data.version}. Draft text is preserved below. Copy it before discarding or reloading.`;
+				}
+			} else {
+				mdBuffer = data.markdown;
+				solBuffer = data.solution_py;
+				testsBuffer = data.tests_py;
+				expectedVersion = data.version;
+				expectedEtag = data.content_etag;
+			}
 		} catch (e) {
-			studio = null;
 			loadError = (e as Error).message;
 		} finally {
 			loading = false;
@@ -87,6 +147,8 @@
 
 	function resetBuffers() {
 		if (!studio) return;
+		if (isBusy || !confirmDiscard('Revert to the latest server state')) return;
+		appliedDraft = draft;
 		mdBuffer = studio.markdown;
 		solBuffer = studio.solution_py;
 		testsBuffer = studio.tests_py;
@@ -97,6 +159,14 @@
 		saveResult = null;
 		saveError = '';
 		notice = 'Reverted to server state';
+		draftConflict = false;
+		draftConflictMessage = '';
+	}
+
+	function handleBack() {
+		if (isBusy || !confirmDiscard('Leave Task Studio')) return;
+		onDirtyChange?.(false);
+		onBack();
 	}
 
 	function selectTab(tab: Tab) {
@@ -104,7 +174,7 @@
 	}
 
 	async function doValidate() {
-		if (!editable || !studio) return;
+		if (!editable || !studio || isBusy || draftConflict) return;
 		validating = true;
 		validateError = '';
 		validateResult = null;
@@ -126,7 +196,7 @@
 	}
 
 	async function doSave() {
-		if (!editable || !studio) return;
+		if (!editable || !studio || isBusy || draftConflict) return;
 		saving = true;
 		saveError = '';
 		saveResult = null;
@@ -145,7 +215,7 @@
 			// Reload to pick up fresh canonical state; load() updates
 			// expectedVersion/expectedEtag from the server. Do NOT overwrite
 			// that fresh state with the (now-stale) save response values.
-			await load();
+			await load({ confirmDirty: false, allowBusy: true });
 			notice = `Saved (v${res.new_version}) — reloaded from server`;
 		} catch (e) {
 			saveError = (e as Error).message;
@@ -154,24 +224,32 @@
 		}
 	}
 
-	onMount(() => { load(); });
+	onMount(() => { void load({ confirmDirty: false }); });
+	onDestroy(() => {
+		onDirtyChange?.(false);
+		onBusyChange?.(false);
+	});
 </script>
 
 <div class="section">
 	<div class="section-header">
-		<button class="btn back" type="button" onclick={onBack} aria-label="Back to Catalog">← Catalog</button>
+		<button class="btn back" type="button" onclick={handleBack} disabled={isBusy} aria-label="Back to Catalog">← Catalog</button>
 		<h2>Task Studio</h2>
-		<button class="btn" type="button" onclick={load} disabled={loading} aria-label="Reload task studio">
+		<button class="btn" type="button" onclick={() => load()} disabled={isBusy} aria-label="Reload task studio">
 			{loading ? 'Reloading…' : 'Reload'}
 		</button>
 	</div>
 
 	{#if loading && !studio}
 		<div class="loading">Loading task studio…</div>
-	{:else if loadError}
+	{:else if !studio && loadError}
 		<div class="error">{loadError}</div>
-		<button class="btn" type="button" onclick={load} aria-label="Retry loading">Retry</button>
+		<button class="btn" type="button" onclick={() => load({ confirmDirty: false })} disabled={isBusy} aria-label="Retry loading">Retry</button>
 	{:else if studio}
+		{#if loadError}
+			<div class="error" role="alert">Could not refresh task: {loadError}</div>
+			<button class="btn" type="button" onclick={() => load({ confirmDirty: false })} disabled={isBusy}>Retry reload</button>
+		{/if}
 		<dl class="meta">
 			<div><dt>Task</dt><dd><strong>{taskLabel || studio.task_id}</strong></dd></div>
 			<div><dt>ID</dt><dd><code>{taskId}</code></dd></div>
@@ -187,6 +265,12 @@
 		{:else if !canEdit}
 			<div class="readonly-banner" role="alert">
 				Browse-only: mentors may view but not edit task content.
+			</div>
+		{/if}
+		{#if draftConflict}
+			<div class="readonly-banner" role="alert">
+				{draftConflictMessage} Saving and validation are disabled until you discard this stale draft.
+				<button class="btn" type="button" onclick={() => resetBuffers()} disabled={isBusy}>Discard draft and use server version</button>
 			</div>
 		{/if}
 
@@ -232,7 +316,7 @@
 				wrap="off"
 				value={mdBuffer}
 				oninput={(e) => (mdBuffer = (e.target as HTMLTextAreaElement).value)}
-				disabled={!editable}
+				disabled={!editable || isBusy}
 				aria-label="Statement markdown (full, including frontmatter)"
 			></textarea>
 		</div>
@@ -248,7 +332,7 @@
 				wrap="off"
 				value={solBuffer}
 				oninput={(e) => (solBuffer = (e.target as HTMLTextAreaElement).value)}
-				disabled={!editable}
+				disabled={!editable || isBusy}
 				aria-label="Reference solution Python"
 			></textarea>
 		</div>
@@ -264,7 +348,7 @@
 				wrap="off"
 				value={testsBuffer}
 				oninput={(e) => (testsBuffer = (e.target as HTMLTextAreaElement).value)}
-				disabled={!editable}
+				disabled={!editable || isBusy}
 				aria-label="Tests Python"
 			></textarea>
 		</div>
@@ -296,21 +380,21 @@
 					class="btn primary"
 					type="button"
 					onclick={doValidate}
-					disabled={!editable || validating || saving || !isDirty()}
+					disabled={!editable || validating || saving || loading || draftConflict || !isDirty()}
 					aria-label="Validate candidate"
 				>{validating ? 'Validating…' : 'Validate'}</button>
 				<button
 					class="btn primary"
 					type="button"
 					onclick={doSave}
-					disabled={!editable || saving || validating || !isDirty()}
+					disabled={!editable || saving || validating || loading || draftConflict || !isDirty()}
 					aria-label="Save candidate to canonical files"
 				>{saving ? 'Saving…' : 'Save'}</button>
 				<button
 					class="btn"
 					type="button"
 					onclick={resetBuffers}
-					disabled={!editable || saving || validating || !isDirty()}
+					disabled={!editable || saving || validating || loading || !isDirty()}
 					aria-label="Revert to server state"
 				>Revert</button>
 			{:else}
