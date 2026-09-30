@@ -1,6 +1,6 @@
 """Ego server — FastAPI application."""
 
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -26,13 +26,17 @@ from ego_server.routers import (
 )
 
 _STATIC_DIR = Path(__file__).parent / "static"
+_mcp_http_app = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     validate_runtime_settings(settings)
     init_db()
-    yield
+    async with AsyncExitStack() as stack:
+        if _mcp_http_app is not None:
+            await stack.enter_async_context(_mcp_http_app.lifespan(_mcp_http_app))
+        yield
 
 
 app = FastAPI(
@@ -90,3 +94,14 @@ async def favicon() -> FileResponse:
 
 
 app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
+
+if settings.mcp_enabled:
+    # Mount last: normal Ego routes keep their routing/auth contracts. The
+    # subapp owns /mcp and its OAuth discovery, consent and token endpoints.
+    from ego_server.task_mcp import create_task_mcp
+
+    _task_mcp = create_task_mcp(app)
+    _mcp_http_app = _task_mcp.http_app(
+        path="/mcp", stateless_http=True, allowed_hosts=settings.allowed_hosts
+    )
+    app.mount("/", _mcp_http_app)
