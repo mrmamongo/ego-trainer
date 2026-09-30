@@ -555,7 +555,47 @@ Before syncing a new task, verify:
 
 ---
 
-## 9. Reference
+## 9. Browser editor and docked AI chat
+
+Open **Каталог задач** in the admin console. The explorer shows projects,
+folders, tasks and each task's Markdown, reference solution and test sidecars.
+Filter by title or task ID and collapse branches to keep the tree manageable.
+
+Files open in Monaco tabs. Switching between tasks keeps their unsaved buffers,
+undo history and cursor/scroll position in this browser tab. A dot marks a
+modified file. **Сохранить** and **Ctrl/Cmd+S** save all three files of the
+active task together; other tasks' drafts remain unsaved. **Проверить** validates
+task structure, Python syntax, smoke-case presence and version/etag before
+saving. Execution of curriculum cases uses the normal checker workflow.
+
+In `declare` mode, increase the Markdown frontmatter version before saving.
+**Версия +patch** explicitly updates the version in the current draft; it does
+not save automatically. Choose an appropriate minor/major version manually for
+changes that require it. If the server rejects a stale version or etag, the
+local buffers remain available. Reloading, reverting or closing a modified file
+asks before discarding edits. Leaving the editor also warns about drafts in
+other open tasks.
+
+The admin-only AI chat is docked on the right. Hide/reopen or resize it without
+losing its input or session; **Диалоги** opens history. A message captures the
+currently selected task when sent, and **Остановить** interrupts a streamed
+reply. The task context is the saved server content. Review task proposals in
+the editor, then validate and explicitly save the candidate. Settings proposals
+open the normal Settings review flow. The standalone AI page remains available.
+
+On narrow screens, **Файлы** opens the explorer and selecting a file returns to
+the editor. The chat opens as a side overlay. Mentors can browse the files in
+read-only mode. Same-user re-login after session expiry preserves in-memory
+editor drafts; refreshing/closing the browser tab still requires dealing with
+unsaved changes. Persistent draft recovery is a later roadmap stage.
+
+This first editor stage handles the three files belonging to existing tasks.
+Full YAML editing and file creation/rename/move are tracked in the next roadmap
+stages (`ego-trainer-1f9.2` and `ego-trainer-1f9.3`).
+
+---
+
+## 10. Reference
 
 - **ADR-0016**: Content repository design decisions (`docs/adr/0016-tasks-content-repository.md`)
 - **ADR-0001 D3**: SemVer policy for tasks

@@ -9,6 +9,7 @@
   "devDependencies": {
     "esbuild": "^0.28.1",
     "esbuild-svelte": "^0.9.5",
+    "monaco-editor": "0.52.2",
     "svelte": "^5.56.6"
   }
 }

@@ -39,7 +39,11 @@ mounting, settings behavior, backups and pilot limitations.
 - Create administrator accounts with the server CLI; manage users and review
   student progress in the admin console.
 - Mount a local task catalog into the server. The catalog remains file-based;
-  Task Studio validates and saves explicit edits to the mounted files.
+  The Monaco workspace provides a searchable task-file tree, multi-file tabs,
+  per-task drafts and explicit validation/save to the mounted files. See
+  [the authoring workflow](docs/TASK_AUTHORING.md#9-browser-editor-and-docked-ai-chat).
+- Work alongside the docked admin AI chat while editing tasks. The chat retains
+  input/history when hidden and captures the active task when sending a message.
 - Change operational settings in the admin console when they are not locked by
   deployment environment variables.
 - Connect an OpenAI-compatible chat-completions provider. The admin AI can

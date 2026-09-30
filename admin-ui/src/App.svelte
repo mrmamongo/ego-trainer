@@ -4,10 +4,10 @@
   import { getSettings, type SettingsSnapshot, type SettingsDraft, type TaskDraft } from './consoleApi';
   import Login from './components/Login.svelte'; import Overview from './components/Overview.svelte';
   import StudentList from './components/StudentList.svelte'; import StudentDetail from './components/StudentDetail.svelte';
-  import Catalog from './components/Catalog.svelte'; import TaskStudio from './components/TaskStudio.svelte';
+  import StudioWorkspace from './components/StudioWorkspace.svelte';
   import Settings from './components/Settings.svelte'; import Assistant from './components/Assistant.svelte';
   type View = 'overview' | 'students' | 'catalog' | 'settings' | 'assistant';
-  const titles: Record<View, string> = { overview: 'Обзор сервиса', students: 'Пользователи', catalog: 'Каталог задач', settings: 'Настройки сервиса', assistant: 'AI-помощник' };
+  const titles: Record<View, string> = { overview: 'Обзор сервиса', students: 'Пользователи', catalog: 'Редактор задач', settings: 'Настройки сервиса', assistant: 'AI-помощник' };
   let view = $state<View>((Object.keys(titles).includes(location.hash.slice(1)) ? location.hash.slice(1) : 'overview') as View);
   let loggedIn = $state(false); let sessionSeen = $state(false); let checking = $state(true);
   let userRole = $state(''); let username = $state(''); let userId = $state(''); let authError = $state('');
@@ -29,13 +29,14 @@
   function handleLogin(data: AuthResponse) { if (data.role !== 'student') setToken(data.access_token); accept(data); }
   function navTo(next: View): boolean {
     if (workBusy) return false;
+    if (next === view) return true;
     if (dirty && !confirm('Есть несохранённые изменения. Перейти и отбросить их?')) return false;
     dirty = false; view = next; selectedStudent = null; selectedTask = null; settingsDraft = null; taskDraft = null;
     history.replaceState(null, '', '#' + next); return true;
   }
-  function logout() { if (!navTo('overview')) return; setToken(null); loggedIn = false; sessionSeen = false; userRole = ''; username = ''; userId = ''; }
+  function logout() { if (workBusy || (dirty && !confirm('Есть несохранённые изменения. Выйти и отбросить их?'))) return; dirty = false; selectedTask = null; selectedStudent = null; taskDraft = null; settingsDraft = null; view = 'overview'; history.replaceState(null, '', '#overview'); setToken(null); loggedIn = false; sessionSeen = false; userRole = ''; username = ''; userId = ''; }
   function reviewSettings(draft: SettingsDraft) { if (navTo('settings')) settingsDraft = draft; }
-  function reviewTask(draft: TaskDraft) { if (navTo('catalog')) { selectedTask = { id: draft.task_id, task_id: draft.task_id }; taskDraft = draft; } }
+  function reviewTask(draft: TaskDraft) { if (view === 'catalog' || navTo('catalog')) { selectedTask = { id: draft.task_id, task_id: draft.task_id }; taskDraft = draft; } }
   function sessionExpired() { if (loggedIn) { loggedIn = false; authError = 'Сессия истекла. Войди снова — открытый черновик сохранён в этой вкладке.'; } }
   onMount(() => {
     void restoreSession();
@@ -48,7 +49,7 @@
 
 {#if checking}<div class="boot">Проверяю сессию…</div>{:else if !loggedIn}{#if authError}<p class="auth-error" role="alert">{authError}</p>{/if}<Login onLogin={handleLogin} />{/if}
 {#if sessionSeen}
-  <main class="shell" hidden={!loggedIn}>
+  <main class="shell" class:editor-mode={view === 'catalog'} hidden={!loggedIn}>
     <aside class="sidebar"><div class="brand"><span class="logo">e</span><div><strong>{serviceName}</strong><small>Панель управления</small></div></div>
       <p class="nav-caption">Рабочее пространство</p><nav aria-label="Навигация админки">
         <button class:active={view === 'overview'} disabled={workBusy} onclick={() => navTo('overview')} aria-current={view === 'overview' ? 'page' : undefined}><span>◫</span> Обзор</button>
@@ -58,11 +59,11 @@
       </nav>
       <div class="account"><strong>{username}</strong><small>{isAdmin ? 'Администратор' : 'Наставник'}{version ? ` · v${version}` : ''}</small><button disabled={workBusy} onclick={logout}>Выйти из аккаунта</button></div>
     </aside>
-    <section class="workspace"><header class="page-header"><div><p class="eyebrow">{serviceName}</p><h1>{selectedTask ? 'Редактор задачи' : selectedStudent ? `Прогресс: ${selectedStudent.username}` : titles[view]}</h1></div><div class="header-status">{#if dirty}<span class="unsaved">● Несохранённые изменения</span>{:else}<span class="online">●</span> Сервис доступен{/if}</div></header>
-      <div class="page-body">
+    <section class="workspace" class:editor-mode={view === 'catalog'}><header class="page-header"><div><p class="eyebrow">{serviceName}</p><h1>{selectedTask ? `Редактор · ${selectedTask.task_id}` : selectedStudent ? `Прогресс: ${selectedStudent.username}` : titles[view]}</h1></div><div class="header-status">{#if dirty}<span class="unsaved">● Несохранённые изменения</span>{:else}<span class="online">●</span> Сервис доступен{/if}</div></header>
+      <div class="page-body" class:editor-page={view === 'catalog'}>
         {#if view === 'overview'}<Overview />
         {:else if view === 'students'}{#if selectedStudent}<StudentDetail studentId={selectedStudent.id} username={selectedStudent.username} onBack={() => { selectedStudent = null; }} />{:else}<StudentList {userRole} onSelect={(id, name) => { selectedStudent = { id, username: name }; }} />{/if}
-        {:else if view === 'catalog'}{#if selectedTask}<TaskStudio taskId={selectedTask.id} taskLabel={selectedTask.task_id} role={userRole} draft={taskDraft} onBusyChange={(value) => { workBusy = value; }} onDirtyChange={(value) => { dirty = value; }} onBack={() => { dirty = false; selectedTask = null; taskDraft = null; }} />{:else}<Catalog onSelectTask={(task) => { selectedTask = task; }} />{/if}
+        {:else if view === 'catalog'}<StudioWorkspace role={userRole} initialTaskId={taskDraft?.task_id || ''} draft={taskDraft} onSettings={() => navTo('settings')} onReviewSettings={reviewSettings} onBusyChange={(value) => { workBusy = value; }} onDirtyChange={(value) => { dirty = value; }} onActiveTask={(id, label) => { selectedTask = id ? { id, task_id: label } : null; }} />
         {:else if view === 'settings' && isAdmin}<Settings draft={settingsDraft} onBusyChange={(value) => { workBusy = value; }} onDirtyChange={(value) => { dirty = value; }} onSaved={saved} />
         {:else if view === 'assistant' && isAdmin}<Assistant onSettings={() => navTo('settings')} onReviewSettings={reviewSettings} onReviewTask={reviewTask} />{/if}
       </div>
@@ -86,10 +87,20 @@
   nav { display: grid; gap: 5px; } nav button { display: flex; gap: 11px; align-items: center; background: transparent; border-color: transparent; text-align: left; padding: 11px 12px; color: #a6b3c7; }
   nav button span { width: 18px; font-size: 17px; } nav button.active { background: #2c3b52; color: #d4e5ff; border-color: #405677; } nav .nav-caption { margin-top: 25px; }
   .account { margin-top: auto; display: grid; gap: 7px; padding: 18px 8px 0; border-top: 1px solid #303946; } .account small { color: #8e9aaa; } .account button { margin-top: 6px; font-size: 11px; }
-  .workspace { min-width: 0; } .page-header { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 22px 32px; border-bottom: 1px solid #303946; }
+  .workspace { min-width: 0; }
+  .shell.editor-mode { height: 100dvh; overflow: hidden; grid-template-columns: 184px minmax(0, 1fr); }
+  .workspace.editor-mode { min-height: 0; display: flex; flex-direction: column; }
+  .workspace.editor-mode .page-header { flex-shrink: 0; padding: 14px 20px; }
+  .page-body.editor-page { flex: 1; min-height: 0; width: 100%; max-width: none; margin: 0; padding: 0; overflow: hidden; }
+  .shell.editor-mode .brand { padding-left: 0; gap: 8px; }
+  .shell.editor-mode .brand strong { font-size: 13px; }
+  .shell.editor-mode .sidebar { padding-left: 10px; padding-right: 10px; }
+  .shell.editor-mode nav button { font-size: 12px; padding: 10px 8px; gap: 7px; }
+  :global(.monaco-editor textarea.inputarea) { border: 0; padding: 0; outline: none; }  .page-header { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 22px 32px; border-bottom: 1px solid #303946; }
   .eyebrow { color: #8e9aaa; font-size: 11px; margin: 0 0 5px; } h1 { font-size: 22px; letter-spacing: -.025em; margin: 0; font-weight: 600; }
   .page-body { padding: 26px 32px; max-width: 1600px; margin: 0 auto; } .header-status { font-size: 11px; color: #8e9aaa; white-space: nowrap; } .online { color: #76c4aa; padding-right: 6px; } .unsaved { color: #e8b86e; }
   .boot { text-align: center; padding: 20vh 20px; color: #a6b3c7; } .auth-error { color: #ffb4bb; text-align: center; margin: 25px 20px 0; }
   @media (max-width: 1000px) { .shell { grid-template-columns: 190px minmax(0, 1fr); } .page-body, .page-header { padding: 20px; } .header-status { display: none; } }
   @media (max-width: 700px) { .shell { display: block; } .sidebar { height: auto; position: static; padding: 14px; border-right: 0; border-bottom: 1px solid #303946; } .brand { padding-bottom: 12px; } nav { display: flex; flex-wrap: wrap; gap: 4px; } nav button { padding: 8px; font-size: 12px; } .nav-caption, nav .nav-caption, .account small { display: none; } .account { margin-top: 10px; display: flex; justify-content: space-between; align-items: center; padding-top: 10px; } .account button { margin-top: 0; } .page-header { padding: 18px 14px; } .page-body { padding: 14px; } h1 { font-size: 20px; } }
+  @media (max-width: 700px) { .shell.editor-mode { display: flex; flex-direction: column; min-height: 100dvh; } .shell.editor-mode .sidebar { height: auto; flex-shrink: 0; } .workspace.editor-mode { flex: 1; } .workspace.editor-mode .page-header { padding: 10px 14px; } .workspace.editor-mode .page-header h1 { font-size: 16px; } .shell.editor-mode .brand { padding-bottom: 6px; } .shell.editor-mode .account { margin-top: 6px; padding-top: 6px; } }
 </style>

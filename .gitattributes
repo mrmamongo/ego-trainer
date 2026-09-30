@@ -1,0 +1,4 @@
+# Preserve whitespace inside generated JavaScript literals and fold built assets in reviews.
+ego_server/static/admin/bundle.js -text linguist-generated=true whitespace=-blank-at-eol
+ego_server/static/admin/workers/*.js -text linguist-generated=true whitespace=-blank-at-eol
+ego_server/static/admin/bundle.css -text linguist-generated=true
