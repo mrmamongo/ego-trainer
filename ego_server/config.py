@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     ai_model: str = ""
     ai_api_key: str = Field(default="", repr=False)
     settings_encryption_key: str = Field(default="", repr=False)
+    mcp_enabled: bool = False
+    mcp_forgejo_client_id: str = ""
+    mcp_forgejo_client_secret: str = Field(default="", repr=False)
+    mcp_signing_key: str = Field(default="", repr=False)
+    mcp_storage_path: Path = Path(".ego-server/mcp-auth")
 
 
 _INSECURE_JWT_SECRETS = {
@@ -49,6 +54,17 @@ def validate_runtime_settings(config: Settings) -> None:
     """Reject development-only settings when running in production mode."""
     if not config.local_auth_enabled and not config.forgejo_enabled:
         raise RuntimeError("Enable Forgejo before disabling local authentication")
+    if config.mcp_enabled:
+        if not config.forgejo_enabled:
+            raise RuntimeError("MCP requires the existing Forgejo account integration")
+        if not config.mcp_forgejo_client_id or not config.mcp_forgejo_client_secret:
+            raise RuntimeError("MCP requires its own Forgejo OAuth application credentials")
+        if config.mcp_forgejo_client_id == config.forgejo_client_id:
+            raise RuntimeError("MCP and browser login must use separate Forgejo OAuth applications")
+        if len(config.mcp_signing_key) < 43:
+            raise RuntimeError("EGO_MCP_SIGNING_KEY must contain at least 43 random characters")
+        if config.mcp_signing_key in {config.jwt_secret, config.mcp_forgejo_client_secret}:
+            raise RuntimeError("MCP signing key must be separate from existing secrets")
     if config.forgejo_enabled:
         from ego_server.forgejo import _base_url
 

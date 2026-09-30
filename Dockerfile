@@ -31,7 +31,7 @@ COPY ego_tui/ ego_tui/
 
 # Build the application and all runtime dependencies as wheels. Development
 # tools and canonical task solutions are deliberately absent from the image.
-RUN pip wheel --wheel-dir /wheels ".[server]"
+RUN pip wheel --wheel-dir /wheels ".[server,mcp]"
 
 FROM python:3.11-slim AS runtime
 
@@ -52,7 +52,7 @@ RUN groupadd --gid 10001 ego \
     && chown -R ego:ego /var/lib/ego /content
 
 COPY --from=builder /wheels /wheels
-RUN pip install --no-index --find-links=/wheels "ego-trainer[server]" \
+RUN pip install --no-index --find-links=/wheels "ego-trainer[server,mcp]" \
     && rm -rf /wheels
 
 # Expose the FastAPI port.
