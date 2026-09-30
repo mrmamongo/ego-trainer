@@ -107,6 +107,7 @@ class CheckResponse(BaseModel):
     solution_hash: str
     results: list[TestResultDTO] = Field(default_factory=list)
     log: str  # human-readable summary
+    understanding: dict | None = None  # Separate from deterministic test results.
 
 
 class Hint(BaseModel):

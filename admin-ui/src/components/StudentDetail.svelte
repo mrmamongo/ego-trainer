@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getStudentProgress, type ProgressRow } from '../api';
+	import AIStudent from './AIStudent.svelte';
 
-	let { studentId, username, onBack }: { studentId: string; username: string; onBack: () => void } = $props();
+	let { studentId, username, userRole = '', onBack }: { studentId: string; username: string; userRole?: string; onBack: () => void } = $props();
 
 	let progress = $state<ProgressRow[]>([]);
 	let loading = $state(true);
@@ -49,6 +50,7 @@
 </script>
 
 <div class="detail">
+	{#if userRole === 'admin'}<AIStudent {studentId} />{/if}
 	<div class="detail-header">
 		<button class="back" type="button" onclick={onBack}>&larr; Back to students</button>
 		<h2>Progress: {username}</h2>

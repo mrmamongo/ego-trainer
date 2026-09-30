@@ -22,6 +22,7 @@ import { decideSession } from './sessionDecision';
 import { EgoStatusBar } from './statusBar';
 import { runOfflineCheck } from './offlineCheck';
 import { switchMode } from './modeSwitch';
+import { AssistantPanel } from './assistantPanel';
 import { setupPythonEnv } from './pythonSetup';
 
 const SECRET_KEY = 'ego.token';
@@ -31,6 +32,7 @@ let treeProvider: EgoTaskTreeProvider;
 let statusBar: EgoStatusBar;
 
 async function recreateApi(context: vscode.ExtensionContext): Promise<void> {
+    AssistantPanel.close();
     const settingsUrl = vscode.workspace
         .getConfiguration('ego')
         .get<string>('serverUrl', 'http://localhost:8000');
@@ -38,6 +40,13 @@ async function recreateApi(context: vscode.ExtensionContext): Promise<void> {
     const session = decideSession(workspaceConfig, await context.secrets.get(SECRET_KEY));
     api = new EgoApi(settingsUrl, session.apiToken);
     treeProvider.updateApi(api);
+    void refreshAssistantAccess();
+}
+
+async function refreshAssistantAccess(): Promise<void> {
+    const offline = (await readEgoConfig())?.mode === 'offline';
+    const access = offline ? null : await api.getAIAccount().catch(() => null);
+    await vscode.commands.executeCommand('setContext', 'ego.aiEnabled', !!access?.enabled);
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
@@ -51,6 +60,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     // Svelte webview bundles live under out/webview/ (ADR-0015).
     TestResultsPanel.configure(context.extensionUri);
+    AssistantPanel.configure(context.extensionUri, () => api);
 
     api = new EgoApi(serverUrl, session.apiToken);
 
@@ -99,6 +109,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // === Commands ===
 
     context.subscriptions.push(
+        vscode.commands.registerCommand('ego.assistant', (arg?: TaskMeta | TaskItem | string) =>
+            withReady(() => cmdAssistant(resolveTaskId(arg)))
+        ),
         // Setup / auth — no .ego/ required.
         vscode.commands.registerCommand('ego.login', () => cmdLogin(context)),
         vscode.commands.registerCommand('ego.setServer', () => cmdSetServer(context)),
@@ -119,6 +132,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (mode.mode === 'server') {
                 await runServerInit(context, deps);
                 statusBar.setMode('server');
+            await refreshAssistantAccess();
             } else {
                 await runOfflineInit(context, deps);
                 statusBar.setMode('offline');
@@ -282,12 +296,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 }
 
 export function deactivate(): void {
+    AssistantPanel.close();
     // Cleanup.
 }
 
 // === Command implementations ===
 
 async function cmdLogin(context: vscode.ExtensionContext): Promise<void> {
+    AssistantPanel.close();
     try {
         const response = await forgejoLogin(api);
         if (response !== null) {
@@ -298,6 +314,7 @@ async function cmdLogin(context: vscode.ExtensionContext): Promise<void> {
             if (existing) await writeEgoConfig({ ...existing, token: '', student_id: response.user_id, student_username: response.username, role: response.role });
             await vscode.commands.executeCommand('setContext', 'ego.loggedIn', true);
             statusBar.setMode('server');
+            await refreshAssistantAccess();
             treeProvider.refresh();
             vscode.window.showInformationMessage(`Ego: Logged in as ${response.username} (${response.role})`);
             return;
@@ -328,6 +345,7 @@ async function cmdLogin(context: vscode.ExtensionContext): Promise<void> {
         api.setToken(resp.access_token);
         vscode.commands.executeCommand('setContext', 'ego.loggedIn', true);
         statusBar.setMode('server');
+        await refreshAssistantAccess();
         treeProvider.refresh();
         vscode.window.showInformationMessage(`Ego: Logged in as ${username} (student)`);
     } catch (e) {
@@ -338,6 +356,7 @@ async function cmdLogin(context: vscode.ExtensionContext): Promise<void> {
             api.setToken(resp.access_token);
             vscode.commands.executeCommand('setContext', 'ego.loggedIn', true);
             statusBar.setMode('server');
+            await refreshAssistantAccess();
             treeProvider.refresh();
             vscode.window.showInformationMessage(`Ego: Logged in as ${username}`);
         } catch (e2) {
@@ -379,6 +398,7 @@ async function cmdSetupPython(): Promise<void> {
 }
 
 async function cmdSetServer(context: vscode.ExtensionContext): Promise<void> {
+    AssistantPanel.close();
     const url = await vscode.window.showInputBox({
         prompt: 'Server URL',
         value: vscode.workspace.getConfiguration('ego').get('serverUrl', 'http://localhost:8000'),
@@ -439,6 +459,9 @@ async function runCheckOnCode(
             result = await api.check(taskId, code);
         }
         showCheckResult(result, taskId);
+        if (!offline && result.understanding && result.understanding.status !== 'confirmed') {
+            await AssistantPanel.show(taskId, code, result.understanding.submission_id);
+        }
         statusBar.setCheckResult(
             taskId,
             result.status,
@@ -452,6 +475,31 @@ async function runCheckOnCode(
     } catch (e) {
         statusBar.setError((e as Error).message);
         vscode.window.showErrorMessage(`Ego: Check failed — ${(e as Error).message}`);
+    }
+}
+
+/** Open the tutor for the selected task and keep its code context current. */
+async function cmdAssistant(taskId?: string): Promise<void> {
+    try {
+        if ((await readEgoConfig())?.mode === 'offline') {
+            throw new Error('Ассистент доступен при подключении к серверу.');
+        }
+        const editor = vscode.window.activeTextEditor;
+        if (!taskId) {
+            const match = editor?.document.fileName.match(/task_([a-z0-9_]+)\.py$/i);
+            taskId = match?.[1].replace(/_/g, '.').toUpperCase();
+        }
+        if (!taskId) throw new Error('Открой файл задания или выбери задание в дереве.');
+        const expected = `task_${taskId.replace(/\./g, '_').toLowerCase()}.py`;
+        const id = taskId;
+        const getCode = async () => {
+            const current = vscode.window.activeTextEditor;
+            return current?.document.uri.path.split('/').pop()?.toLowerCase() === expected
+                ? current.document.getText() : await readTaskPy(id) || '';
+        };
+        await AssistantPanel.show(taskId, await getCode(), undefined, getCode);
+    } catch (e) {
+        vscode.window.showErrorMessage(`Ego: ${(e as Error).message}`);
     }
 }
 
@@ -615,6 +663,7 @@ async function cmdSwitchMode(context: vscode.ExtensionContext): Promise<void> {
         setApi: (a) => {
             api = a;
             treeProvider.updateApi(api);
+            void refreshAssistantAccess();
         },
         getToken: async () => context.secrets.get(SECRET_KEY),
         refreshTree: () => treeProvider.refresh(),
@@ -630,6 +679,7 @@ async function cmdSwitchMode(context: vscode.ExtensionContext): Promise<void> {
                 refreshTree: () => treeProvider.refresh(),
             });
             statusBar.setMode('server');
+            await refreshAssistantAccess();
         },
     });
 }

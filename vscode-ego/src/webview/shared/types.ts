@@ -14,7 +14,8 @@ export interface CheckResult {
 	total_tests: number;
 	solution_hash: string;
 	results: TestResultDTO[];
-	log: string;
+    log: string;
+    understanding?: { submission_id: string; status: string } | null;
 }
 
 export type EgoMode = 'server' | 'offline';
@@ -76,4 +77,5 @@ export interface TaskViewData {
 	hints: TaskHint[];
 	history: TaskRunSummary[];
 	mode: EgoMode;
+    ai_available?: boolean;
 }

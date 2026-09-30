@@ -1,5 +1,9 @@
 /** postMessage wrapper for VSCode webview <-> extension host */
 export type ExtMessage =
+	| { type: 'assistant.refresh' }
+	| { type: 'assistant.start'; mode: 'hint' | 'explain' | 'defend' }
+	| { type: 'assistant.send'; text: string }
+	| { type: 'taskView.assistant' }
 	| { type: 'setResult'; payload: import('./types').CheckResult }
 	| { type: 'ready' }
 	| { type: 'welcome.connect' }
@@ -16,6 +20,7 @@ export type ExtMessage =
 	| { type: 'taskView.refresh' };
 
 export type HostMessage =
+	| { type: 'assistant.data'; payload: import('../../aiTypes').AssistantData }
 	| { type: 'setResult'; payload: import('./types').CheckResult }
 	| { type: 'dashboard.setData'; payload: import('./types').DashboardData }
 	| { type: 'taskView.setData'; payload: import('./types').TaskViewData }

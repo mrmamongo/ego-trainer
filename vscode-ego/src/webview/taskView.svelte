@@ -60,6 +60,7 @@
 				{/if}
 			</div>
 			{#if data.version}
+				{#if data.ai_available}<button class="btn" onclick={() => postToHost({ type: 'taskView.assistant' })}>Учебный ассистент</button>{/if}
 				<p class="meta">v{data.version}</p>
 			{/if}
 		</header>

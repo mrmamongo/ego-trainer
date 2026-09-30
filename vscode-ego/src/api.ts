@@ -1,3 +1,4 @@
+import type { AIAccount, AISession, AISubmission } from './aiTypes';
 /** API client for ego-server (FastAPI).
  *
  * All HTTP calls go through this module. Token is stored in VSCode
@@ -57,6 +58,7 @@ export interface CheckResponse {
     solution_hash: string;
     results: TestResultDTO[];
     log: string;
+    understanding?: { submission_id: string; status: string } | null;
 }
 
 export interface Hint {
@@ -123,7 +125,7 @@ export class EgoApi {
             method,
             headers: this.headers(),
             body: body ? JSON.stringify(body) : undefined,
-            signal: path.startsWith('/auth/') ? AbortSignal.timeout(15000) : undefined,
+            signal: path === '/ai/me' ? AbortSignal.timeout(10000) : path.startsWith('/ai/') ? AbortSignal.timeout(250000) : path.startsWith('/auth/') ? AbortSignal.timeout(15000) : undefined,
         });
 
         if (!resp.ok) {
@@ -131,7 +133,7 @@ export class EgoApi {
             const message = resp.status === 401
                 ? 'Authentication required. Run "Ego: Login" first.'
                 : resp.status === 403
-                  ? 'Forbidden. Your role does not allow this action.'
+                  ? data.detail || 'Forbidden. Your role does not allow this action.'
                   : data.detail || (resp.status === 404 ? 'Not found' : `HTTP ${resp.status}`);
             throw new EgoApiError(message, resp.status, path);
         }
@@ -218,6 +220,26 @@ export class EgoApi {
 
     async getProgress(studentId: string): Promise<ProgressRow[]> {
         return this.request<ProgressRow[]>('GET', `/progress/${studentId}`);
+    }
+
+    async getAIAccount(): Promise<AIAccount> {
+        return this.request('GET', '/ai/me');
+    }
+
+    async getAISubmissions(): Promise<AISubmission[]> {
+        return this.request('GET', '/ai/submissions');
+    }
+
+    async createAISession(body: {
+        task_id: string; mode: AISession['mode']; student_code: string; submission_id?: string;
+    }): Promise<AISession> {
+        return this.request('POST', '/ai/sessions', body);
+    }
+
+    async sendAIMessage(sessionId: string, text: string, requestId: string, studentCode?: string): Promise<AISession> {
+        return this.request('POST', `/ai/sessions/${encodeURIComponent(sessionId)}/messages`, {
+            text, request_id: requestId, student_code: studentCode,
+        });
     }
 
     // === Health ===

@@ -32,6 +32,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
     to existing tables).
     """
     conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+    conn.executescript(SCHEMA_PATH.with_name("ai_schema.sql").read_text(encoding="utf-8"))
     _migrate_add_columns(conn)
     conn.commit()
 

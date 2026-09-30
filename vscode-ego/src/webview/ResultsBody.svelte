@@ -79,6 +79,10 @@
 		</div>
 	</div>
 
+	{#if result.understanding}
+        <p>Тесты пройдены. {result.understanding.status === 'confirmed'
+            ? 'Понимание решения подтверждено.' : 'Следующий этап — защита решения в ассистенте.'}</p>
+    {/if}
 	{#if result.total_tests === 0}
 		<div class="no-tests">No tests available for this task.</div>
 	{:else}

@@ -74,6 +74,12 @@ async def check_solution(body: CheckRequest, db: DbDep, user: CurrentUser) -> Ch
     now = datetime.now(timezone.utc).isoformat()
     _store_progress(db, student_id, body.task_id, meta["version"], result, now)
 
+    from ego_server.ai import record_submission
+
+    understanding = record_submission(
+        db, student_id, body.task_id, meta["version"], result, body.student_code, task
+    )
+
     # 5. Build response.
     log = format_check_result(result)
     return CheckResponse(
@@ -94,6 +100,7 @@ async def check_solution(body: CheckRequest, db: DbDep, user: CurrentUser) -> Ch
             for tr in result.results
         ],
         log=log,
+        understanding=understanding,
     )
 
 

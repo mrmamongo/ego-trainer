@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from ego_server import __version__
 from ego_server.config import settings, validate_runtime_settings
 from ego_server.db import init_db
+from ego_server.routers import ai as ai_router
 from ego_server.routers import admin as admin_router
 from ego_server.routers import (
     admin_assistant,
@@ -56,6 +57,8 @@ app.include_router(forgejo_auth.router, prefix="/auth", tags=["auth"])
 app.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
 app.include_router(progress.router, prefix="/progress", tags=["progress"])
 app.include_router(check.router, prefix="/check", tags=["check"])
+app.include_router(ai_router.router, prefix="/ai", tags=["ai"])
+app.include_router(ai_router.admin_router, prefix="/admin/ai", tags=["ai-admin"])
 app.include_router(admin_router.router, prefix="/admin", tags=["admin"])
 app.include_router(admin_settings.router, prefix="/admin", tags=["admin-settings"])
 app.include_router(admin_assistant.router, prefix="/admin", tags=["admin-assistant"])

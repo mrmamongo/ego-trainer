@@ -29,6 +29,7 @@ export interface TaskViewData {
     hints: TaskViewHint[];
     history: TaskRunSummary[];
     mode: 'server' | 'offline';
+    ai_available?: boolean;
 }
 
 export interface TaskViewDeps {
@@ -168,6 +169,9 @@ export class TaskViewPanel {
             case 'taskView.refresh':
                 await TaskViewPanel.pushData();
                 break;
+            case 'taskView.assistant':
+                if (cur) await vscode.commands.executeCommand('ego.assistant', cur.id);
+                break;
             default:
                 break;
         }
@@ -208,6 +212,7 @@ async function loadTaskViewData(api: EgoApi, ref: TaskRef): Promise<TaskViewData
     if (mode === 'server') {
         try {
             const full = await api.getTask(ref.id);
+            const access = await api.getAIAccount().catch(() => null);
             let hints: TaskViewHint[] = [];
             try {
                 const resp = await api.getHints(ref.id, 3);
@@ -228,6 +233,7 @@ async function loadTaskViewData(api: EgoApi, ref: TaskRef): Promise<TaskViewData
                 hints,
                 history,
                 mode: 'server',
+                ai_available: access?.available || false,
             };
         } catch {
             // fall through to local files

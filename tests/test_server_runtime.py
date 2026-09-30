@@ -52,6 +52,6 @@ def test_admin_ui_is_only_at_root(
     with TestClient(app, base_url="http://testserver") as client:
         root = client.get("/")
         assert root.status_code == 200
-        assert "Ego Admin" in root.text
+        assert "/static/admin/bundle.js" in root.text
 
         assert client.get("/admin", follow_redirects=False).status_code == 404

@@ -18,6 +18,11 @@
   "contributes": {
     "commands": [
       {
+        "command": "ego.assistant",
+        "title": "Ego: Учебный ассистент",
+        "category": "Ego"
+      },
+      {
         "command": "ego.login",
         "title": "Ego: Login",
         "category": "Ego"
@@ -141,6 +146,11 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "ego.assistant",
+          "when": "view == egoTaskTree && viewItem == task && ego.aiEnabled && !ego.offline",
+          "group": "1_actions@3"
+        },
         {
           "command": "ego.openTask",
           "when": "view == egoTaskTree && viewItem == task",

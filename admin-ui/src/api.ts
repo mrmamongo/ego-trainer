@@ -289,3 +289,36 @@ export async function saveTaskStudio(
 		body,
 	);
 }
+
+export interface AIAccount {
+    enabled: boolean; defense_required: boolean; available: boolean; reason: string;
+    balance_usd: string; reserved_usd: string; spent_usd: string;
+}
+export interface AIUsage {
+    id: number; purpose: string; model: string; input_tokens: number; output_tokens: number;
+    estimated: boolean; cost_usd: string; outcome: string;
+}
+export interface AISubmission {
+    id: string; task_id: string; version: string; understanding: string;
+    evidence: { stage: string; quote: string }[];
+}
+export interface AIModelConfig {
+    base_url: string; model: string; api_key_set?: boolean; api_key?: string;
+    input_usd_per_million: number | string; output_usd_per_million: number | string;
+    max_output_tokens: number; json_mode: boolean;
+}
+export interface AIConfig {
+    enabled: boolean; main: AIModelConfig; guard: AIModelConfig;
+    timeout_seconds: number; max_context_bytes: number; max_reply_bytes: number; max_turns: number;
+}
+export function getAISettings(): Promise<AIConfig> { return request('GET', '/admin/ai/settings'); }
+export function saveAISettings(config: AIConfig): Promise<AIConfig> { return request('PUT', '/admin/ai/settings', config); }
+export function getAIAccount(id: string): Promise<AIAccount> { return request('GET', `/admin/ai/students/${encodeURIComponent(id)}`); }
+export function updateAIAccess(id: string, enabled: boolean, defense_required: boolean): Promise<AIAccount> {
+    return request('PUT', `/admin/ai/students/${encodeURIComponent(id)}`, { enabled, defense_required });
+}
+export function creditAIAccount(id: string, amount_usd: number, request_id: string): Promise<AIAccount> {
+    return request('POST', `/admin/ai/students/${encodeURIComponent(id)}/credits`, { amount_usd, request_id });
+}
+export function getAIUsage(id: string): Promise<AIUsage[]> { return request('GET', `/admin/ai/students/${encodeURIComponent(id)}/usage`); }
+export function getAISubmissions(id: string): Promise<AISubmission[]> { return request('GET', `/admin/ai/students/${encodeURIComponent(id)}/submissions`); }

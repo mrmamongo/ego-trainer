@@ -5,9 +5,10 @@
   import Login from './components/Login.svelte'; import Overview from './components/Overview.svelte';
   import StudentList from './components/StudentList.svelte'; import StudentDetail from './components/StudentDetail.svelte';
   import StudioWorkspace from './components/StudioWorkspace.svelte';
+  import AISettings from './components/AISettings.svelte';
   import Settings from './components/Settings.svelte'; import Assistant from './components/Assistant.svelte';
-  type View = 'overview' | 'students' | 'catalog' | 'settings' | 'assistant';
-  const titles: Record<View, string> = { overview: 'Обзор сервиса', students: 'Пользователи', catalog: 'Редактор задач', settings: 'Настройки сервиса', assistant: 'AI-помощник' };
+  type View = 'overview' | 'students' | 'catalog' | 'settings' | 'assistant' | 'student-ai';
+  const titles: Record<View, string> = { overview: 'Обзор сервиса', students: 'Пользователи', catalog: 'Редактор задач', settings: 'Настройки сервиса', assistant: 'AI-помощник', 'student-ai': 'Студенческий ассистент' };
   let view = $state<View>((Object.keys(titles).includes(location.hash.slice(1)) ? location.hash.slice(1) : 'overview') as View);
   let loggedIn = $state(false); let sessionSeen = $state(false); let checking = $state(true);
   let userRole = $state(''); let username = $state(''); let userId = $state(''); let authError = $state('');
@@ -22,7 +23,7 @@
     if (data.role === 'student') { setToken(null); authError = 'Админка доступна наставникам и администраторам.'; return; }
     if (userId && userId !== data.user_id) { selectedTask = null; selectedStudent = null; taskDraft = null; settingsDraft = null; dirty = false; view = 'overview'; }
     userId = data.user_id; username = data.username; userRole = data.role; authError = ''; loggedIn = true; sessionSeen = true;
-    if (userRole !== 'admin' && (view === 'settings' || view === 'assistant')) view = 'overview';
+    if (userRole !== 'admin' && (view === 'settings' || view === 'assistant' || view === 'student-ai')) view = 'overview';
     void brand();
   }
   async function restoreSession() { try { if (getToken()) accept(await me()); } catch { setToken(null); } finally { checking = false; } }
@@ -55,15 +56,16 @@
         <button class:active={view === 'overview'} disabled={workBusy} onclick={() => navTo('overview')} aria-current={view === 'overview' ? 'page' : undefined}><span>◫</span> Обзор</button>
         <button class:active={view === 'students'} disabled={workBusy} onclick={() => navTo('students')} aria-current={view === 'students' ? 'page' : undefined}><span>♙</span> Пользователи</button>
         <button class:active={view === 'catalog'} disabled={workBusy} onclick={() => navTo('catalog')} aria-current={view === 'catalog' ? 'page' : undefined}><span>▤</span> Каталог задач</button>
-        {#if isAdmin}<p class="nav-caption">Администрирование</p><button class:active={view === 'assistant'} disabled={workBusy} onclick={() => navTo('assistant')} aria-current={view === 'assistant' ? 'page' : undefined}><span>✦</span> AI-помощник</button><button class:active={view === 'settings'} disabled={workBusy} onclick={() => navTo('settings')} aria-current={view === 'settings' ? 'page' : undefined}><span>⚙</span> Настройки</button>{/if}
+        {#if isAdmin}<button class:active={view === 'student-ai'} disabled={workBusy} onclick={() => navTo('student-ai')} aria-current={view === 'student-ai' ? 'page' : undefined}><span>✧</span> Студенческий AI</button><p class="nav-caption">Администрирование</p><button class:active={view === 'assistant'} disabled={workBusy} onclick={() => navTo('assistant')} aria-current={view === 'assistant' ? 'page' : undefined}><span>✦</span> AI-помощник</button><button class:active={view === 'settings'} disabled={workBusy} onclick={() => navTo('settings')} aria-current={view === 'settings' ? 'page' : undefined}><span>⚙</span> Настройки</button>{/if}
       </nav>
       <div class="account"><strong>{username}</strong><small>{isAdmin ? 'Администратор' : 'Наставник'}{version ? ` · v${version}` : ''}</small><button disabled={workBusy} onclick={logout}>Выйти из аккаунта</button></div>
     </aside>
     <section class="workspace" class:editor-mode={view === 'catalog'}><header class="page-header"><div><p class="eyebrow">{serviceName}</p><h1>{selectedTask ? `Редактор · ${selectedTask.task_id}` : selectedStudent ? `Прогресс: ${selectedStudent.username}` : titles[view]}</h1></div><div class="header-status">{#if dirty}<span class="unsaved">● Несохранённые изменения</span>{:else}<span class="online">●</span> Сервис доступен{/if}</div></header>
       <div class="page-body" class:editor-page={view === 'catalog'}>
         {#if view === 'overview'}<Overview />
-        {:else if view === 'students'}{#if selectedStudent}<StudentDetail studentId={selectedStudent.id} username={selectedStudent.username} onBack={() => { selectedStudent = null; }} />{:else}<StudentList {userRole} onSelect={(id, name) => { selectedStudent = { id, username: name }; }} />{/if}
+        {:else if view === 'students'}{#if selectedStudent}<StudentDetail studentId={selectedStudent.id} username={selectedStudent.username} {userRole} onBack={() => { selectedStudent = null; }} />{:else}<StudentList {userRole} onSelect={(id, name) => { selectedStudent = { id, username: name }; }} />{/if}
         {:else if view === 'catalog'}<StudioWorkspace role={userRole} initialTaskId={taskDraft?.task_id || ''} draft={taskDraft} onSettings={() => navTo('settings')} onReviewSettings={reviewSettings} onBusyChange={(value) => { workBusy = value; }} onDirtyChange={(value) => { dirty = value; }} onActiveTask={(id, label) => { selectedTask = id ? { id, task_id: label } : null; }} />
+        {:else if view === 'student-ai' && isAdmin}<AISettings onBusyChange={(value) => { workBusy = value; }} onDirtyChange={(value) => { dirty = value; }} />
         {:else if view === 'settings' && isAdmin}<Settings draft={settingsDraft} onBusyChange={(value) => { workBusy = value; }} onDirtyChange={(value) => { dirty = value; }} onSaved={saved} />
         {:else if view === 'assistant' && isAdmin}<Assistant onSettings={() => navTo('settings')} onReviewSettings={reviewSettings} onReviewTask={reviewTask} />{/if}
       </div>
