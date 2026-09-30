@@ -465,3 +465,29 @@ def test_provider_url_rejects_credentials_queries_and_metadata():
     ):
         with pytest.raises(ValidationError):
             ModelSettings(base_url=url)
+
+
+def test_teacher_understanding_read_is_scoped_and_excludes_code_and_billing(env):
+    client, headers, connect = env
+    with connect() as database:
+        database.execute(
+            """INSERT INTO ai_submissions
+            (id,student_id,task_id,version,solution_hash,student_code,statement_md,
+             understanding,evidence_json,created_at) VALUES
+            ('submission','alice','T1','1.0.0','hash',?,'statement','confirmed',?,'now')""",
+            (CODE, json.dumps([{"stage": "mechanism", "quote": "My own explanation"}])),
+        )
+        database.execute("UPDATE students SET role='mentor' WHERE id='root'")
+    endpoint = "/progress/alice/understanding"
+    assert client.get(endpoint).status_code == 401
+    assert client.get(endpoint, headers=headers["bob"]).status_code == 403
+    own = client.get(endpoint, headers=headers["alice"])
+    teacher = client.get(endpoint, headers=headers["root"])
+    assert own.status_code == teacher.status_code == 200
+    assert own.json() == teacher.json()
+    result = teacher.json()[0]
+    assert result["understanding"] == "confirmed"
+    assert result["evidence"][0]["quote"] == "My own explanation"
+    assert "student_code" not in result and "balance_usd" not in result
+    assert client.get("/admin/ai/settings", headers=headers["root"]).status_code == 403
+    assert client.get("/progress/unknown/understanding", headers=headers["root"]).status_code == 404

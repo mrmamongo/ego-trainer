@@ -166,3 +166,13 @@ async def get_progress(
         )
         for r in rows
     ]
+
+
+@router.get("/{student_id}/understanding")
+async def get_understanding(student_id: str, db: DbDep, user: CurrentUser) -> list[dict]:
+    """Teachers can read evidence; students can read only their own results."""
+    if user["role"] not in ("mentor", "admin") and user["sub"] != student_id:
+        raise HTTPException(403, "Requires role: mentor, admin")
+    from ego_server.ai import submission_views
+
+    return submission_views(db, student_id)

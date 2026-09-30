@@ -108,6 +108,7 @@ LLM-проверка является дополнительным ограни�
 - `GET /ai/sessions/{id}`: собственный диалог.
 - `POST /ai/sessions/{id}/messages`: `{text, request_id, student_code?}`; пустой `text` запускает защиту.
 - `GET /ai/submissions`: собственные результаты защиты.
+- `GET /progress/{student_id}/understanding`: результаты и свидетельства для преподавателя или самого студента; доступны также через MCP `get_student_understanding`.
 - `GET|PUT /admin/ai/settings`: конфигурация моделей и тарифов.
 - `GET|PUT /admin/ai/students/{id}`: доступ и обязательность защиты.
 - `POST /admin/ai/students/{id}/credits`: `{amount_usd, request_id}`.

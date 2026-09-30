@@ -91,7 +91,8 @@ http:
          Path(`/admin`) || PathPrefix(`/admin/`) ||
          Path(`/tasks`) || PathPrefix(`/tasks/`) ||
          Path(`/progress`) || PathPrefix(`/progress/`) ||
-         Path(`/check`) || PathPrefix(`/check/`))
+         Path(`/check`) || PathPrefix(`/check/`) ||
+         Path(`/ai`) || PathPrefix(`/ai/`))
       entryPoints: [websecure]
       middlewares: [cogito-jwt]
       service: cogito

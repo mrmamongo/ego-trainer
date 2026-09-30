@@ -1,6 +1,5 @@
 """Student tutoring and admin controls. Identity always comes from the JWT."""
 
-import json
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -52,7 +51,7 @@ async def send_message(session_id: str, body: MessageRequest, db: DbDep, user: C
 
 @router.get("/submissions")
 async def get_submissions(db: DbDep, user: CurrentUser):
-    return _submissions(db, user["sub"])
+    return ai.submission_views(db, user["sub"])
 
 
 @admin_router.get("/students/{student_id}", response_model=AIAccount)
@@ -115,19 +114,4 @@ async def get_usage(student_id: str, db: DbDep):
 @admin_router.get("/students/{student_id}/submissions")
 async def get_student_submissions(student_id: str, db: DbDep):
     ai.account(db, student_id)
-    return _submissions(db, student_id)
-
-
-def _submissions(db, student_id):
-    rows = db.execute(
-        """SELECT id, task_id, version, solution_hash, understanding, evidence_json, created_at
-        FROM ai_submissions WHERE student_id = ? ORDER BY created_at DESC LIMIT 100""",
-        (student_id,),
-    ).fetchall()
-    return [
-        {
-            **{k: row[k] for k in row.keys() if k != "evidence_json"},
-            "evidence": json.loads(row["evidence_json"]),
-        }
-        for row in rows
-    ]
+    return ai.submission_views(db, student_id)

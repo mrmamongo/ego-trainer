@@ -569,3 +569,21 @@ async def send_message(db, student_id: str, session_id: str, body: MessageReques
     finally:
         # Includes cancellation and unexpected exceptions: known costs remain billed.
         _settle(db, student_id, body.request_id, "Запрос прерван", 502)
+
+
+def submission_views(db, student_id):
+    """Evidence for a particular checked solution, excluding code and billing."""
+    if not db.execute("SELECT 1 FROM students WHERE id = ?", (student_id,)).fetchone():
+        raise HTTPException(404, "Student not found")
+    rows = db.execute(
+        """SELECT id, task_id, version, solution_hash, understanding, evidence_json, created_at
+        FROM ai_submissions WHERE student_id = ? ORDER BY created_at DESC LIMIT 100""",
+        (student_id,),
+    ).fetchall()
+    return [
+        {
+            **{k: row[k] for k in row.keys() if k != "evidence_json"},
+            "evidence": json.loads(row["evidence_json"]),
+        }
+        for row in rows
+    ]

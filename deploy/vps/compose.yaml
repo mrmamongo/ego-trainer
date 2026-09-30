@@ -21,6 +21,8 @@ services:
       EGO_FORGEJO_URL: "${EGO_FORGEJO_URL:-https://git.born-in-july.ru}"
       EGO_FORGEJO_CLIENT_ID: "${EGO_FORGEJO_CLIENT_ID:-}"
       EGO_FORGEJO_CLIENT_SECRET: "${EGO_FORGEJO_CLIENT_SECRET:-}"
+      EGO_MCP_ENABLED: "${EGO_MCP_ENABLED:-false}"
+      EGO_MCP_STORAGE_PATH: /var/lib/ego/mcp-auth
       EGO_JWT_SECRET: ${EGO_JWT_SECRET:?Set EGO_JWT_SECRET in the private .env file}
     ports:
       - "127.0.0.1:18081:8000"
