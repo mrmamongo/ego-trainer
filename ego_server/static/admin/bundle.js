@@ -32,6 +32,20 @@
     });
     return { promise, resolve, reject };
   }
+  function to_array(value, n) {
+    if (Array.isArray(value)) {
+      return value;
+    }
+    if (n === void 0 || !(Symbol.iterator in value)) {
+      return Array.from(value);
+    }
+    const array = [];
+    for (const element2 of value) {
+      array.push(element2);
+      if (array.length === n) break;
+    }
+    return array;
+  }
 
   // node_modules/svelte/src/internal/client/constants.js
   var DERIVED = 1 << 1;
@@ -89,6 +103,7 @@
   var EACH_IS_CONTROLLED = 1 << 2;
   var EACH_IS_ANIMATED = 1 << 3;
   var EACH_ITEM_IMMUTABLE = 1 << 4;
+  var PROPS_IS_IMMUTABLE = 1;
   var PROPS_IS_RUNES = 1 << 1;
   var PROPS_IS_UPDATED = 1 << 2;
   var PROPS_IS_BINDABLE = 1 << 3;
@@ -122,10 +137,10 @@ https://svelte.dev/e/await_reactivity_loss`, bold, normal);
       console.warn(`https://svelte.dev/e/await_reactivity_loss`);
     }
   }
-  function await_waterfall(name, location) {
+  function await_waterfall(name, location2) {
     if (dev_fallback_default) {
       console.warn(`%c[svelte] await_waterfall
-%cAn async derived, \`${name}\` (${location}) was not read immediately after it resolved. This often indicates an unnecessary waterfall, which can slow down your app
+%cAn async derived, \`${name}\` (${location2}) was not read immediately after it resolved. This often indicates an unnecessary waterfall, which can slow down your app
 https://svelte.dev/e/await_waterfall`, bold, normal);
     } else {
       console.warn(`https://svelte.dev/e/await_waterfall`);
@@ -149,11 +164,11 @@ https://svelte.dev/e/hydration_attribute_changed`, bold, normal);
       console.warn(`https://svelte.dev/e/hydration_attribute_changed`);
     }
   }
-  function hydration_mismatch(location) {
+  function hydration_mismatch(location2) {
     if (dev_fallback_default) {
       console.warn(
         `%c[svelte] hydration_mismatch
-%c${location ? `Hydration failed because the initial UI does not match what was rendered on the server. The error occurred near ${location}` : "Hydration failed because the initial UI does not match what was rendered on the server"}
+%c${location2 ? `Hydration failed because the initial UI does not match what was rendered on the server. The error occurred near ${location2}` : "Hydration failed because the initial UI does not match what was rendered on the server"}
 https://svelte.dev/e/hydration_mismatch`,
         bold,
         normal
@@ -416,6 +431,17 @@ https://svelte.dev/e/hydration_failed`);
       throw new Error(`https://svelte.dev/e/hydration_failed`);
     }
   }
+  function props_invalid_value(key2) {
+    if (dev_fallback_default) {
+      const error = new Error(`props_invalid_value
+Cannot do \`bind:${key2}={undefined}\` when \`${key2}\` has a fallback value
+https://svelte.dev/e/props_invalid_value`);
+      error.name = "Svelte error";
+      throw error;
+    } else {
+      throw new Error(`https://svelte.dev/e/props_invalid_value`);
+    }
+  }
   function rune_outside_svelte(rune) {
     if (dev_fallback_default) {
       const error = new Error(`rune_outside_svelte
@@ -662,6 +688,16 @@ https://svelte.dev/e/svelte_boundary_reset_onerror`);
 
   // node_modules/svelte/src/internal/client/reactivity/store.js
   var legacy_is_updating_store = false;
+  var is_store_binding = false;
+  function capture_store_binding(fn) {
+    var previous_is_store_binding = is_store_binding;
+    try {
+      is_store_binding = false;
+      return [fn(), is_store_binding];
+    } finally {
+      is_store_binding = previous_is_store_binding;
+    }
+  }
 
   // node_modules/svelte/src/internal/client/dom/elements/misc.js
   function remove_textarea_child(dom) {
@@ -869,7 +905,7 @@ https://svelte.dev/e/svelte_boundary_reset_onerror`);
   }
   var OBSOLETE = /* @__PURE__ */ Symbol("obsolete");
   // @__NO_SIDE_EFFECTS__
-  function async_derived(fn, label, location) {
+  function async_derived(fn, label, location2) {
     let parent = (
       /** @type {Effect | null} */
       active_effect
@@ -958,14 +994,14 @@ https://svelte.dev/e/svelte_boundary_reset_onerror`);
           if ((signal.f & ERROR_VALUE) !== 0) {
             signal.f ^= ERROR_VALUE;
           }
-          if (dev_fallback_default && location !== void 0 && !signal.equals(value)) {
+          if (dev_fallback_default && location2 !== void 0 && !signal.equals(value)) {
             recent_async_deriveds.add(signal);
             setTimeout(() => {
               if (recent_async_deriveds.has(signal) && (effect2.f & DESTROYED) === 0) {
                 await_waterfall(
                   /** @type {string} */
                   signal.label,
-                  location
+                  location2
                 );
                 recent_async_deriveds.delete(signal);
               }
@@ -1298,11 +1334,11 @@ https://svelte.dev/e/svelte_boundary_reset_onerror`);
       var effects = collected_effects = [];
       var render_effects = [];
       var updates = legacy_updates = [];
-      for (const root8 of roots) {
+      for (const root11 of roots) {
         try {
-          this.#traverse(root8, effects, render_effects);
+          this.#traverse(root11, effects, render_effects);
         } catch (e) {
-          reset_all(root8);
+          reset_all(root11);
           if (!this.#is_deferred()) this.discard();
           throw e;
         }
@@ -1376,9 +1412,9 @@ https://svelte.dev/e/svelte_boundary_reset_onerror`);
      * @param {Effect[]} effects
      * @param {Effect[]} render_effects
      */
-    #traverse(root8, effects, render_effects) {
-      root8.f ^= CLEAN;
-      var effect2 = root8.first;
+    #traverse(root11, effects, render_effects) {
+      root11.f ^= CLEAN;
+      var effect2 = root11.first;
       while (effect2 !== null) {
         var flags2 = effect2.f;
         var is_branch = (flags2 & (BRANCH_EFFECT | ROOT_EFFECT)) !== 0;
@@ -1623,8 +1659,8 @@ https://svelte.dev/e/svelte_boundary_reset_onerror`);
           }
           if (batch.#roots.length > 0 && !batch.#decrement_queued) {
             batch.apply();
-            for (var root8 of batch.#roots) {
-              batch.#traverse(root8, [], []);
+            for (var root11 of batch.#roots) {
+              batch.#traverse(root11, [], []);
             }
             batch.#roots = [];
           }
@@ -3142,7 +3178,7 @@ ${component_stack}
     }
     return false;
   }
-  function schedule_possible_effect_self_invalidation(signal, effect2, root8 = true) {
+  function schedule_possible_effect_self_invalidation(signal, effect2, root11 = true) {
     var reactions = signal.reactions;
     if (reactions === null) return;
     if (!async_mode_flag && current_sources !== null && current_sources.has(signal)) {
@@ -3158,7 +3194,7 @@ ${component_stack}
           false
         );
       } else if (effect2 === reaction) {
-        if (root8) {
+        if (root11) {
           set_signal_status(reaction, DIRTY);
         } else if ((reaction.f & CLEAN) !== 0) {
           set_signal_status(reaction, MAYBE_DIRTY);
@@ -4729,6 +4765,9 @@ ${component_stack}
   }
 
   // node_modules/svelte/src/internal/client/dom/blocks/each.js
+  function index(_, i) {
+    return i;
+  }
   function pause_effects(state2, to_destroy, controlled_anchor) {
     var transitions = [];
     var length = to_destroy.length;
@@ -5206,16 +5245,16 @@ ${component_stack}
   function append_styles(anchor, css) {
     effect(() => {
       anchor = active_effect?.parent?.nodes?.start ?? anchor;
-      var root8 = anchor.getRootNode();
+      var root11 = anchor.getRootNode();
       var target2 = (
         /** @type {ShadowRoot} */
-        root8.host ? (
+        root11.host ? (
           /** @type {ShadowRoot} */
-          root8
+          root11
         ) : (
           /** @type {Document} */
-          root8.head ?? /** @type {Document} */
-          root8.ownerDocument.head
+          root11.head ?? /** @type {Document} */
+          root11.ownerDocument.head
         )
       );
       if (!target2.querySelector("#" + css.hash)) {
@@ -5371,6 +5410,48 @@ ${component_stack}
       observer.disconnect();
     });
   }
+  function bind_select_value(select, get3, set2 = get3) {
+    var batches = /* @__PURE__ */ new WeakSet();
+    var mounting = true;
+    listen_to_event_and_reset_event(select, "change", (is_reset) => {
+      var query = is_reset ? "[selected]" : ":checked";
+      var value;
+      if (select.multiple) {
+        value = [].map.call(select.querySelectorAll(query), get_option_value);
+      } else {
+        var selected_option = select.querySelector(query) ?? // will fall back to first non-disabled option if no option is selected
+        select.querySelector("option:not([disabled])");
+        value = selected_option && get_option_value(selected_option);
+      }
+      set2(value);
+      select.__value = value;
+      if (current_batch !== null) {
+        batches.add(current_batch);
+      }
+    });
+    effect(() => {
+      var value = get3();
+      if (select === document.activeElement) {
+        var batch = (
+          /** @type {Batch} */
+          async_mode_flag ? previous_batch : current_batch
+        );
+        if (batches.has(batch)) {
+          return;
+        }
+      }
+      select_option(select, value, mounting);
+      if (mounting && value === void 0) {
+        var selected_option = select.querySelector(":checked");
+        if (selected_option !== null) {
+          value = get_option_value(selected_option);
+          set2(value);
+        }
+      }
+      select.__value = value;
+      mounting = false;
+    });
+  }
   function get_option_value(option) {
     if ("__value" in option) {
       return option.__value;
@@ -5427,6 +5508,14 @@ ${component_stack}
       return;
     }
     element2.value = value ?? "";
+  }
+  function set_checked(element2, checked) {
+    var attributes = get_attributes(element2);
+    if (attributes.checked === (attributes.checked = // treat null and undefined the same for the initial value
+    checked ?? void 0)) {
+      return;
+    }
+    element2.checked = checked;
   }
   function set_attribute2(element2, attribute, value, skip_warning) {
     var attributes = get_attributes(element2);
@@ -5580,12 +5669,210 @@ ${component_stack}
       }
     });
   }
+  function bind_checked(input, get3, set2 = get3) {
+    listen_to_event_and_reset_event(input, "change", (is_reset) => {
+      var value = is_reset ? input.defaultChecked : input.checked;
+      set2(value);
+    });
+    if (
+      // If we are hydrating and the value has since changed,
+      // then use the update value from the input instead.
+      hydrating && input.defaultChecked !== input.checked || // If defaultChecked is set, then checked == defaultChecked
+      untrack(get3) == null
+    ) {
+      set2(input.checked);
+    }
+    render_effect(() => {
+      var value = get3();
+      input.checked = Boolean(value);
+    });
+  }
   function is_numberlike_input(input) {
     var type = input.type;
     return type === "number" || type === "range";
   }
   function to_number(value) {
     return value === "" ? null : +value;
+  }
+
+  // node_modules/svelte/src/internal/client/dom/elements/bindings/this.js
+  function is_bound_this(bound_value, element_or_component) {
+    return bound_value === element_or_component || bound_value?.[STATE_SYMBOL] === element_or_component;
+  }
+  function bind_this(element_or_component = mark_as_component(), update2, get_value, get_parts) {
+    var component_effect = (
+      /** @type {ComponentContext} */
+      component_context.r
+    );
+    var parent = (
+      /** @type {Effect} */
+      active_effect
+    );
+    effect(() => {
+      var old_parts;
+      var parts;
+      render_effect(() => {
+        old_parts = parts;
+        parts = get_parts?.() || [];
+        untrack(() => {
+          if (!is_bound_this(get_value(...parts), element_or_component)) {
+            update2(element_or_component, ...parts);
+            if (old_parts && is_bound_this(get_value(...old_parts), element_or_component)) {
+              update2(null, ...old_parts);
+            }
+          }
+        });
+      });
+      return () => {
+        let p = parent;
+        while (p !== component_effect && p.parent !== null && p.parent.f & DESTROYING) {
+          p = p.parent;
+        }
+        const teardown2 = () => {
+          if (parts && is_bound_this(get_value(...parts), element_or_component)) {
+            update2(null, ...parts);
+          }
+        };
+        const original_teardown = p.teardown;
+        p.teardown = () => {
+          teardown2();
+          original_teardown?.();
+        };
+      };
+    });
+    return element_or_component;
+  }
+
+  // node_modules/svelte/src/internal/client/reactivity/props.js
+  function prop(props, key2, flags2, fallback2) {
+    var runes = !legacy_mode_flag || (flags2 & PROPS_IS_RUNES) !== 0;
+    var bindable = (flags2 & PROPS_IS_BINDABLE) !== 0;
+    var lazy = (flags2 & PROPS_IS_LAZY_INITIAL) !== 0;
+    var fallback_value = (
+      /** @type {V} */
+      fallback2
+    );
+    var fallback_dirty = true;
+    var fallback_signal = (
+      /** @type {Derived<V> | undefined} */
+      void 0
+    );
+    var get_fallback = () => {
+      if (lazy && runes) {
+        fallback_signal ??= derived(
+          /** @type {() => V} */
+          fallback2
+        );
+        return get2(fallback_signal);
+      }
+      if (fallback_dirty) {
+        fallback_dirty = false;
+        fallback_value = lazy ? untrack(
+          /** @type {() => V} */
+          fallback2
+        ) : (
+          /** @type {V} */
+          fallback2
+        );
+      }
+      return fallback_value;
+    };
+    let setter;
+    if (bindable) {
+      var is_entry_props = STATE_SYMBOL in props || LEGACY_PROPS in props;
+      setter = get_descriptor(props, key2)?.set ?? (is_entry_props && key2 in props ? (v) => props[key2] = v : void 0);
+    }
+    var initial_value;
+    var is_store_sub = false;
+    if (bindable) {
+      [initial_value, is_store_sub] = capture_store_binding(() => (
+        /** @type {V} */
+        props[key2]
+      ));
+    } else {
+      initial_value = /** @type {V} */
+      props[key2];
+    }
+    if (initial_value === void 0 && fallback2 !== void 0) {
+      initial_value = get_fallback();
+      if (setter) {
+        if (runes) props_invalid_value(key2);
+        setter(initial_value);
+      }
+    }
+    var getter;
+    if (runes) {
+      getter = () => {
+        var value = (
+          /** @type {V} */
+          props[key2]
+        );
+        if (value === void 0) return get_fallback();
+        fallback_dirty = true;
+        return value;
+      };
+    } else {
+      getter = () => {
+        var value = (
+          /** @type {V} */
+          props[key2]
+        );
+        if (value !== void 0) {
+          fallback_value = /** @type {V} */
+          void 0;
+        }
+        return value === void 0 ? fallback_value : value;
+      };
+    }
+    if (runes && (flags2 & PROPS_IS_UPDATED) === 0) {
+      return getter;
+    }
+    if (setter) {
+      var legacy_parent = props.$$legacy;
+      return (
+        /** @type {() => V} */
+        (function(value, mutation) {
+          if (arguments.length > 0) {
+            if (!runes || !mutation || legacy_parent || is_store_sub) {
+              setter(mutation ? getter() : value);
+            }
+            return value;
+          }
+          return getter();
+        })
+      );
+    }
+    var overridden = false;
+    var d = ((flags2 & PROPS_IS_IMMUTABLE) !== 0 ? derived : derived_safe_equal)(() => {
+      overridden = false;
+      return getter();
+    });
+    if (dev_fallback_default) {
+      d.label = key2;
+    }
+    if (bindable) get2(d);
+    var parent_effect = (
+      /** @type {Effect} */
+      active_effect
+    );
+    return (
+      /** @type {() => V} */
+      (function(value, mutation) {
+        if (arguments.length > 0) {
+          const new_value = mutation ? get2(d) : runes && bindable ? proxy(value) : value;
+          set(d, new_value);
+          overridden = true;
+          if (fallback_value !== void 0) {
+            fallback_value = new_value;
+          }
+          return value;
+        }
+        if (is_destroying_effect && overridden || (parent_effect.f & DESTROYED) !== 0) {
+          return d.v;
+        }
+        return get2(d);
+      })
+    );
   }
 
   // node_modules/svelte/src/legacy/legacy-client.js
@@ -5949,6 +6236,12 @@ ${component_stack}
       });
     }
   }
+  function onDestroy(fn) {
+    if (component_context === null) {
+      lifecycle_outside_component("onDestroy");
+    }
+    onMount(() => () => untrack(fn));
+  }
   function init_update_callbacks(context) {
     var l = (
       /** @type {ComponentContextLegacy} */
@@ -5989,11 +6282,13 @@ ${component_stack}
     });
     if (resp.status === 401) {
       setToken(null);
+      window.dispatchEvent(new CustomEvent("ego:session-expired"));
       throw new Error("Session expired. Please log in again.");
     }
     if (!resp.ok) {
       const data2 = await resp.json().catch(() => ({}));
-      throw new Error(data2.detail || `HTTP ${resp.status}`);
+      const detail = typeof data2.detail === "string" ? data2.detail : Array.isArray(data2.detail) ? data2.detail.map((e) => e.msg || "Invalid field").join("; ") : `HTTP ${resp.status}`;
+      throw new Error(detail);
     }
     if (resp.status === 204) {
       return void 0;
@@ -6051,9 +6346,70 @@ ${component_stack}
     );
   }
 
+  // src/consoleApi.ts
+  async function response(method, path, body, signal) {
+    const token = getToken();
+    const res = await fetch(getBaseUrl() + "/admin" + path, {
+      method,
+      signal,
+      headers: { "Content-Type": "application/json", ...token ? { Authorization: `Bearer ${token}` } : {} },
+      body: body === void 0 ? void 0 : JSON.stringify(body)
+    });
+    if (res.status === 401) {
+      setToken(null);
+      window.dispatchEvent(new CustomEvent("ego:session-expired"));
+      throw new Error("\u0421\u0435\u0441\u0441\u0438\u044F \u0438\u0441\u0442\u0435\u043A\u043B\u0430. \u0412\u043E\u0439\u0434\u0438 \u0441\u043D\u043E\u0432\u0430, \u0447\u0442\u043E\u0431\u044B \u043F\u0440\u043E\u0434\u043E\u043B\u0436\u0438\u0442\u044C.");
+    }
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      const detail = typeof data.detail === "string" ? data.detail : Array.isArray(data.detail) ? data.detail.map((e) => e.msg).join("; ") : `HTTP ${res.status}`;
+      throw Object.assign(new Error(detail), { status: res.status });
+    }
+    return res;
+  }
+  async function json(method, path, body) {
+    const res = await response(method, path, body);
+    return res.status === 204 ? void 0 : await res.json();
+  }
+  var getSettings = () => json("GET", "/settings");
+  var saveSettings = (draft, api_key, clear_api_key = false) => json("PUT", "/settings", { ...draft, changes: void 0, api_key, clear_api_key });
+  var testAI = () => json("POST", "/settings/ai/test");
+  var listModels = () => json("GET", "/settings/ai/models");
+  var exportDeployment = async () => (await response("GET", "/settings/deployment")).text();
+  var syncContent = (path) => json("POST", "/sync-tasks", { path, source: "manual" });
+  var syncLog = () => json("GET", "/sync/log");
+  var listChats = () => json("GET", "/assistant/sessions");
+  var newChat = () => json("POST", "/assistant/sessions", { title: "\u041D\u043E\u0432\u044B\u0439 \u0447\u0430\u0442" });
+  var readChat = (id) => json("GET", `/assistant/sessions/${encodeURIComponent(id)}`);
+  var deleteChat = (id) => json("DELETE", `/assistant/sessions/${encodeURIComponent(id)}`);
+  async function streamChat(id, content, task_id, signal, event2) {
+    const res = await response("POST", `/assistant/sessions/${encodeURIComponent(id)}/messages`, { content, task_id }, signal);
+    if (!res.body) throw new Error("\u0411\u0440\u0430\u0443\u0437\u0435\u0440 \u043D\u0435 \u043F\u043E\u0434\u0434\u0435\u0440\u0436\u0438\u0432\u0430\u0435\u0442 \u043F\u043E\u0442\u043E\u043A\u043E\u0432\u044B\u0435 \u043E\u0442\u0432\u0435\u0442\u044B.");
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        buffer += decoder.decode(value, { stream: !done });
+        let end;
+        while ((end = buffer.indexOf("\n\n")) >= 0) {
+          const frame = buffer.slice(0, end);
+          buffer = buffer.slice(end + 2);
+          const kind = frame.split("\n").find((line) => line.startsWith("event:"))?.slice(6).trim() || "message";
+          const data = frame.split("\n").filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trim()).join("\n");
+          if (data) event2(kind, JSON.parse(data));
+        }
+        if (done) break;
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
   // src/components/Login.svelte
   var root = from_html(`<div class="error svelte-h34f85"> </div>`);
-  var root_1 = from_html(`<div class="login svelte-h34f85"><h1 class="svelte-h34f85">Ego Admin</h1> <p class="sub svelte-h34f85">Sign in with admin/mentor account</p> <form><input type="text" placeholder="Username" autocomplete="username" class="svelte-h34f85"/> <input type="password" placeholder="Password" autocomplete="current-password" class="svelte-h34f85"/> <button type="submit" class="svelte-h34f85"> </button> <!></form></div>`);
+  var root_1 = from_html(`<div class="login svelte-h34f85"><h1 class="svelte-h34f85">\u041F\u0430\u043D\u0435\u043B\u044C \u0443\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u0438\u044F</h1> <p class="sub svelte-h34f85">\u0412\u0445\u043E\u0434 \u0434\u043B\u044F \u0430\u0434\u043C\u0438\u043D\u0438\u0441\u0442\u0440\u0430\u0442\u043E\u0440\u0430 \u0438\u043B\u0438 \u043D\u0430\u0441\u0442\u0430\u0432\u043D\u0438\u043A\u0430</p> <form><input type="text" placeholder="\u0418\u043C\u044F \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F" autocomplete="username" class="svelte-h34f85"/> <input type="password" placeholder="\u041F\u0430\u0440\u043E\u043B\u044C" autocomplete="current-password" class="svelte-h34f85"/> <button type="submit" class="svelte-h34f85"> </button> <!></form></div>`);
   var $$css = {
     hash: "svelte-h34f85",
     code: ".login.svelte-h34f85 {max-width:320px;margin:80px auto;}h1.svelte-h34f85 {font-size:1.2rem;font-weight:700;margin-bottom:4px;}.sub.svelte-h34f85 {color:#858585;font-size:0.8rem;margin-bottom:24px;}input.svelte-h34f85 {width:100%;padding:8px 12px;margin-bottom:12px;background:#2d2d2d;border:1px solid #3c3c3c;border-radius:4px;color:#d4d4d4;font-family:inherit;font-size:14px;}input.svelte-h34f85:focus {outline:none;border-color:#007acc;}button.svelte-h34f85 {width:100%;padding:8px;background:#007acc;color:#fff;border:none;border-radius:4px;font-family:inherit;font-size:14px;cursor:pointer;}button.svelte-h34f85:hover:not(:disabled) {opacity:0.9;}button.svelte-h34f85:disabled {opacity:0.5;cursor:not-allowed;}.error.svelte-h34f85 {color:#f87171;font-size:0.8rem;margin-top:8px;}"
@@ -6067,7 +6423,7 @@ ${component_stack}
     let loading = state(false);
     async function submit() {
       if (!get2(username).trim() || !get2(password)) {
-        set(error, "Enter username and password");
+        set(error, "\u0412\u0432\u0435\u0434\u0438 \u0438\u043C\u044F \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F \u0438 \u043F\u0430\u0440\u043E\u043B\u044C");
         return;
       }
       set(error, "");
@@ -6105,7 +6461,7 @@ ${component_stack}
     reset(div);
     template_effect(() => {
       button.disabled = get2(loading);
-      set_text(text2, get2(loading) ? "Signing in\u2026" : "Sign in");
+      set_text(text2, get2(loading) ? "\u0412\u0445\u043E\u0436\u0443\u2026" : "\u0412\u043E\u0439\u0442\u0438");
     });
     event("submit", form, (e) => {
       e.preventDefault();
@@ -6316,20 +6672,24 @@ ${component_stack}
   delegate(["click"]);
 
   // src/components/StudentList.svelte
-  var root3 = from_html(`<button class="btn svelte-18vtxcr"> </button>`);
-  var root_13 = from_html(`<form class="create-form svelte-18vtxcr"><input name="username" placeholder="Username" required="" class="svelte-18vtxcr"/> <input name="password" type="password" placeholder="Password" required="" class="svelte-18vtxcr"/> <select name="role" class="svelte-18vtxcr"><option>student</option><option>mentor</option><option>admin</option></select> <button type="submit" class="btn primary svelte-18vtxcr">Create</button></form>`);
-  var root_22 = from_html(`<div class="loading svelte-18vtxcr">Loading students\u2026</div>`);
-  var root_32 = from_html(`<div class="error svelte-18vtxcr"> </div>`);
-  var root_4 = from_html(`<div class="empty svelte-18vtxcr">No students yet</div>`);
-  var root_5 = from_html(`<th class="svelte-18vtxcr"></th>`);
-  var root_6 = from_html(`<select class="role-select svelte-18vtxcr"><option>student</option><option>mentor</option><option>admin</option></select>`);
-  var root_7 = from_html(`<td class="actions svelte-18vtxcr"><button title="Reset password" class="svelte-18vtxcr">pw</button> <button title="Delete" class="danger svelte-18vtxcr">\xD7</button></td>`);
-  var root_8 = from_html(`<tr class="student-row svelte-18vtxcr"><td class="svelte-18vtxcr"> </td><td class="svelte-18vtxcr"><!></td><td class="num svelte-18vtxcr"> </td><td class="num svelte-18vtxcr" style="color:#22c55e"> </td><td class="num svelte-18vtxcr" style="color:#eab308"> </td><td class="num svelte-18vtxcr" style="color:#f87171"> </td><td class="svelte-18vtxcr"> </td><!></tr>`);
-  var root_9 = from_html(`<table class="svelte-18vtxcr"><thead><tr><th class="svelte-18vtxcr">Student</th><th class="svelte-18vtxcr">Role</th><th class="num svelte-18vtxcr">Total</th><th class="num svelte-18vtxcr">Passed</th><th class="num svelte-18vtxcr">Partial</th><th class="num svelte-18vtxcr">Failed</th><th class="svelte-18vtxcr">Last activity</th><!></tr></thead><tbody></tbody></table>`);
-  var root_10 = from_html(`<div class="section"><div class="section-header svelte-18vtxcr"><h2 class="svelte-18vtxcr">Students</h2> <!></div> <!> <!></div>`);
+  var root3 = from_html(`<button class="btn svelte-18vtxcr" type="button"> </button>`);
+  var root_13 = from_html(`<p class="error svelte-18vtxcr" role="alert"> </p>`);
+  var root_22 = from_html(`<form class="create-form svelte-18vtxcr"><input name="username" placeholder="Username" required="" class="svelte-18vtxcr"/> <input name="password" type="password" placeholder="Password" required="" class="svelte-18vtxcr"/> <select name="role" class="svelte-18vtxcr"><option>student</option><option>mentor</option><option>admin</option></select> <button type="submit" class="btn primary svelte-18vtxcr">Create</button></form>`);
+  var root_32 = from_html(`<div class="loading svelte-18vtxcr">Loading students\u2026</div>`);
+  var root_4 = from_html(`<div class="error svelte-18vtxcr" role="alert"> </div> <button class="btn svelte-18vtxcr" type="button">Retry</button>`, 1);
+  var root_5 = from_html(`<div class="empty svelte-18vtxcr">No students yet</div>`);
+  var root_6 = from_html(`<div class="empty svelte-18vtxcr"> </div>`);
+  var root_7 = from_html(`<th class="svelte-18vtxcr"></th>`);
+  var root_8 = from_html(`<select class="role-select svelte-18vtxcr"><option>student</option><option>mentor</option><option>admin</option></select>`);
+  var root_9 = from_html(`<td class="actions svelte-18vtxcr"><button title="Reset password" class="svelte-18vtxcr">pw</button> <button title="Delete" class="danger svelte-18vtxcr">\xD7</button></td>`);
+  var root_10 = from_html(`<tr class="student-row svelte-18vtxcr"><td class="svelte-18vtxcr"> </td><td class="svelte-18vtxcr"><!></td><td class="num svelte-18vtxcr"> </td><td class="num svelte-18vtxcr" style="color:#22c55e"> </td><td class="num svelte-18vtxcr" style="color:#eab308"> </td><td class="num svelte-18vtxcr" style="color:#f87171"> </td><td class="svelte-18vtxcr"> </td><!></tr>`);
+  var root_11 = from_html(`<div class="pagination svelte-18vtxcr" aria-label="Student list pages"><button class="btn svelte-18vtxcr" type="button">Previous</button> <span> </span> <button class="btn svelte-18vtxcr" type="button">Next</button></div>`);
+  var root_122 = from_html(`<table class="svelte-18vtxcr"><thead><tr><th class="svelte-18vtxcr">Student</th><th class="svelte-18vtxcr">Role</th><th class="num svelte-18vtxcr">Total</th><th class="num svelte-18vtxcr">Passed</th><th class="num svelte-18vtxcr">Partial</th><th class="num svelte-18vtxcr">Failed</th><th class="svelte-18vtxcr">Last activity</th><!></tr></thead><tbody></tbody></table> <!>`, 1);
+  var root_132 = from_html(`<div class="list-toolbar svelte-18vtxcr"><label for="student-search">Search students</label> <input id="student-search" type="search" placeholder="Username or ID" class="svelte-18vtxcr"/> <span> </span></div> <!>`, 1);
+  var root_14 = from_html(`<div class="section"><div class="section-header svelte-18vtxcr"><h2 class="svelte-18vtxcr">Students</h2> <div class="header-actions svelte-18vtxcr"><button class="btn svelte-18vtxcr" type="button"> </button> <!></div></div> <!> <!> <!></div>`);
   var $$css3 = {
     hash: "svelte-18vtxcr",
-    code: ".section-header.svelte-18vtxcr {display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}h2.svelte-18vtxcr {font-size:0.9rem;font-weight:600;}.btn.svelte-18vtxcr {padding:4px 12px;background:transparent;border:1px solid #3c3c3c;border-radius:4px;color:#d4d4d4;font-family:inherit;font-size:0.8rem;cursor:pointer;}.btn.svelte-18vtxcr:hover {border-color:#007acc;}.btn.primary.svelte-18vtxcr {background:#007acc;color:#fff;border-color:transparent;}.btn.primary.svelte-18vtxcr:hover {opacity:0.9;}.create-form.svelte-18vtxcr {display:flex;gap:8px;margin-bottom:16px;}.create-form.svelte-18vtxcr input:where(.svelte-18vtxcr), .create-form.svelte-18vtxcr select:where(.svelte-18vtxcr) {padding:6px 10px;background:#2d2d2d;border:1px solid #3c3c3c;border-radius:4px;color:#d4d4d4;font-family:inherit;font-size:0.8rem;}.create-form.svelte-18vtxcr input:where(.svelte-18vtxcr) {flex:1;}table.svelte-18vtxcr {width:100%;border-collapse:collapse;}th.svelte-18vtxcr, td.svelte-18vtxcr {text-align:left;padding:6px 12px;border-bottom:1px solid #3c3c3c;}th.svelte-18vtxcr {font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:#858585;}tr.svelte-18vtxcr:hover td:where(.svelte-18vtxcr) {background:rgba(255,255,255,0.03);}.num.svelte-18vtxcr {text-align:right;font-variant-numeric:tabular-nums;}.student-row.svelte-18vtxcr {cursor:pointer;}.student-row.svelte-18vtxcr:hover td:where(.svelte-18vtxcr) {background:rgba(0,122,204,0.08);}.role-select.svelte-18vtxcr {background:#2d2d2d;border:1px solid #3c3c3c;border-radius:3px;color:#d4d4d4;font-family:inherit;font-size:0.75rem;padding:2px 6px;}.actions.svelte-18vtxcr {white-space:nowrap;}.actions.svelte-18vtxcr button:where(.svelte-18vtxcr) {padding:2px 8px;background:transparent;border:1px solid #3c3c3c;border-radius:3px;color:#858585;font-family:inherit;font-size:0.7rem;cursor:pointer;margin-left:4px;}.actions.svelte-18vtxcr button:where(.svelte-18vtxcr):hover {border-color:#007acc;color:#d4d4d4;}.actions.svelte-18vtxcr .danger:where(.svelte-18vtxcr):hover {border-color:#f87171;color:#f87171;}.loading.svelte-18vtxcr, .empty.svelte-18vtxcr, .error.svelte-18vtxcr {padding:24px;text-align:center;color:#858585;}.error.svelte-18vtxcr {color:#f87171;}"
+    code: ".section-header.svelte-18vtxcr {display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}.header-actions.svelte-18vtxcr {display:flex;gap:8px;}h2.svelte-18vtxcr {font-size:0.9rem;font-weight:600;}.btn.svelte-18vtxcr {padding:4px 12px;background:transparent;border:1px solid #3c3c3c;border-radius:4px;color:#d4d4d4;font-family:inherit;font-size:0.8rem;cursor:pointer;}.btn.svelte-18vtxcr:hover {border-color:#007acc;}.btn.primary.svelte-18vtxcr {background:#007acc;color:#fff;border-color:transparent;}.btn.primary.svelte-18vtxcr:hover {opacity:0.9;}.create-form.svelte-18vtxcr {display:flex;gap:8px;margin-bottom:16px;}.create-form.svelte-18vtxcr input:where(.svelte-18vtxcr), .create-form.svelte-18vtxcr select:where(.svelte-18vtxcr) {padding:6px 10px;background:#2d2d2d;border:1px solid #3c3c3c;border-radius:4px;color:#d4d4d4;font-family:inherit;font-size:0.8rem;}.create-form.svelte-18vtxcr input:where(.svelte-18vtxcr) {flex:1;}.list-toolbar.svelte-18vtxcr {display:flex;align-items:center;gap:8px;margin-bottom:12px;color:#858585;font-size:0.75rem;}.list-toolbar.svelte-18vtxcr input:where(.svelte-18vtxcr) {flex:1;min-width:120px;padding:6px 10px;background:#2d2d2d;border:1px solid #3c3c3c;border-radius:4px;color:#d4d4d4;font:inherit;}.list-toolbar.svelte-18vtxcr input:where(.svelte-18vtxcr):focus {outline:none;border-color:#007acc;}table.svelte-18vtxcr {width:100%;border-collapse:collapse;}th.svelte-18vtxcr, td.svelte-18vtxcr {text-align:left;padding:6px 12px;border-bottom:1px solid #3c3c3c;}th.svelte-18vtxcr {font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:#858585;}tr.svelte-18vtxcr:hover td:where(.svelte-18vtxcr) {background:rgba(255,255,255,0.03);}.num.svelte-18vtxcr {text-align:right;font-variant-numeric:tabular-nums;}.student-row.svelte-18vtxcr {cursor:pointer;}.student-row.svelte-18vtxcr:hover td:where(.svelte-18vtxcr) {background:rgba(0,122,204,0.08);}.role-select.svelte-18vtxcr {background:#2d2d2d;border:1px solid #3c3c3c;border-radius:3px;color:#d4d4d4;font-family:inherit;font-size:0.75rem;padding:2px 6px;}.actions.svelte-18vtxcr {white-space:nowrap;}.actions.svelte-18vtxcr button:where(.svelte-18vtxcr) {padding:2px 8px;background:transparent;border:1px solid #3c3c3c;border-radius:3px;color:#858585;font-family:inherit;font-size:0.7rem;cursor:pointer;margin-left:4px;}.actions.svelte-18vtxcr button:where(.svelte-18vtxcr):hover {border-color:#007acc;color:#d4d4d4;}.actions.svelte-18vtxcr .danger:where(.svelte-18vtxcr):hover {border-color:#f87171;color:#f87171;}.pagination.svelte-18vtxcr {display:flex;justify-content:center;align-items:center;gap:12px;margin-top:12px;font-size:0.75rem;color:#858585;}.loading.svelte-18vtxcr, .empty.svelte-18vtxcr, .error.svelte-18vtxcr {padding:24px;text-align:center;color:#858585;}.error.svelte-18vtxcr {color:#f87171;}\n	@media (max-width: 600px) {.list-toolbar.svelte-18vtxcr {align-items:stretch;flex-direction:column;}.create-form.svelte-18vtxcr {flex-wrap:wrap;}table.svelte-18vtxcr {display:block;overflow-x:auto;white-space:nowrap;}\n	}"
   };
   function StudentList($$anchor, $$props) {
     push($$props, true);
@@ -6337,13 +6697,26 @@ ${component_stack}
     let students = state(proxy([]));
     let loading = state(true);
     let error = state("");
+    let actionError = state("");
     let showForm = state(false);
+    let search = state("");
+    let page = state(1);
+    const pageSize = 25;
     let isAdmin = user_derived(() => $$props.userRole === "admin");
+    let filteredStudents = user_derived(() => {
+      const needle = get2(search).trim().toLocaleLowerCase();
+      if (!needle) return get2(students);
+      return get2(students).filter((student) => student.username.toLocaleLowerCase().includes(needle) || student.student_id.toLocaleLowerCase().includes(needle));
+    });
+    let pageCount = user_derived(() => Math.max(1, Math.ceil(get2(filteredStudents).length / pageSize)));
+    let visibleStudents = user_derived(() => get2(filteredStudents).slice((get2(page) - 1) * pageSize, get2(page) * pageSize));
     async function load() {
       set(loading, true);
       set(error, "");
+      set(actionError, "");
       try {
         set(students, await listStudents(), true);
+        set(page, 1);
       } catch (e) {
         set(error, e.message, true);
       } finally {
@@ -6356,7 +6729,7 @@ ${component_stack}
         await deleteUser(student.student_id);
         await load();
       } catch (e) {
-        alert(e.message);
+        set(actionError, `Could not delete ${student.username}: ${e.message}`);
       }
     }
     async function handleRoleChange(student, newRole) {
@@ -6365,7 +6738,7 @@ ${component_stack}
         await updateRole(student.student_id, newRole);
         await load();
       } catch (e) {
-        alert(e.message);
+        set(actionError, `Could not update role: ${e.message}`);
       }
     }
     async function handleResetPassword(student) {
@@ -6375,7 +6748,7 @@ ${component_stack}
         await resetPassword(student.student_id, pw);
         alert("Password updated.");
       } catch (e) {
-        alert(e.message);
+        set(actionError, `Could not reset password: ${e.message}`);
       }
     }
     async function handleCreate(e) {
@@ -6392,7 +6765,7 @@ ${component_stack}
         set(showForm, false);
         await load();
       } catch (err) {
-        alert(err.message);
+        set(actionError, `Could not create user: ${err.message}`);
       }
     }
     function statusColor(status) {
@@ -6413,28 +6786,44 @@ ${component_stack}
     onMount(() => {
       load();
     });
-    var div = root_10();
+    var div = root_14();
     var div_1 = child(div);
-    var node = sibling(child(div_1), 2);
+    var div_2 = sibling(child(div_1), 2);
+    var button = child(div_2);
+    var text2 = only_child(button, true);
+    var node = sibling(button, 2);
     {
       var consequent = ($$anchor2) => {
-        var button = root3();
-        var text2 = only_child(button, true);
-        template_effect(() => set_text(text2, get2(showForm) ? "Cancel" : "+ Add user"));
-        delegated("click", button, () => {
+        var button_1 = root3();
+        var text_1 = only_child(button_1, true);
+        template_effect(() => set_text(text_1, get2(showForm) ? "Cancel" : "+ Add user"));
+        delegated("click", button_1, () => {
           set(showForm, !get2(showForm));
         });
-        append($$anchor2, button);
+        append($$anchor2, button_1);
       };
       if_block(node, ($$render) => {
         if (get2(isAdmin)) $$render(consequent);
       });
     }
+    reset(div_2);
     reset(div_1);
     var node_1 = sibling(div_1, 2);
     {
       var consequent_1 = ($$anchor2) => {
-        var form_1 = root_13();
+        var p = root_13();
+        var text_2 = only_child(p, true);
+        template_effect(() => set_text(text_2, get2(actionError)));
+        append($$anchor2, p);
+      };
+      if_block(node_1, ($$render) => {
+        if (get2(actionError)) $$render(consequent_1);
+      });
+    }
+    var node_2 = sibling(node_1, 2);
+    {
+      var consequent_2 = ($$anchor2) => {
+        var form_1 = root_22();
         var select = sibling(child(form_1), 4);
         var option = child(select);
         option.value = option.__value = "student";
@@ -6448,154 +6837,213 @@ ${component_stack}
         event("submit", form_1, handleCreate);
         append($$anchor2, form_1);
       };
-      if_block(node_1, ($$render) => {
-        if (get2(isAdmin) && get2(showForm)) $$render(consequent_1);
+      if_block(node_2, ($$render) => {
+        if (get2(isAdmin) && get2(showForm)) $$render(consequent_2);
       });
     }
-    var node_2 = sibling(node_1, 2);
+    var node_3 = sibling(node_2, 2);
     {
-      var consequent_2 = ($$anchor2) => {
-        var div_2 = root_22();
-        append($$anchor2, div_2);
-      };
       var consequent_3 = ($$anchor2) => {
         var div_3 = root_32();
-        var text_1 = only_child(div_3, true);
-        template_effect(() => set_text(text_1, get2(error)));
         append($$anchor2, div_3);
       };
       var consequent_4 = ($$anchor2) => {
-        var div_4 = root_4();
-        append($$anchor2, div_4);
+        var fragment = root_4();
+        var div_4 = first_child(fragment);
+        var text_3 = only_child(div_4, true);
+        var button_2 = sibling(div_4, 2);
+        template_effect(() => set_text(text_3, get2(error)));
+        delegated("click", button_2, load);
+        append($$anchor2, fragment);
       };
-      var alternate_1 = ($$anchor2) => {
-        var table = root_9();
-        var thead = child(table);
-        var tr = child(thead);
-        var node_3 = sibling(child(tr), 7);
+      var consequent_5 = ($$anchor2) => {
+        var div_5 = root_5();
+        append($$anchor2, div_5);
+      };
+      var alternate_2 = ($$anchor2) => {
+        var fragment_1 = root_132();
+        var div_6 = first_child(fragment_1);
+        var input = sibling(child(div_6), 2);
+        remove_input_defaults(input);
+        var span = sibling(input, 2);
+        var text_4 = only_child(span);
+        reset(div_6);
+        var node_4 = sibling(div_6, 2);
         {
-          var consequent_5 = ($$anchor3) => {
-            var th = root_5();
-            append($$anchor3, th);
+          var consequent_6 = ($$anchor3) => {
+            var div_7 = root_6();
+            var text_5 = only_child(div_7);
+            template_effect(() => set_text(text_5, `No students match \u201C${get2(search) ?? ""}\u201D.`));
+            append($$anchor3, div_7);
           };
-          if_block(node_3, ($$render) => {
-            if (get2(isAdmin)) $$render(consequent_5);
+          var alternate_1 = ($$anchor3) => {
+            var fragment_2 = root_122();
+            var table = first_child(fragment_2);
+            var thead = child(table);
+            var tr = child(thead);
+            var node_5 = sibling(child(tr), 7);
+            {
+              var consequent_7 = ($$anchor4) => {
+                var th = root_7();
+                append($$anchor4, th);
+              };
+              if_block(node_5, ($$render) => {
+                if (get2(isAdmin)) $$render(consequent_7);
+              });
+            }
+            reset(tr);
+            reset(thead);
+            var tbody = sibling(thead);
+            each(tbody, 21, () => get2(visibleStudents), (s) => s.student_id, ($$anchor4, s) => {
+              var tr_1 = root_10();
+              var td = child(tr_1);
+              var text_6 = only_child(td, true);
+              var td_1 = sibling(td);
+              var node_6 = child(td_1);
+              {
+                var consequent_8 = ($$anchor5) => {
+                  var select_1 = root_8();
+                  var option_3 = child(select_1);
+                  option_3.value = option_3.__value = "student";
+                  var option_4 = sibling(option_3);
+                  option_4.value = option_4.__value = "mentor";
+                  var option_5 = sibling(option_4);
+                  option_5.value = option_5.__value = "admin";
+                  reset(select_1);
+                  var select_1_value;
+                  init_select(select_1);
+                  template_effect(() => {
+                    if (select_1_value !== (select_1_value = get2(s).role)) {
+                      select_1.value = (select_1.__value = select_1_value) ?? "", select_option(select_1, select_1_value);
+                    }
+                  });
+                  delegated("change", select_1, (e) => handleRoleChange(get2(s), e.target.value));
+                  delegated("click", select_1, (e) => e.stopPropagation());
+                  append($$anchor5, select_1);
+                };
+                var alternate = ($$anchor5) => {
+                  var text_7 = text();
+                  template_effect(() => set_text(text_7, get2(s).role));
+                  append($$anchor5, text_7);
+                };
+                if_block(node_6, ($$render) => {
+                  if (get2(isAdmin)) $$render(consequent_8);
+                  else $$render(alternate, -1);
+                });
+              }
+              reset(td_1);
+              var td_2 = sibling(td_1);
+              var text_8 = only_child(td_2, true);
+              var td_3 = sibling(td_2);
+              var text_9 = only_child(td_3, true);
+              var td_4 = sibling(td_3);
+              var text_10 = only_child(td_4, true);
+              var td_5 = sibling(td_4);
+              var text_11 = only_child(td_5, true);
+              var td_6 = sibling(td_5);
+              var text_12 = only_child(td_6, true);
+              var node_7 = sibling(td_6);
+              {
+                var consequent_9 = ($$anchor5) => {
+                  var td_7 = root_9();
+                  var button_3 = child(td_7);
+                  var button_4 = sibling(button_3, 2);
+                  reset(td_7);
+                  delegated("click", button_3, (e) => {
+                    e.stopPropagation();
+                    handleResetPassword(get2(s));
+                  });
+                  delegated("click", button_4, (e) => {
+                    e.stopPropagation();
+                    handleDelete(get2(s));
+                  });
+                  append($$anchor5, td_7);
+                };
+                if_block(node_7, ($$render) => {
+                  if (get2(isAdmin)) $$render(consequent_9);
+                });
+              }
+              reset(tr_1);
+              template_effect(
+                ($0) => {
+                  set_text(text_6, get2(s).username);
+                  set_text(text_8, get2(s).tasks_total);
+                  set_text(text_9, get2(s).tasks_passed);
+                  set_text(text_10, get2(s).tasks_partial);
+                  set_text(text_11, get2(s).tasks_failed);
+                  set_text(text_12, $0);
+                },
+                [() => timeAgo(get2(s).last_activity)]
+              );
+              delegated("click", tr_1, () => $$props.onSelect(get2(s).student_id, get2(s).username));
+              append($$anchor4, tr_1);
+            });
+            reset(tbody);
+            reset(table);
+            var node_8 = sibling(table, 2);
+            {
+              var consequent_10 = ($$anchor4) => {
+                var div_8 = root_11();
+                var button_5 = child(div_8);
+                var span_1 = sibling(button_5, 2);
+                var text_13 = only_child(span_1);
+                var button_6 = sibling(span_1, 2);
+                reset(div_8);
+                template_effect(() => {
+                  button_5.disabled = get2(page) === 1;
+                  set_text(text_13, `Page ${get2(page) ?? ""} of ${get2(pageCount) ?? ""}`);
+                  button_6.disabled = get2(page) === get2(pageCount);
+                });
+                delegated("click", button_5, () => set(page, Math.max(1, get2(page) - 1), true));
+                delegated("click", button_6, () => set(page, Math.min(get2(pageCount), get2(page) + 1), true));
+                append($$anchor4, div_8);
+              };
+              if_block(node_8, ($$render) => {
+                if (get2(pageCount) > 1) $$render(consequent_10);
+              });
+            }
+            append($$anchor3, fragment_2);
+          };
+          if_block(node_4, ($$render) => {
+            if (get2(filteredStudents).length === 0) $$render(consequent_6);
+            else $$render(alternate_1, -1);
           });
         }
-        reset(tr);
-        reset(thead);
-        var tbody = sibling(thead);
-        each(tbody, 21, () => get2(students), (s) => s.student_id, ($$anchor3, s) => {
-          var tr_1 = root_8();
-          var td = child(tr_1);
-          var text_2 = only_child(td, true);
-          var td_1 = sibling(td);
-          var node_4 = child(td_1);
-          {
-            var consequent_6 = ($$anchor4) => {
-              var select_1 = root_6();
-              var option_3 = child(select_1);
-              option_3.value = option_3.__value = "student";
-              var option_4 = sibling(option_3);
-              option_4.value = option_4.__value = "mentor";
-              var option_5 = sibling(option_4);
-              option_5.value = option_5.__value = "admin";
-              reset(select_1);
-              var select_1_value;
-              init_select(select_1);
-              template_effect(() => {
-                if (select_1_value !== (select_1_value = get2(s).role)) {
-                  select_1.value = (select_1.__value = select_1_value) ?? "", select_option(select_1, select_1_value);
-                }
-              });
-              delegated("change", select_1, (e) => handleRoleChange(get2(s), e.target.value));
-              delegated("click", select_1, (e) => e.stopPropagation());
-              append($$anchor4, select_1);
-            };
-            var alternate = ($$anchor4) => {
-              var text_3 = text();
-              template_effect(() => set_text(text_3, get2(s).role));
-              append($$anchor4, text_3);
-            };
-            if_block(node_4, ($$render) => {
-              if (get2(isAdmin)) $$render(consequent_6);
-              else $$render(alternate, -1);
-            });
-          }
-          reset(td_1);
-          var td_2 = sibling(td_1);
-          var text_4 = only_child(td_2, true);
-          var td_3 = sibling(td_2);
-          var text_5 = only_child(td_3, true);
-          var td_4 = sibling(td_3);
-          var text_6 = only_child(td_4, true);
-          var td_5 = sibling(td_4);
-          var text_7 = only_child(td_5, true);
-          var td_6 = sibling(td_5);
-          var text_8 = only_child(td_6, true);
-          var node_5 = sibling(td_6);
-          {
-            var consequent_7 = ($$anchor4) => {
-              var td_7 = root_7();
-              var button_1 = child(td_7);
-              var button_2 = sibling(button_1, 2);
-              reset(td_7);
-              delegated("click", button_1, (e) => {
-                e.stopPropagation();
-                handleResetPassword(get2(s));
-              });
-              delegated("click", button_2, (e) => {
-                e.stopPropagation();
-                handleDelete(get2(s));
-              });
-              append($$anchor4, td_7);
-            };
-            if_block(node_5, ($$render) => {
-              if (get2(isAdmin)) $$render(consequent_7);
-            });
-          }
-          reset(tr_1);
-          template_effect(
-            ($0) => {
-              set_text(text_2, get2(s).username);
-              set_text(text_4, get2(s).tasks_total);
-              set_text(text_5, get2(s).tasks_passed);
-              set_text(text_6, get2(s).tasks_partial);
-              set_text(text_7, get2(s).tasks_failed);
-              set_text(text_8, $0);
-            },
-            [() => timeAgo(get2(s).last_activity)]
-          );
-          delegated("click", tr_1, () => $$props.onSelect(get2(s).student_id, get2(s).username));
-          append($$anchor3, tr_1);
+        template_effect(() => set_text(text_4, `${get2(filteredStudents).length ?? ""} of ${get2(students).length ?? ""}`));
+        delegated("input", input, () => {
+          set(page, 1);
         });
-        reset(tbody);
-        reset(table);
-        append($$anchor2, table);
+        bind_value(input, () => get2(search), ($$value) => set(search, $$value));
+        append($$anchor2, fragment_1);
       };
-      if_block(node_2, ($$render) => {
-        if (get2(loading)) $$render(consequent_2);
-        else if (get2(error)) $$render(consequent_3, 1);
-        else if (get2(students).length === 0) $$render(consequent_4, 2);
-        else $$render(alternate_1, -1);
+      if_block(node_3, ($$render) => {
+        if (get2(loading)) $$render(consequent_3);
+        else if (get2(error)) $$render(consequent_4, 1);
+        else if (get2(students).length === 0) $$render(consequent_5, 2);
+        else $$render(alternate_2, -1);
       });
     }
     reset(div);
+    template_effect(() => {
+      button.disabled = get2(loading);
+      set_text(text2, get2(loading) ? "Refreshing\u2026" : "Refresh");
+    });
+    delegated("click", button, load);
     append($$anchor, div);
     pop();
   }
-  delegate(["click", "change"]);
+  delegate(["click", "input", "change"]);
 
   // src/components/StudentDetail.svelte
   var root4 = from_html(`<div class="loading svelte-15k1m16">Loading progress\u2026</div>`);
-  var root_14 = from_html(`<div class="error svelte-15k1m16"> </div>`);
+  var root_15 = from_html(`<div class="error svelte-15k1m16" role="alert"> </div> <button class="refresh svelte-15k1m16" type="button">Retry</button>`, 1);
   var root_23 = from_html(`<div class="empty svelte-15k1m16">No progress yet</div>`);
   var root_33 = from_html(`<tr><td class="svelte-15k1m16"> </td><td class="svelte-15k1m16"><span></span> </td><td class="num svelte-15k1m16"> </td><td class="num svelte-15k1m16"> </td><td class="svelte-15k1m16"> </td></tr>`);
   var root_42 = from_html(`<table class="svelte-15k1m16"><thead><tr><th class="svelte-15k1m16">Task</th><th class="svelte-15k1m16">Status</th><th class="num svelte-15k1m16">Score</th><th class="num svelte-15k1m16">Attempts</th><th class="svelte-15k1m16">Last run</th></tr></thead><tbody></tbody></table>`);
-  var root_52 = from_html(`<div class="detail"><button class="back svelte-15k1m16" type="button">&larr; Back to students</button> <h2 class="svelte-15k1m16"> </h2> <!></div>`);
+  var root_52 = from_html(`<div class="detail"><div class="detail-header svelte-15k1m16"><button class="back svelte-15k1m16" type="button">&larr; Back to students</button> <h2 class="svelte-15k1m16"> </h2> <button class="refresh svelte-15k1m16" type="button"> </button></div> <!></div>`);
   var $$css4 = {
     hash: "svelte-15k1m16",
-    code: ".back.svelte-15k1m16 {display:inline-block;margin-bottom:16px;color:#007acc;padding:0;border:0;background:transparent;cursor:pointer;font-family:inherit;font-size:0.8rem;text-decoration:none;}.back.svelte-15k1m16:hover {text-decoration:underline;}h2.svelte-15k1m16 {font-size:1rem;font-weight:600;margin-bottom:12px;}table.svelte-15k1m16 {width:100%;border-collapse:collapse;}th.svelte-15k1m16, td.svelte-15k1m16 {text-align:left;padding:6px 12px;border-bottom:1px solid #3c3c3c;}th.svelte-15k1m16 {font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:#858585;}.num.svelte-15k1m16 {text-align:right;font-variant-numeric:tabular-nums;}.dot.svelte-15k1m16 {display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;}.dot.green.svelte-15k1m16 {background:#22c55e;}.dot.yellow.svelte-15k1m16 {background:#eab308;}.dot.red.svelte-15k1m16 {background:#f87171;}.loading.svelte-15k1m16, .empty.svelte-15k1m16, .error.svelte-15k1m16 {padding:24px;text-align:center;color:#858585;}.error.svelte-15k1m16 {color:#f87171;}"
+    code: ".back.svelte-15k1m16 {display:inline-block;margin-bottom:16px;color:#007acc;padding:0;border:0;background:transparent;cursor:pointer;font-family:inherit;font-size:0.8rem;text-decoration:none;}.back.svelte-15k1m16:hover {text-decoration:underline;}.detail-header.svelte-15k1m16 {display:flex;align-items:center;gap:12px;margin-bottom:12px;}h2.svelte-15k1m16 {flex:1;font-size:1rem;font-weight:600;margin:0;}.refresh.svelte-15k1m16 {padding:4px 10px;background:transparent;border:1px solid #3c3c3c;border-radius:4px;color:#d4d4d4;font-family:inherit;font-size:0.75rem;cursor:pointer;}.refresh.svelte-15k1m16:hover:not(:disabled) {border-color:#007acc;}.refresh.svelte-15k1m16:disabled {opacity:0.5;cursor:not-allowed;}table.svelte-15k1m16 {width:100%;border-collapse:collapse;}th.svelte-15k1m16, td.svelte-15k1m16 {text-align:left;padding:6px 12px;border-bottom:1px solid #3c3c3c;}th.svelte-15k1m16 {font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:#858585;}.num.svelte-15k1m16 {text-align:right;font-variant-numeric:tabular-nums;}.dot.svelte-15k1m16 {display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;}.dot.green.svelte-15k1m16 {background:#22c55e;}.dot.yellow.svelte-15k1m16 {background:#eab308;}.dot.red.svelte-15k1m16 {background:#f87171;}.loading.svelte-15k1m16, .empty.svelte-15k1m16, .error.svelte-15k1m16 {padding:24px;text-align:center;color:#858585;}.error.svelte-15k1m16 {color:#f87171;}\n	@media (max-width: 600px) {.detail-header.svelte-15k1m16 {flex-wrap:wrap;}h2.svelte-15k1m16 {order:3;flex-basis:100%;}\n	}"
   };
   function StudentDetail($$anchor, $$props) {
     push($$props, true);
@@ -6640,24 +7088,34 @@ ${component_stack}
       load();
     });
     var div = root_52();
-    var button = child(div);
+    var div_1 = child(div);
+    var button = child(div_1);
     var h2 = sibling(button, 2);
     var text2 = only_child(h2);
-    var node = sibling(h2, 2);
+    var button_1 = sibling(h2, 2);
+    var text_1 = only_child(button_1, true);
+    reset(div_1);
+    var node = sibling(div_1, 2);
     {
       var consequent = ($$anchor2) => {
-        var div_1 = root4();
-        append($$anchor2, div_1);
-      };
-      var consequent_1 = ($$anchor2) => {
-        var div_2 = root_14();
-        var text_1 = only_child(div_2, true);
-        template_effect(() => set_text(text_1, get2(error)));
+        var div_2 = root4();
         append($$anchor2, div_2);
       };
+      var consequent_1 = ($$anchor2) => {
+        var fragment = root_15();
+        var div_3 = first_child(fragment);
+        var text_2 = only_child(div_3, true);
+        var button_2 = sibling(div_3, 2);
+        template_effect(() => {
+          set_text(text_2, get2(error));
+          button_2.disabled = get2(loading);
+        });
+        delegated("click", button_2, load);
+        append($$anchor2, fragment);
+      };
       var consequent_2 = ($$anchor2) => {
-        var div_3 = root_23();
-        append($$anchor2, div_3);
+        var div_4 = root_23();
+        append($$anchor2, div_4);
       };
       var alternate = ($$anchor2) => {
         var table = root_42();
@@ -6665,26 +7123,26 @@ ${component_stack}
         each(tbody, 21, () => get2(progress), (r) => r.task_id + r.version, ($$anchor3, r) => {
           var tr = root_33();
           var td = child(tr);
-          var text_2 = only_child(td, true);
+          var text_3 = only_child(td, true);
           var td_1 = sibling(td);
           var span = child(td_1);
-          var text_3 = sibling(span);
+          var text_4 = sibling(span);
           reset(td_1);
           var td_2 = sibling(td_1);
-          var text_4 = only_child(td_2);
+          var text_5 = only_child(td_2);
           var td_3 = sibling(td_2);
-          var text_5 = only_child(td_3, true);
+          var text_6 = only_child(td_3, true);
           var td_4 = sibling(td_3);
-          var text_6 = only_child(td_4, true);
+          var text_7 = only_child(td_4, true);
           reset(tr);
           template_effect(
             ($0, $1, $2) => {
-              set_text(text_2, get2(r).task_id);
+              set_text(text_3, get2(r).task_id);
               set_class(span, 1, `dot ${$0 ?? ""}`, "svelte-15k1m16");
-              set_text(text_3, ` ${$1 ?? ""}`);
-              set_text(text_4, `${get2(r).passed_tests ?? ""}/${get2(r).total_tests ?? ""}`);
-              set_text(text_5, get2(r).attempts);
-              set_text(text_6, $2);
+              set_text(text_4, ` ${$1 ?? ""}`);
+              set_text(text_5, `${get2(r).passed_tests ?? ""}/${get2(r).total_tests ?? ""}`);
+              set_text(text_6, get2(r).attempts);
+              set_text(text_7, $2);
             },
             [
               () => statusColor(get2(r).status),
@@ -6706,10 +7164,15 @@ ${component_stack}
       });
     }
     reset(div);
-    template_effect(() => set_text(text2, `Progress: ${$$props.username ?? ""}`));
+    template_effect(() => {
+      set_text(text2, `Progress: ${$$props.username ?? ""}`);
+      button_1.disabled = get2(loading);
+      set_text(text_1, get2(loading) ? "Refreshing\u2026" : "Refresh");
+    });
     delegated("click", button, function(...$$args) {
       $$props.onBack?.apply(this, $$args);
     });
+    delegated("click", button_1, load);
     append($$anchor, div);
     pop();
   }
@@ -6717,7 +7180,7 @@ ${component_stack}
 
   // src/components/Catalog.svelte
   var root5 = from_html(`<button class="btn svelte-qickb7" type="button" aria-label="Clear search">Clear</button>`);
-  var root_15 = from_html(`<div class="loading svelte-qickb7">Loading catalog\u2026</div>`);
+  var root_16 = from_html(`<div class="loading svelte-qickb7">Loading catalog\u2026</div>`);
   var root_24 = from_html(`<div class="error svelte-qickb7"> </div>`);
   var root_34 = from_html(`<div class="empty svelte-qickb7"> </div>`);
   var root_43 = from_html(`<span class="filtered svelte-qickb7"> </span>`);
@@ -6727,7 +7190,7 @@ ${component_stack}
   var root_82 = from_html(`<li class="folder svelte-qickb7"><div class="node folder-node svelte-qickb7"><span class="caret svelte-qickb7">\u25BE</span> <span class="name svelte-qickb7"> </span> <span class="meta svelte-qickb7"> </span> <span class="badge svelte-qickb7"> </span></div> <ul class="sub svelte-qickb7"></ul></li>`);
   var root_92 = from_html(`<li class="project svelte-qickb7"><div class="node project-node svelte-qickb7"><span class="caret svelte-qickb7">\u25BE</span> <span class="name svelte-qickb7"> </span> <span class="meta svelte-qickb7"> </span> <span class="badge svelte-qickb7"> </span></div> <ul class="sub svelte-qickb7"></ul></li>`);
   var root_102 = from_html(`<p class="count svelte-qickb7"> <!></p> <ul class="tree svelte-qickb7"></ul>`, 1);
-  var root_11 = from_html(`<div class="section"><div class="section-header svelte-qickb7"><h2 class="svelte-qickb7">Catalog</h2> <button class="btn svelte-qickb7" type="button" aria-label="Refresh catalog"> </button></div> <div class="search svelte-qickb7"><input type="search" placeholder="Search projects, folders, tasks\u2026" aria-label="Search catalog" class="svelte-qickb7"/> <!></div> <!></div>`);
+  var root_112 = from_html(`<div class="section"><div class="section-header svelte-qickb7"><h2 class="svelte-qickb7">Catalog</h2> <button class="btn svelte-qickb7" type="button" aria-label="Refresh catalog"> </button></div> <div class="search svelte-qickb7"><input type="search" placeholder="Search projects, folders, tasks\u2026" aria-label="Search catalog" class="svelte-qickb7"/> <!></div> <!></div>`);
   var $$css5 = {
     hash: "svelte-qickb7",
     code: ".section-header.svelte-qickb7 {display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}h2.svelte-qickb7 {font-size:0.9rem;font-weight:600;}.btn.svelte-qickb7 {padding:4px 12px;background:transparent;border:1px solid #3c3c3c;border-radius:4px;color:#d4d4d4;font-family:inherit;font-size:0.8rem;cursor:pointer;}.btn.svelte-qickb7:hover:not(:disabled) {border-color:#007acc;}.btn.svelte-qickb7:disabled {opacity:0.5;cursor:not-allowed;}.search.svelte-qickb7 {display:flex;gap:8px;margin-bottom:14px;}.search.svelte-qickb7 input:where(.svelte-qickb7) {flex:1;padding:6px 10px;background:#2d2d2d;border:1px solid #3c3c3c;border-radius:4px;color:#d4d4d4;font-family:inherit;font-size:0.8rem;}.search.svelte-qickb7 input:where(.svelte-qickb7):focus {outline:none;border-color:#007acc;}.count.svelte-qickb7 {font-size:0.75rem;color:#858585;margin:0 0 12px;}.filtered.svelte-qickb7 {color:#007acc;}.tree.svelte-qickb7, .sub.svelte-qickb7 {list-style:none;margin:0;padding:0;}.sub.svelte-qickb7 {padding-left:20px;border-left:1px solid #3c3c3c;margin-left:8px;}.project.svelte-qickb7 > .sub:where(.svelte-qickb7), .folder.svelte-qickb7 > .sub:where(.svelte-qickb7) {margin-top:2px;}.node.svelte-qickb7 {display:flex;align-items:center;gap:8px;padding:4px 8px;border-radius:4px;}.project-node.svelte-qickb7 {font-weight:600;}.folder-node.svelte-qickb7 {color:#d4d4d4;}.task-node.svelte-qickb7 {width:100%;text-align:left;background:transparent;border:1px solid transparent;color:#d4d4d4;font-family:inherit;font-size:0.8rem;cursor:pointer;}.task-node.svelte-qickb7:hover {background:rgba(0,122,204,0.08);border-color:#3c3c3c;}.caret.svelte-qickb7 {color:#858585;width:12px;font-size:0.7rem;}.name.svelte-qickb7 {flex:0 1 auto;}.meta.svelte-qickb7 {color:#858585;font-size:0.7rem;}.badge.svelte-qickb7 {margin-left:auto;padding:1px 8px;border:1px solid #3c3c3c;border-radius:10px;font-size:0.7rem;color:#858585;}.task-id.svelte-qickb7 {color:#007acc;font-family:inherit;flex:0 0 auto;}.task-title.svelte-qickb7 {flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.task-tags.svelte-qickb7 {display:inline-flex;gap:4px;flex:0 0 auto;}.tag.svelte-qickb7 {padding:0 6px;border:1px solid #3c3c3c;border-radius:3px;font-size:0.65rem;color:#858585;}.tag.warn.svelte-qickb7 {color:#eab308;border-color:#eab308;}.loading.svelte-qickb7, .empty.svelte-qickb7, .error.svelte-qickb7 {padding:24px;text-align:center;color:#858585;}.error.svelte-qickb7 {color:#f87171;}\r\n\r\n	@media (max-width: 600px) {.sub.svelte-qickb7 {padding-left:12px;}.task-title.svelte-qickb7 {white-space:normal;}\r\n	}"
@@ -6741,26 +7204,43 @@ ${component_stack}
     let query = state("");
     let activeQuery = state("");
     let debounce = null;
+    let requestId = 0;
+    function cancelDebounce() {
+      if (debounce) clearTimeout(debounce);
+      debounce = null;
+    }
     async function load(q) {
+      const currentRequest = ++requestId;
       set(loading, true);
       set(error, "");
       try {
-        set(catalog, await getCatalog(q), true);
+        const result = await getCatalog(q);
+        if (currentRequest !== requestId) return;
+        set(catalog, result, true);
         set(activeQuery, q, true);
       } catch (e) {
-        set(error, e.message, true);
+        if (currentRequest === requestId) set(error, e.message, true);
       } finally {
-        set(loading, false);
+        if (currentRequest === requestId) set(loading, false);
       }
     }
     function onInput(e) {
       set(query, e.target.value, true);
-      if (debounce) clearTimeout(debounce);
-      debounce = setTimeout(() => load(get2(query)), 250);
+      requestId++;
+      set(error, "");
+      cancelDebounce();
+      debounce = setTimeout(
+        () => {
+          debounce = null;
+          void load(get2(query));
+        },
+        250
+      );
     }
     function clearSearch() {
+      cancelDebounce();
       set(query, "");
-      load("");
+      void load("");
     }
     function taskCount(p) {
       return p.folders.reduce((n, f) => n + f.tasks.length, 0);
@@ -6770,9 +7250,13 @@ ${component_stack}
       return get2(catalog).projects.reduce((n, p) => n + taskCount(p), 0);
     }
     onMount(() => {
-      load("");
+      void load("");
+      return () => {
+        cancelDebounce();
+        requestId++;
+      };
     });
-    var div = root_11();
+    var div = root_112();
     var div_1 = child(div);
     var button = sibling(child(div_1), 2);
     var text2 = only_child(button, true);
@@ -6795,7 +7279,7 @@ ${component_stack}
     var node_1 = sibling(div_2, 2);
     {
       var consequent_1 = ($$anchor2) => {
-        var div_3 = root_15();
+        var div_3 = root_16();
         append($$anchor2, div_3);
       };
       var consequent_2 = ($$anchor2) => {
@@ -6951,7 +7435,10 @@ ${component_stack}
       set_text(text2, get2(loading) ? "Refreshing\u2026" : "Refresh");
       set_value(input, get2(query));
     });
-    delegated("click", button, () => load(get2(query)));
+    delegated("click", button, () => {
+      cancelDebounce();
+      void load(get2(query));
+    });
     delegated("input", input, onInput);
     append($$anchor, div);
     pop();
@@ -6960,17 +7447,19 @@ ${component_stack}
 
   // src/components/TaskStudio.svelte
   var root6 = from_html(`<div class="loading svelte-1ci3929">Loading task studio\u2026</div>`);
-  var root_16 = from_html(`<div class="error svelte-1ci3929"> </div> <button class="btn svelte-1ci3929" type="button" aria-label="Retry loading">Retry</button>`, 1);
-  var root_25 = from_html(`<span class="dirty svelte-1ci3929" title="Unsaved changes">\u25CF dirty</span>`);
-  var root_35 = from_html(`<div class="readonly-banner svelte-1ci3929" role="alert"> </div>`);
-  var root_44 = from_html(`<div class="readonly-banner svelte-1ci3929" role="alert">Browse-only: mentors may view but not edit task content.</div>`);
-  var root_54 = from_html(`<p class="notice svelte-1ci3929" role="status" aria-live="polite"> </p>`);
-  var root_63 = from_html(`<p class="error svelte-1ci3929" role="alert"> </p>`);
-  var root_73 = from_html(`<p class="success svelte-1ci3929" role="status"> </p>`);
-  var root_83 = from_html(`<button class="btn primary svelte-1ci3929" type="button" aria-label="Validate candidate"> </button> <button class="btn primary svelte-1ci3929" type="button" aria-label="Save candidate to canonical files"> </button> <button class="btn svelte-1ci3929" type="button" aria-label="Revert to server state">Revert</button>`, 1);
-  var root_93 = from_html(`<span class="hint svelte-1ci3929">Mentor role: browse-only. No write actions available.</span>`);
-  var root_103 = from_html(`<dl class="meta svelte-1ci3929"><div class="svelte-1ci3929"><dt class="svelte-1ci3929">Task</dt><dd class="svelte-1ci3929"><strong> </strong></dd></div> <div class="svelte-1ci3929"><dt class="svelte-1ci3929">ID</dt><dd class="svelte-1ci3929"><code class="svelte-1ci3929"> </code></dd></div> <div class="svelte-1ci3929"><dt class="svelte-1ci3929">Version</dt><dd class="svelte-1ci3929"><code class="svelte-1ci3929"> </code><!></dd></div> <div class="svelte-1ci3929"><dt class="svelte-1ci3929">Version policy</dt><dd class="svelte-1ci3929"><code class="svelte-1ci3929"> </code></dd></div> <div class="svelte-1ci3929"><dt class="svelte-1ci3929">Canonical path</dt><dd class="svelte-1ci3929"><code class="svelte-1ci3929"> </code></dd></div></dl> <!> <div class="tabs svelte-1ci3929" role="tablist" aria-label="Task content"><button role="tab" id="tab-statement" aria-controls="panel-statement" type="button">Statement Markdown</button> <button role="tab" id="tab-solution" aria-controls="panel-solution" type="button">Reference Solution</button> <button role="tab" id="tab-tests" aria-controls="panel-tests" type="button">Tests</button></div> <div id="panel-statement" role="tabpanel" aria-labelledby="tab-statement" class="svelte-1ci3929"><textarea class="editor svelte-1ci3929" spellcheck="false" wrap="off" aria-label="Statement markdown (full, including frontmatter)"></textarea></div> <div id="panel-solution" role="tabpanel" aria-labelledby="tab-solution" class="svelte-1ci3929"><textarea class="editor svelte-1ci3929" spellcheck="false" wrap="off" aria-label="Reference solution Python"></textarea></div> <div id="panel-tests" role="tabpanel" aria-labelledby="tab-tests" class="svelte-1ci3929"><textarea class="editor svelte-1ci3929" spellcheck="false" wrap="off" aria-label="Tests Python"></textarea></div> <!> <!> <!> <!> <!> <div class="actions svelte-1ci3929"><!></div>`, 1);
-  var root_112 = from_html(`<div class="section"><div class="section-header svelte-1ci3929"><button class="btn back svelte-1ci3929" type="button" aria-label="Back to Catalog">\u2190 Catalog</button> <h2 class="svelte-1ci3929">Task Studio</h2> <button class="btn svelte-1ci3929" type="button" aria-label="Reload task studio"> </button></div> <!></div>`);
+  var root_17 = from_html(`<div class="error svelte-1ci3929"> </div> <button class="btn svelte-1ci3929" type="button" aria-label="Retry loading">Retry</button>`, 1);
+  var root_25 = from_html(`<div class="error svelte-1ci3929" role="alert"> </div> <button class="btn svelte-1ci3929" type="button">Retry reload</button>`, 1);
+  var root_35 = from_html(`<span class="dirty svelte-1ci3929" title="Unsaved changes">\u25CF dirty</span>`);
+  var root_44 = from_html(`<div class="readonly-banner svelte-1ci3929" role="alert"> </div>`);
+  var root_54 = from_html(`<div class="readonly-banner svelte-1ci3929" role="alert">Browse-only: mentors may view but not edit task content.</div>`);
+  var root_63 = from_html(`<div class="readonly-banner svelte-1ci3929" role="alert"> <button class="btn svelte-1ci3929" type="button">Discard draft and use server version</button></div>`);
+  var root_73 = from_html(`<p class="notice svelte-1ci3929" role="status" aria-live="polite"> </p>`);
+  var root_83 = from_html(`<p class="error svelte-1ci3929" role="alert"> </p>`);
+  var root_93 = from_html(`<p class="success svelte-1ci3929" role="status"> </p>`);
+  var root_103 = from_html(`<button class="btn primary svelte-1ci3929" type="button" aria-label="Validate candidate"> </button> <button class="btn primary svelte-1ci3929" type="button" aria-label="Save candidate to canonical files"> </button> <button class="btn svelte-1ci3929" type="button" aria-label="Revert to server state">Revert</button>`, 1);
+  var root_113 = from_html(`<span class="hint svelte-1ci3929">Mentor role: browse-only. No write actions available.</span>`);
+  var root_123 = from_html(`<!> <dl class="meta svelte-1ci3929"><div class="svelte-1ci3929"><dt class="svelte-1ci3929">Task</dt><dd class="svelte-1ci3929"><strong> </strong></dd></div> <div class="svelte-1ci3929"><dt class="svelte-1ci3929">ID</dt><dd class="svelte-1ci3929"><code class="svelte-1ci3929"> </code></dd></div> <div class="svelte-1ci3929"><dt class="svelte-1ci3929">Version</dt><dd class="svelte-1ci3929"><code class="svelte-1ci3929"> </code><!></dd></div> <div class="svelte-1ci3929"><dt class="svelte-1ci3929">Version policy</dt><dd class="svelte-1ci3929"><code class="svelte-1ci3929"> </code></dd></div> <div class="svelte-1ci3929"><dt class="svelte-1ci3929">Canonical path</dt><dd class="svelte-1ci3929"><code class="svelte-1ci3929"> </code></dd></div></dl> <!> <!> <div class="tabs svelte-1ci3929" role="tablist" aria-label="Task content"><button role="tab" id="tab-statement" aria-controls="panel-statement" type="button">Statement Markdown</button> <button role="tab" id="tab-solution" aria-controls="panel-solution" type="button">Reference Solution</button> <button role="tab" id="tab-tests" aria-controls="panel-tests" type="button">Tests</button></div> <div id="panel-statement" role="tabpanel" aria-labelledby="tab-statement" class="svelte-1ci3929"><textarea class="editor svelte-1ci3929" spellcheck="false" wrap="off" aria-label="Statement markdown (full, including frontmatter)"></textarea></div> <div id="panel-solution" role="tabpanel" aria-labelledby="tab-solution" class="svelte-1ci3929"><textarea class="editor svelte-1ci3929" spellcheck="false" wrap="off" aria-label="Reference solution Python"></textarea></div> <div id="panel-tests" role="tabpanel" aria-labelledby="tab-tests" class="svelte-1ci3929"><textarea class="editor svelte-1ci3929" spellcheck="false" wrap="off" aria-label="Tests Python"></textarea></div> <!> <!> <!> <!> <!> <div class="actions svelte-1ci3929"><!></div>`, 1);
+  var root_133 = from_html(`<div class="section"><div class="section-header svelte-1ci3929"><button class="btn back svelte-1ci3929" type="button" aria-label="Back to Catalog">\u2190 Catalog</button> <h2 class="svelte-1ci3929">Task Studio</h2> <button class="btn svelte-1ci3929" type="button" aria-label="Reload task studio"> </button></div> <!></div>`);
   var $$css6 = {
     hash: "svelte-1ci3929",
     code: `.section-header.svelte-1ci3929 {display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:8px;}h2.svelte-1ci3929 {font-size:0.9rem;font-weight:600;}.btn.svelte-1ci3929 {padding:4px 12px;background:transparent;border:1px solid #3c3c3c;border-radius:4px;color:#d4d4d4;font-family:inherit;font-size:0.8rem;cursor:pointer;}.btn.svelte-1ci3929:hover:not(:disabled) {border-color:#007acc;}.btn.svelte-1ci3929:disabled {opacity:0.5;cursor:not-allowed;}.btn.primary.svelte-1ci3929 {border-color:#007acc;color:#007acc;}.btn.primary.svelte-1ci3929:hover:not(:disabled) {background:rgba(0,122,204,0.12);}.btn.back.svelte-1ci3929 {border-color:transparent;color:#858585;}.btn.back.svelte-1ci3929:hover:not(:disabled) {color:#d4d4d4;}.meta.svelte-1ci3929 {display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:8px 16px;margin:0 0 12px;padding:12px;background:#2d2d2d;border:1px solid #3c3c3c;border-radius:6px;}.meta.svelte-1ci3929 div:where(.svelte-1ci3929) {display:flex;flex-direction:column;gap:2px;min-width:0;}.meta.svelte-1ci3929 dt:where(.svelte-1ci3929) {font-size:0.65rem;text-transform:uppercase;letter-spacing:0.05em;color:#858585;}.meta.svelte-1ci3929 dd:where(.svelte-1ci3929) {margin:0;font-size:0.8rem;word-break:break-all;}.meta.svelte-1ci3929 code:where(.svelte-1ci3929) {font-family:inherit;color:#d4d4d4;}.dirty.svelte-1ci3929 {color:#eab308;font-size:0.7rem;}.readonly-banner.svelte-1ci3929 {padding:8px 12px;margin-bottom:12px;background:rgba(234,179,8,0.08);border:1px solid #eab308;border-radius:4px;color:#eab308;font-size:0.8rem;}.tabs.svelte-1ci3929 {display:flex;gap:2px;border-bottom:1px solid #3c3c3c;margin-bottom:0;}.tabs.svelte-1ci3929 button:where(.svelte-1ci3929) {padding:6px 14px;background:transparent;border:1px solid transparent;border-bottom:none;border-radius:4px 4px 0 0;color:#858585;font-family:inherit;font-size:0.8rem;cursor:pointer;}.tabs.svelte-1ci3929 button:where(.svelte-1ci3929):hover {color:#d4d4d4;}.tabs.svelte-1ci3929 button.active:where(.svelte-1ci3929) {color:#d4d4d4;background:#2d2d2d;border-color:#3c3c3c;}.tabs.svelte-1ci3929 button[aria-selected="true"]:where(.svelte-1ci3929) {color:#d4d4d4;}div[role="tabpanel"].svelte-1ci3929 {margin:0;}.editor.svelte-1ci3929 {width:100%;min-height:420px;box-sizing:border-box;resize:vertical;padding:12px;background:#1e1e1e;border:1px solid #3c3c3c;border-radius:0 4px 4px 4px;color:#d4d4d4;font-family:'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;font-size:0.8rem;line-height:1.5;white-space:pre;overflow:auto;}.editor.svelte-1ci3929:focus {outline:none;border-color:#007acc;}.editor.svelte-1ci3929:disabled {opacity:0.85;cursor:not-allowed;background:#252525;}.actions.svelte-1ci3929 {display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center;}.hint.svelte-1ci3929 {color:#858585;font-size:0.75rem;}.notice.svelte-1ci3929 {color:#858585;font-size:0.75rem;margin:12px 0 0;}.success.svelte-1ci3929 {color:#4ade80;font-size:0.78rem;margin:12px 0 0;word-break:break-word;}.error.svelte-1ci3929 {color:#f87171;font-size:0.78rem;margin:12px 0 0;word-break:break-word;}.loading.svelte-1ci3929 {padding:24px;text-align:center;color:#858585;}\r
@@ -6981,6 +7470,7 @@ ${component_stack}
   function TaskStudio($$anchor, $$props) {
     push($$props, true);
     append_styles($$anchor, $$css6);
+    let draft = prop($$props, "draft", 3, null);
     const canEdit = user_derived(() => $$props.role === "admin");
     let studio = state(null);
     let loading = state(true);
@@ -7001,12 +7491,37 @@ ${component_stack}
       ""
       // generic transient status (e.g. reloaded)
     );
+    let draftConflict = state(false);
+    let draftConflictMessage = state("");
+    let appliedDraft = null;
+    let isBusy = user_derived(() => get2(loading) || get2(saving) || get2(validating));
     function isDirty() {
+      if (get2(draftConflict)) return true;
       if (!get2(studio)) return false;
       return get2(mdBuffer) !== get2(studio).markdown || get2(solBuffer) !== get2(studio).solution_py || get2(testsBuffer) !== get2(studio).tests_py;
     }
     const editable = user_derived(() => !!get2(studio) && get2(studio).writable && get2(canEdit));
-    async function load() {
+    user_effect(() => {
+      const dirty = isDirty();
+      $$props.onDirtyChange?.(dirty);
+      if (!dirty) return;
+      const warnBeforeUnload = (event2) => {
+        event2.preventDefault();
+        event2.returnValue = "";
+      };
+      window.addEventListener("beforeunload", warnBeforeUnload);
+      return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+    });
+    user_effect(() => {
+      const busy = get2(saving) || get2(validating);
+      $$props.onBusyChange?.(busy);
+    });
+    function confirmDiscard(action2) {
+      return !isDirty() || confirm(`You have unsaved task changes. ${action2} and discard them?`);
+    }
+    async function load({ confirmDirty = true, allowBusy = false } = {}) {
+      if (!allowBusy && (get2(saving) || get2(validating) || get2(loading) && !!get2(studio))) return;
+      if (confirmDirty && !confirmDiscard("Reload")) return;
       set(loading, true);
       set(loadError, "");
       set(validateResult, null);
@@ -7014,16 +7529,32 @@ ${component_stack}
       set(saveResult, null);
       set(saveError, "");
       set(notice, "");
+      set(draftConflict, false);
+      set(draftConflictMessage, "");
       try {
         const data = await getTaskStudio($$props.taskId);
         set(studio, data, true);
-        set(mdBuffer, data.markdown, true);
-        set(solBuffer, data.solution_py, true);
-        set(testsBuffer, data.tests_py, true);
-        set(expectedVersion, data.version, true);
-        set(expectedEtag, data.content_etag, true);
+        const incomingDraft = draft() && draft() !== appliedDraft ? draft() : null;
+        if (incomingDraft) {
+          appliedDraft = incomingDraft;
+          const matchesServer = incomingDraft.expected_version === data.version && incomingDraft.expected_content_etag === data.content_etag;
+          set(mdBuffer, incomingDraft.markdown, true);
+          set(solBuffer, incomingDraft.solution_py, true);
+          set(testsBuffer, incomingDraft.tests_py, true);
+          set(expectedVersion, incomingDraft.expected_version, true);
+          set(expectedEtag, incomingDraft.expected_content_etag, true);
+          set(draftConflict, !matchesServer);
+          if (!matchesServer) {
+            set(draftConflictMessage, `Draft is based on v${incomingDraft.expected_version}; server is now v${data.version}. Draft text is preserved below. Copy it before discarding or reloading.`);
+          }
+        } else {
+          set(mdBuffer, data.markdown, true);
+          set(solBuffer, data.solution_py, true);
+          set(testsBuffer, data.tests_py, true);
+          set(expectedVersion, data.version, true);
+          set(expectedEtag, data.content_etag, true);
+        }
       } catch (e) {
-        set(studio, null);
         set(loadError, e.message, true);
       } finally {
         set(loading, false);
@@ -7031,6 +7562,8 @@ ${component_stack}
     }
     function resetBuffers() {
       if (!get2(studio)) return;
+      if (get2(isBusy) || !confirmDiscard("Revert to the latest server state")) return;
+      appliedDraft = draft();
       set(mdBuffer, get2(studio).markdown, true);
       set(solBuffer, get2(studio).solution_py, true);
       set(testsBuffer, get2(studio).tests_py, true);
@@ -7041,12 +7574,19 @@ ${component_stack}
       set(saveResult, null);
       set(saveError, "");
       set(notice, "Reverted to server state");
+      set(draftConflict, false);
+      set(draftConflictMessage, "");
+    }
+    function handleBack() {
+      if (get2(isBusy) || !confirmDiscard("Leave Task Studio")) return;
+      $$props.onDirtyChange?.(false);
+      $$props.onBack();
     }
     function selectTab(tab) {
       set(activeTab, tab, true);
     }
     async function doValidate() {
-      if (!get2(editable) || !get2(studio)) return;
+      if (!get2(editable) || !get2(studio) || get2(isBusy) || get2(draftConflict)) return;
       set(validating, true);
       set(validateError, "");
       set(validateResult, null);
@@ -7067,7 +7607,7 @@ ${component_stack}
       }
     }
     async function doSave() {
-      if (!get2(editable) || !get2(studio)) return;
+      if (!get2(editable) || !get2(studio) || get2(isBusy) || get2(draftConflict)) return;
       set(saving, true);
       set(saveError, "");
       set(saveResult, null);
@@ -7083,7 +7623,7 @@ ${component_stack}
           tests_py: get2(testsBuffer)
         });
         set(saveResult, res, true);
-        await load();
+        await load({ confirmDirty: false, allowBusy: true });
         set(notice, `Saved (v${res.new_version}) \u2014 reloaded from server`);
       } catch (e) {
         set(saveError, e.message, true);
@@ -7092,9 +7632,13 @@ ${component_stack}
       }
     }
     onMount(() => {
-      load();
+      void load({ confirmDirty: false });
     });
-    var div = root_112();
+    onDestroy(() => {
+      $$props.onDirtyChange?.(false);
+      $$props.onBusyChange?.(false);
+    });
+    var div = root_133();
     var div_1 = child(div);
     var button = child(div_1);
     var button_1 = sibling(button, 4);
@@ -7107,227 +7651,266 @@ ${component_stack}
         append($$anchor2, div_2);
       };
       var consequent_1 = ($$anchor2) => {
-        var fragment = root_16();
+        var fragment = root_17();
         var div_3 = first_child(fragment);
         var text_1 = only_child(div_3, true);
         var button_2 = sibling(div_3, 2);
-        template_effect(() => set_text(text_1, get2(loadError)));
-        delegated("click", button_2, load);
+        template_effect(() => {
+          set_text(text_1, get2(loadError));
+          button_2.disabled = get2(isBusy);
+        });
+        delegated("click", button_2, () => load({ confirmDirty: false }));
         append($$anchor2, fragment);
       };
-      var consequent_11 = ($$anchor2) => {
-        var fragment_1 = root_103();
-        var dl = first_child(fragment_1);
-        var div_4 = child(dl);
-        var dd = sibling(child(div_4));
-        var strong = child(dd);
-        var text_2 = only_child(strong, true);
-        reset(dd);
-        reset(div_4);
-        var div_5 = sibling(div_4, 2);
-        var dd_1 = sibling(child(div_5));
-        var code = child(dd_1);
-        var text_3 = only_child(code, true);
-        reset(dd_1);
-        reset(div_5);
-        var div_6 = sibling(div_5, 2);
-        var dd_2 = sibling(child(div_6));
-        var code_1 = child(dd_2);
-        var text_4 = only_child(code_1);
-        var node_1 = sibling(code_1);
+      var consequent_13 = ($$anchor2) => {
+        var fragment_1 = root_123();
+        var node_1 = first_child(fragment_1);
         {
           var consequent_2 = ($$anchor3) => {
-            var span = root_25();
+            var fragment_2 = root_25();
+            var div_4 = first_child(fragment_2);
+            var text_2 = only_child(div_4);
+            var button_3 = sibling(div_4, 2);
+            template_effect(() => {
+              set_text(text_2, `Could not refresh task: ${get2(loadError) ?? ""}`);
+              button_3.disabled = get2(isBusy);
+            });
+            delegated("click", button_3, () => load({ confirmDirty: false }));
+            append($$anchor3, fragment_2);
+          };
+          if_block(node_1, ($$render) => {
+            if (get2(loadError)) $$render(consequent_2);
+          });
+        }
+        var dl = sibling(node_1, 2);
+        var div_5 = child(dl);
+        var dd = sibling(child(div_5));
+        var strong = child(dd);
+        var text_3 = only_child(strong, true);
+        reset(dd);
+        reset(div_5);
+        var div_6 = sibling(div_5, 2);
+        var dd_1 = sibling(child(div_6));
+        var code = child(dd_1);
+        var text_4 = only_child(code, true);
+        reset(dd_1);
+        reset(div_6);
+        var div_7 = sibling(div_6, 2);
+        var dd_2 = sibling(child(div_7));
+        var code_1 = child(dd_2);
+        var text_5 = only_child(code_1);
+        var node_2 = sibling(code_1);
+        {
+          var consequent_3 = ($$anchor3) => {
+            var span = root_35();
             append($$anchor3, span);
           };
           var d = user_derived(() => isDirty());
-          if_block(node_1, ($$render) => {
-            if (get2(d)) $$render(consequent_2);
+          if_block(node_2, ($$render) => {
+            if (get2(d)) $$render(consequent_3);
           });
         }
         reset(dd_2);
-        reset(div_6);
-        var div_7 = sibling(div_6, 2);
-        var dd_3 = sibling(child(div_7));
-        var code_2 = child(dd_3);
-        var text_5 = only_child(code_2, true);
-        reset(dd_3);
         reset(div_7);
         var div_8 = sibling(div_7, 2);
-        var dd_4 = sibling(child(div_8));
-        var code_3 = child(dd_4);
-        var text_6 = only_child(code_3, true);
-        reset(dd_4);
+        var dd_3 = sibling(child(div_8));
+        var code_2 = child(dd_3);
+        var text_6 = only_child(code_2, true);
+        reset(dd_3);
         reset(div_8);
+        var div_9 = sibling(div_8, 2);
+        var dd_4 = sibling(child(div_9));
+        var code_3 = child(dd_4);
+        var text_7 = only_child(code_3, true);
+        reset(dd_4);
+        reset(div_9);
         reset(dl);
-        var node_2 = sibling(dl, 2);
+        var node_3 = sibling(dl, 2);
         {
-          var consequent_3 = ($$anchor3) => {
-            var div_9 = root_35();
-            var text_7 = only_child(div_9);
-            template_effect(() => set_text(text_7, `Read-only: ${(get2(studio).read_only_reason || "content repo is not writable") ?? ""}. Editing is disabled; ask an admin to make the content repo writable (configure a local repo path with write access).`));
-            append($$anchor3, div_9);
-          };
           var consequent_4 = ($$anchor3) => {
             var div_10 = root_44();
+            var text_8 = only_child(div_10);
+            template_effect(() => set_text(text_8, `Read-only: ${(get2(studio).read_only_reason || "content repo is not writable") ?? ""}. Editing is disabled; ask an admin to make the content repo writable (configure a local repo path with write access).`));
             append($$anchor3, div_10);
           };
-          if_block(node_2, ($$render) => {
-            if (!get2(studio).writable) $$render(consequent_3);
-            else if (!get2(canEdit)) $$render(consequent_4, 1);
-          });
-        }
-        var div_11 = sibling(node_2, 2);
-        var button_3 = child(div_11);
-        let classes;
-        var button_4 = sibling(button_3, 2);
-        let classes_1;
-        var button_5 = sibling(button_4, 2);
-        let classes_2;
-        reset(div_11);
-        var div_12 = sibling(div_11, 2);
-        var textarea = child(div_12);
-        remove_textarea_child(textarea);
-        reset(div_12);
-        var div_13 = sibling(div_12, 2);
-        var textarea_1 = child(div_13);
-        remove_textarea_child(textarea_1);
-        reset(div_13);
-        var div_14 = sibling(div_13, 2);
-        var textarea_2 = child(div_14);
-        remove_textarea_child(textarea_2);
-        reset(div_14);
-        var node_3 = sibling(div_14, 2);
-        {
           var consequent_5 = ($$anchor3) => {
-            var p = root_54();
-            var text_8 = only_child(p, true);
-            template_effect(() => set_text(text_8, get2(notice)));
-            append($$anchor3, p);
+            var div_11 = root_54();
+            append($$anchor3, div_11);
           };
           if_block(node_3, ($$render) => {
-            if (get2(notice)) $$render(consequent_5);
+            if (!get2(studio).writable) $$render(consequent_4);
+            else if (!get2(canEdit)) $$render(consequent_5, 1);
           });
         }
         var node_4 = sibling(node_3, 2);
         {
           var consequent_6 = ($$anchor3) => {
-            var p_1 = root_63();
-            var text_9 = only_child(p_1);
-            template_effect(() => set_text(text_9, `Validate failed: ${get2(validateError) ?? ""}`));
-            append($$anchor3, p_1);
+            var div_12 = root_63();
+            var text_9 = child(div_12);
+            var button_4 = sibling(text_9);
+            reset(div_12);
+            template_effect(() => {
+              set_text(text_9, `${get2(draftConflictMessage) ?? ""} Saving and validation are disabled until you discard this stale draft. `);
+              button_4.disabled = get2(isBusy);
+            });
+            delegated("click", button_4, () => resetBuffers());
+            append($$anchor3, div_12);
           };
           if_block(node_4, ($$render) => {
-            if (get2(validateError)) $$render(consequent_6);
+            if (get2(draftConflict)) $$render(consequent_6);
           });
         }
-        var node_5 = sibling(node_4, 2);
+        var div_13 = sibling(node_4, 2);
+        var button_5 = child(div_13);
+        let classes;
+        var button_6 = sibling(button_5, 2);
+        let classes_1;
+        var button_7 = sibling(button_6, 2);
+        let classes_2;
+        reset(div_13);
+        var div_14 = sibling(div_13, 2);
+        var textarea = child(div_14);
+        remove_textarea_child(textarea);
+        reset(div_14);
+        var div_15 = sibling(div_14, 2);
+        var textarea_1 = child(div_15);
+        remove_textarea_child(textarea_1);
+        reset(div_15);
+        var div_16 = sibling(div_15, 2);
+        var textarea_2 = child(div_16);
+        remove_textarea_child(textarea_2);
+        reset(div_16);
+        var node_5 = sibling(div_16, 2);
         {
           var consequent_7 = ($$anchor3) => {
-            var p_2 = root_63();
-            var text_10 = only_child(p_2);
-            template_effect(() => set_text(text_10, `Save failed: ${get2(saveError) ?? ""}`));
-            append($$anchor3, p_2);
+            var p = root_73();
+            var text_10 = only_child(p, true);
+            template_effect(() => set_text(text_10, get2(notice)));
+            append($$anchor3, p);
           };
           if_block(node_5, ($$render) => {
-            if (get2(saveError)) $$render(consequent_7);
+            if (get2(notice)) $$render(consequent_7);
           });
         }
         var node_6 = sibling(node_5, 2);
         {
           var consequent_8 = ($$anchor3) => {
-            var p_3 = root_73();
-            var text_11 = only_child(p_3);
-            template_effect(() => set_text(text_11, `Valid \u2713 \u2014 task ${get2(validateResult).task_id ?? ""},
+            var p_1 = root_83();
+            var text_11 = only_child(p_1);
+            template_effect(() => set_text(text_11, `Validate failed: ${get2(validateError) ?? ""}`));
+            append($$anchor3, p_1);
+          };
+          if_block(node_6, ($$render) => {
+            if (get2(validateError)) $$render(consequent_8);
+          });
+        }
+        var node_7 = sibling(node_6, 2);
+        {
+          var consequent_9 = ($$anchor3) => {
+            var p_2 = root_83();
+            var text_12 = only_child(p_2);
+            template_effect(() => set_text(text_12, `Save failed: ${get2(saveError) ?? ""}`));
+            append($$anchor3, p_2);
+          };
+          if_block(node_7, ($$render) => {
+            if (get2(saveError)) $$render(consequent_9);
+          });
+        }
+        var node_8 = sibling(node_7, 2);
+        {
+          var consequent_10 = ($$anchor3) => {
+            var p_3 = root_93();
+            var text_13 = only_child(p_3);
+            template_effect(() => set_text(text_13, `Valid \u2713 \u2014 task ${get2(validateResult).task_id ?? ""},
 				current v${get2(validateResult).current_version ?? ""},
 				candidate v${get2(validateResult).candidate_version ?? ""},
 				${get2(validateResult).content_changed ? "content changed" : "no content change"},
 				policy: ${get2(validateResult).version_policy ?? ""}`));
             append($$anchor3, p_3);
           };
-          if_block(node_6, ($$render) => {
-            if (get2(validateResult)) $$render(consequent_8);
+          if_block(node_8, ($$render) => {
+            if (get2(validateResult)) $$render(consequent_10);
           });
         }
-        var node_7 = sibling(node_6, 2);
+        var node_9 = sibling(node_8, 2);
         {
-          var consequent_9 = ($$anchor3) => {
-            var p_4 = root_73();
-            var text_12 = only_child(p_4);
-            template_effect(() => set_text(text_12, `Saved \u2713 \u2014 task ${get2(saveResult).task_id ?? ""}, new version v${get2(saveResult).new_version ?? ""},
+          var consequent_11 = ($$anchor3) => {
+            var p_4 = root_93();
+            var text_14 = only_child(p_4);
+            template_effect(() => set_text(text_14, `Saved \u2713 \u2014 task ${get2(saveResult).task_id ?? ""}, new version v${get2(saveResult).new_version ?? ""},
 				sync: ${get2(saveResult).sync.status ?? ""}
 				(+${get2(saveResult).sync.added ?? ""}/~${get2(saveResult).sync.updated ?? ""}/=${get2(saveResult).sync.skipped ?? ""},
 				${get2(saveResult).sync.errors ?? ""} error${get2(saveResult).sync.errors === 1 ? "" : "s"})`));
             append($$anchor3, p_4);
           };
-          if_block(node_7, ($$render) => {
-            if (get2(saveResult)) $$render(consequent_9);
+          if_block(node_9, ($$render) => {
+            if (get2(saveResult)) $$render(consequent_11);
           });
         }
-        var div_15 = sibling(node_7, 2);
-        var node_8 = child(div_15);
+        var div_17 = sibling(node_9, 2);
+        var node_10 = child(div_17);
         {
-          var consequent_10 = ($$anchor3) => {
-            var fragment_2 = root_83();
-            var button_6 = first_child(fragment_2);
-            var text_13 = only_child(button_6, true);
-            var button_7 = sibling(button_6, 2);
-            var text_14 = only_child(button_7, true);
-            var button_8 = sibling(button_7, 2);
+          var consequent_12 = ($$anchor3) => {
+            var fragment_3 = root_103();
+            var button_8 = first_child(fragment_3);
+            var text_15 = only_child(button_8, true);
+            var button_9 = sibling(button_8, 2);
+            var text_16 = only_child(button_9, true);
+            var button_10 = sibling(button_9, 2);
             template_effect(
               ($0, $1, $2) => {
-                button_6.disabled = $0;
-                set_text(text_13, get2(validating) ? "Validating\u2026" : "Validate");
-                button_7.disabled = $1;
-                set_text(text_14, get2(saving) ? "Saving\u2026" : "Save");
-                button_8.disabled = $2;
+                button_8.disabled = $0;
+                set_text(text_15, get2(validating) ? "Validating\u2026" : "Validate");
+                button_9.disabled = $1;
+                set_text(text_16, get2(saving) ? "Saving\u2026" : "Save");
+                button_10.disabled = $2;
               },
               [
-                () => !get2(editable) || get2(validating) || get2(saving) || !isDirty(),
-                () => !get2(editable) || get2(saving) || get2(validating) || !isDirty(),
-                () => !get2(editable) || get2(saving) || get2(validating) || !isDirty()
+                () => !get2(editable) || get2(validating) || get2(saving) || get2(loading) || get2(draftConflict) || !isDirty(),
+                () => !get2(editable) || get2(saving) || get2(validating) || get2(loading) || get2(draftConflict) || !isDirty(),
+                () => !get2(editable) || get2(saving) || get2(validating) || get2(loading) || !isDirty()
               ]
             );
-            delegated("click", button_6, doValidate);
-            delegated("click", button_7, doSave);
-            delegated("click", button_8, resetBuffers);
-            append($$anchor3, fragment_2);
+            delegated("click", button_8, doValidate);
+            delegated("click", button_9, doSave);
+            delegated("click", button_10, resetBuffers);
+            append($$anchor3, fragment_3);
           };
           var alternate = ($$anchor3) => {
-            var span_1 = root_93();
+            var span_1 = root_113();
             append($$anchor3, span_1);
           };
-          if_block(node_8, ($$render) => {
-            if (get2(canEdit)) $$render(consequent_10);
+          if_block(node_10, ($$render) => {
+            if (get2(canEdit)) $$render(consequent_12);
             else $$render(alternate, -1);
           });
         }
-        reset(div_15);
+        reset(div_17);
         template_effect(() => {
-          set_text(text_2, $$props.taskLabel || get2(studio).task_id);
-          set_text(text_3, $$props.taskId);
-          set_text(text_4, `v${get2(studio).version ?? ""}`);
-          set_text(text_5, get2(studio).version_policy ?? "\u2014");
-          set_text(text_6, get2(studio).md_path || "\u2014");
-          set_attribute2(button_3, "aria-selected", get2(activeTab) === "statement");
-          classes = set_class(button_3, 1, "svelte-1ci3929", null, classes, { active: get2(activeTab) === "statement" });
-          set_attribute2(button_4, "aria-selected", get2(activeTab) === "solution");
-          classes_1 = set_class(button_4, 1, "svelte-1ci3929", null, classes_1, { active: get2(activeTab) === "solution" });
-          set_attribute2(button_5, "aria-selected", get2(activeTab) === "tests");
-          classes_2 = set_class(button_5, 1, "svelte-1ci3929", null, classes_2, { active: get2(activeTab) === "tests" });
-          set_attribute2(div_12, "hidden", get2(activeTab) !== "statement");
+          set_text(text_3, $$props.taskLabel || get2(studio).task_id);
+          set_text(text_4, $$props.taskId);
+          set_text(text_5, `v${get2(studio).version ?? ""}`);
+          set_text(text_6, get2(studio).version_policy ?? "\u2014");
+          set_text(text_7, get2(studio).md_path || "\u2014");
+          set_attribute2(button_5, "aria-selected", get2(activeTab) === "statement");
+          classes = set_class(button_5, 1, "svelte-1ci3929", null, classes, { active: get2(activeTab) === "statement" });
+          set_attribute2(button_6, "aria-selected", get2(activeTab) === "solution");
+          classes_1 = set_class(button_6, 1, "svelte-1ci3929", null, classes_1, { active: get2(activeTab) === "solution" });
+          set_attribute2(button_7, "aria-selected", get2(activeTab) === "tests");
+          classes_2 = set_class(button_7, 1, "svelte-1ci3929", null, classes_2, { active: get2(activeTab) === "tests" });
+          set_attribute2(div_14, "hidden", get2(activeTab) !== "statement");
           set_value(textarea, get2(mdBuffer));
-          textarea.disabled = !get2(editable);
-          set_attribute2(div_13, "hidden", get2(activeTab) !== "solution");
+          textarea.disabled = !get2(editable) || get2(isBusy);
+          set_attribute2(div_15, "hidden", get2(activeTab) !== "solution");
           set_value(textarea_1, get2(solBuffer));
-          textarea_1.disabled = !get2(editable);
-          set_attribute2(div_14, "hidden", get2(activeTab) !== "tests");
+          textarea_1.disabled = !get2(editable) || get2(isBusy);
+          set_attribute2(div_16, "hidden", get2(activeTab) !== "tests");
           set_value(textarea_2, get2(testsBuffer));
-          textarea_2.disabled = !get2(editable);
+          textarea_2.disabled = !get2(editable) || get2(isBusy);
         });
-        delegated("click", button_3, () => selectTab("statement"));
-        delegated("click", button_4, () => selectTab("solution"));
-        delegated("click", button_5, () => selectTab("tests"));
+        delegated("click", button_5, () => selectTab("statement"));
+        delegated("click", button_6, () => selectTab("solution"));
+        delegated("click", button_7, () => selectTab("tests"));
         delegated("input", textarea, (e) => set(mdBuffer, e.target.value, true));
         delegated("input", textarea_1, (e) => set(solBuffer, e.target.value, true));
         delegated("input", textarea_2, (e) => set(testsBuffer, e.target.value, true));
@@ -7335,145 +7918,2045 @@ ${component_stack}
       };
       if_block(node, ($$render) => {
         if (get2(loading) && !get2(studio)) $$render(consequent);
-        else if (get2(loadError)) $$render(consequent_1, 1);
-        else if (get2(studio)) $$render(consequent_11, 2);
+        else if (!get2(studio) && get2(loadError)) $$render(consequent_1, 1);
+        else if (get2(studio)) $$render(consequent_13, 2);
       });
     }
     reset(div);
     template_effect(() => {
-      button_1.disabled = get2(loading);
+      button.disabled = get2(isBusy);
+      button_1.disabled = get2(isBusy);
       set_text(text2, get2(loading) ? "Reloading\u2026" : "Reload");
     });
-    delegated("click", button, function(...$$args) {
-      $$props.onBack?.apply(this, $$args);
-    });
-    delegated("click", button_1, load);
+    delegated("click", button, handleBack);
+    delegated("click", button_1, () => load());
     append($$anchor, div);
     pop();
   }
   delegate(["click", "input"]);
 
-  // src/App.svelte
-  var root7 = from_html(`<p class="auth-error svelte-1n46o8q"> </p>`);
-  var root_17 = from_html(`<!> <!>`, 1);
-  var root_26 = from_html(`<main class="svelte-1n46o8q"><header class="svelte-1n46o8q"><h1 class="svelte-1n46o8q">Ego Admin</h1> <nav aria-label="Primary" class="svelte-1n46o8q"><button>Overview</button> <button>Students</button> <button>Catalog</button></nav> <div class="header-actions svelte-1n46o8q"><span class="role-pill svelte-1n46o8q" title="Your role"> </span> <button aria-label="Log out" class="svelte-1n46o8q">Logout</button></div></header> <!></main>`);
+  // src/components/Settings.svelte
+  var root7 = from_html(`<span class="revision svelte-1u3w06f"> </span>`);
+  var root_18 = from_html(`<div class="state-card svelte-1u3w06f" role="status">\u0417\u0430\u0433\u0440\u0443\u0436\u0430\u044E \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u0441\u0435\u0440\u0432\u0438\u0441\u0430\u2026</div>`);
+  var root_26 = from_html(`<div class="state-card error svelte-1u3w06f" role="alert"><p class="svelte-1u3w06f"> </p> <button type="button">\u041F\u043E\u0432\u0442\u043E\u0440\u0438\u0442\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u043A\u0443</button></div>`);
+  var root_36 = from_html(`<details class="svelte-1u3w06f"><summary class="svelte-1u3w06f">\u041F\u043E\u0441\u043C\u043E\u0442\u0440\u0435\u0442\u044C \u043F\u0440\u0435\u0434\u043B\u043E\u0436\u0435\u043D\u043D\u044B\u0435 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F</summary><pre class="svelte-1u3w06f"> </pre></details>`);
+  var root_45 = from_html(`<details class="svelte-1u3w06f"><summary class="svelte-1u3w06f">\u041F\u043E\u0441\u043C\u043E\u0442\u0440\u0435\u0442\u044C \u043A\u043E\u043D\u0444\u0438\u0433\u0443\u0440\u0430\u0446\u0438\u044E \u0447\u0435\u0440\u043D\u043E\u0432\u0438\u043A\u0430</summary><pre class="svelte-1u3w06f"> </pre></details>`);
+  var root_55 = from_html(`<div class="notice conflict svelte-1u3w06f" role="alert"><div><strong>\u0427\u0435\u0440\u043D\u043E\u0432\u0438\u043A \u043F\u043E\u043C\u043E\u0449\u043D\u0438\u043A\u0430 \u0442\u0440\u0435\u0431\u0443\u0435\u0442 \u0441\u0432\u0435\u0440\u043A\u0438</strong> <p class="svelte-1u3w06f"><!> \u041F\u0440\u0435\u0434\u043B\u043E\u0436\u0435\u043D\u0438\u0435 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u043E; \u0442\u0435\u043A\u0443\u0449\u0438\u0435 \u043F\u043E\u043B\u044F \u0444\u043E\u0440\u043C\u044B \u043D\u0435 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u044B.</p> <!></div> <div class="actions svelte-1u3w06f"><button type="button">\u041F\u0440\u0438\u043C\u0435\u043D\u0438\u0442\u044C \u0447\u0435\u0440\u043D\u043E\u0432\u0438\u043A</button> <button type="button">\u041E\u0442\u043A\u043B\u043E\u043D\u0438\u0442\u044C</button></div></div>`);
+  var root_64 = from_html(`<div class="notice conflict svelte-1u3w06f" role="alert"><div><strong>\u041A\u043E\u043D\u0444\u043B\u0438\u043A\u0442 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u0438\u044F</strong><p class="svelte-1u3w06f"> </p></div> <button type="button">\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0430\u043A\u0442\u0443\u0430\u043B\u044C\u043D\u044B\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438</button></div>`);
+  var root_74 = from_html(`<div class="notice error svelte-1u3w06f" role="alert"> </div>`);
+  var root_84 = from_html(`<div class="dirty-bar svelte-1u3w06f"><span class="svelte-1u3w06f">\u0415\u0441\u0442\u044C \u043D\u0435\u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0435 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F</span> <div class="actions svelte-1u3w06f"><button type="button">\u041E\u0442\u043C\u0435\u043D\u0438\u0442\u044C</button> <button type="button">\u041F\u0435\u0440\u0435\u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C</button> <button class="primary svelte-1u3w06f" type="button"> </button></div></div>`);
+  var root_94 = from_html(`<small class="svelte-1u3w06f"> </small>`);
+  var root_104 = from_html(`<p class="lock-note svelte-1u3w06f"> </p>`);
+  var root_114 = from_html(`<div class="panel svelte-1u3w06f"><div class="section-title svelte-1u3w06f"><h3 class="svelte-1u3w06f">\u041E\u0431\u0449\u0438\u0435 \u043F\u0430\u0440\u0430\u043C\u0435\u0442\u0440\u044B</h3><p class="svelte-1u3w06f">\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u0440\u0435\u0433\u0438\u0441\u0442\u0440\u0430\u0446\u0438\u0438 \u0438 \u043E\u0433\u0440\u0430\u043D\u0438\u0447\u0435\u043D\u0438\u044F \u0432\u044B\u043F\u043E\u043B\u043D\u0435\u043D\u0438\u044F \u0437\u0430\u0434\u0430\u0447.</p></div> <label class="field svelte-1u3w06f"><span class="svelte-1u3w06f">\u041D\u0430\u0437\u0432\u0430\u043D\u0438\u0435 \u0441\u0435\u0440\u0432\u0438\u0441\u0430</span><input class="svelte-1u3w06f"/> <!></label> <label class="toggle svelte-1u3w06f"><input type="checkbox" class="svelte-1u3w06f"/><span class="svelte-1u3w06f"><strong>\u041E\u0442\u043A\u0440\u044B\u0442\u0430\u044F \u0440\u0435\u0433\u0438\u0441\u0442\u0440\u0430\u0446\u0438\u044F</strong><small class="svelte-1u3w06f">\u0420\u0430\u0437\u0440\u0435\u0448\u0438\u0442\u044C \u043D\u043E\u0432\u044B\u043C \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F\u043C \u0441\u043E\u0437\u0434\u0430\u0432\u0430\u0442\u044C \u0430\u043A\u043A\u0430\u0443\u043D\u0442 \u0441\u0430\u043C\u043E\u0441\u0442\u043E\u044F\u0442\u0435\u043B\u044C\u043D\u043E.</small></span></label> <!> <div class="form-grid svelte-1u3w06f"><label class="field svelte-1u3w06f"><span class="svelte-1u3w06f">\u0414\u043B\u0438\u0442\u0435\u043B\u044C\u043D\u043E\u0441\u0442\u044C \u0441\u0435\u0441\u0441\u0438\u0438, \u043C\u0438\u043D\u0443\u0442</span><input type="number" min="15" max="43200" class="svelte-1u3w06f"/><!></label> <label class="field svelte-1u3w06f"><span class="svelte-1u3w06f">\u0422\u0430\u0439\u043C-\u0430\u0443\u0442 \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0438, \u0441\u0435\u043A\u0443\u043D\u0434</span><input type="number" min="1" max="30" step="0.5" class="svelte-1u3w06f"/><!></label> <label class="field svelte-1u3w06f"><span class="svelte-1u3w06f">\u041C\u0430\u043A\u0441\u0438\u043C\u0430\u043B\u044C\u043D\u044B\u0439 \u0440\u0430\u0437\u043C\u0435\u0440 \u043A\u043E\u0434\u0430, \u0441\u0438\u043C\u0432\u043E\u043B\u043E\u0432</span><input type="number" min="1000" max="500000" class="svelte-1u3w06f"/><!></label></div></div>`);
+  var root_124 = from_html(`<small class="svelte-1u3w06f">\u0418\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u0435 \u043F\u0443\u0442\u0438 \u0432\u0441\u0442\u0443\u043F\u0438\u0442 \u0432 \u0441\u0438\u043B\u0443 \u043F\u043E\u0441\u043B\u0435 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u0438\u044F.</small>`);
+  var root_134 = from_html(`<p class="muted svelte-1u3w06f">\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u0441\u043E\u0445\u0440\u0430\u043D\u0438 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F, \u0447\u0442\u043E\u0431\u044B \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u044F \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u043B\u0430 \u043D\u043E\u0432\u044B\u0439 \u043F\u0443\u0442\u044C.</p>`);
+  var root_142 = from_html(`<p class="inline-error svelte-1u3w06f" role="alert"> </p>`);
+  var root_152 = from_html(`<div class="result-card svelte-1u3w06f" role="status"><strong>\u0421\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u044F \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043D\u0430</strong><span class="svelte-1u3w06f"> </span></div>`);
+  var root_162 = from_html(`<p class="muted svelte-1u3w06f">\u0417\u0430\u0433\u0440\u0443\u0436\u0430\u044E \u0436\u0443\u0440\u043D\u0430\u043B\u2026</p>`);
+  var root_172 = from_html(`<p class="muted svelte-1u3w06f">\u0417\u0430\u043F\u0438\u0441\u0435\u0439 \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u0438 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442.</p>`);
+  var root_182 = from_html(`<li class="svelte-1u3w06f"><strong> </strong><span class="svelte-1u3w06f"> </span><span class="svelte-1u3w06f"> </span><!></li>`);
+  var root_19 = from_html(`<ul class="svelte-1u3w06f"></ul>`);
+  var root_20 = from_html(`<div class="log-box svelte-1u3w06f"><!></div>`);
+  var root_21 = from_html(`<div class="panel svelte-1u3w06f"><div class="section-title svelte-1u3w06f"><h3 class="svelte-1u3w06f">\u041A\u043E\u043D\u0442\u0435\u043D\u0442 \u0437\u0430\u0434\u0430\u0447</h3><p class="svelte-1u3w06f">\u041F\u0443\u0442\u044C \u043A \u0440\u0435\u043F\u043E\u0437\u0438\u0442\u043E\u0440\u0438\u044E \u0438 \u0440\u0443\u0447\u043D\u0430\u044F \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u044F \u0435\u0433\u043E \u0441\u043E\u0434\u0435\u0440\u0436\u0438\u043C\u043E\u0433\u043E.</p></div> <label class="field svelte-1u3w06f"><span class="svelte-1u3w06f">\u041F\u0443\u0442\u044C \u043A \u043A\u043E\u043D\u0442\u0435\u043D\u0442\u0443</span><input class="svelte-1u3w06f"/> <!></label> <div class="subsection svelte-1u3w06f"><div class="svelte-1u3w06f"><h4 class="svelte-1u3w06f">\u0421\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u044F</h4><p class="muted svelte-1u3w06f">\u0417\u0430\u043F\u0443\u0441\u043A\u0430\u0435\u0442\u0441\u044F \u043F\u043E \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u043E\u043C\u0443 \u043F\u0443\u0442\u0438 \u0438 \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0430, \u043F\u043E\u043A\u0430 \u0444\u043E\u0440\u043C\u0430 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0430.</p></div> <div class="actions svelte-1u3w06f"><button type="button"> </button> <button type="button"> </button></div></div> <!> <!> <!> <!></div>`);
+  var root_222 = from_html(`<option></option>`);
+  var root_232 = from_html(`<small class="inline-error svelte-1u3w06f"> </small>`);
+  var root_242 = from_html(`<label class="field compact svelte-1u3w06f"><span class="svelte-1u3w06f">Temperature</span><input type="number" min="0" max="2" step="0.1" class="svelte-1u3w06f"/></label>`);
+  var root_252 = from_html(`<p class="inline-error svelte-1u3w06f"> </p>`);
+  var root_262 = from_html(`<label class="toggle danger-toggle svelte-1u3w06f"><input type="checkbox" class="svelte-1u3w06f"/><span class="svelte-1u3w06f"><strong class="svelte-1u3w06f">\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0439 \u043A\u043B\u044E\u0447</strong><small class="svelte-1u3w06f">\u0411\u0443\u0434\u0435\u0442 \u043F\u0440\u0438\u043C\u0435\u043D\u0435\u043D\u043E \u043F\u0440\u0438 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u0438\u0438; \u043F\u0443\u0441\u0442\u043E\u0435 \u043F\u043E\u043B\u0435 \u0441\u0430\u043C\u043E \u043F\u043E \u0441\u0435\u0431\u0435 \u043A\u043B\u044E\u0447 \u043D\u0435 \u043E\u0447\u0438\u0449\u0430\u0435\u0442.</small></span></label>`);
+  var root_27 = from_html(`<span> </span>`);
+  var root_28 = from_html(`<span class="inline-error svelte-1u3w06f" role="alert"> </span>`);
+  var root_29 = from_html(`<div class="panel svelte-1u3w06f"><div class="section-title svelte-1u3w06f"><h3 class="svelte-1u3w06f">\u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u0435 AI</h3><p class="svelte-1u3w06f">\u041D\u0430\u0441\u0442\u0440\u043E\u0439 \u0441\u043E\u0432\u043C\u0435\u0441\u0442\u0438\u043C\u044B\u0439 API. \u041A\u043B\u044E\u0447 \u0445\u0440\u0430\u043D\u0438\u0442\u0441\u044F \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u043E \u0438 \u043D\u0438\u043A\u043E\u0433\u0434\u0430 \u043D\u0435 \u0432\u043E\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442\u0441\u044F \u0441\u0435\u0440\u0432\u0435\u0440\u043E\u043C.</p></div> <label class="toggle svelte-1u3w06f"><input type="checkbox" class="svelte-1u3w06f"/><span class="svelte-1u3w06f"><strong>\u0412\u043A\u043B\u044E\u0447\u0438\u0442\u044C AI-\u043F\u043E\u043C\u043E\u0449\u043D\u0438\u043A\u0430</strong><small class="svelte-1u3w06f">\u041F\u0440\u0438 \u043E\u0442\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u0438 \u0437\u0430\u043F\u0440\u043E\u0441\u044B \u043A AI \u043D\u0435 \u0432\u044B\u043F\u043E\u043B\u043D\u044F\u044E\u0442\u0441\u044F.</small></span></label> <!> <div class="form-grid svelte-1u3w06f"><label class="field svelte-1u3w06f"><span class="svelte-1u3w06f">\u0421\u043E\u0432\u043C\u0435\u0441\u0442\u0438\u043C\u044B\u0439 API base URL</span><input type="url" placeholder="https://api.example.com/v1" class="svelte-1u3w06f"/><!></label> <label class="field svelte-1u3w06f"><span class="svelte-1u3w06f">\u041C\u043E\u0434\u0435\u043B\u044C</span><div class="input-action svelte-1u3w06f"><input list="ai-model-options" placeholder="\u041D\u0430\u043F\u0440\u0438\u043C\u0435\u0440, gpt-4.1-mini" class="svelte-1u3w06f"/><datalist id="ai-model-options"></datalist><button type="button"> </button></div><!><!></label> <label class="field svelte-1u3w06f"><span class="svelte-1u3w06f">\u0422\u0430\u0439\u043C-\u0430\u0443\u0442 AI, \u0441\u0435\u043A\u0443\u043D\u0434</span><input type="number" min="5" max="180" class="svelte-1u3w06f"/><!></label> <label class="field svelte-1u3w06f"><span class="svelte-1u3w06f">\u041B\u0438\u043C\u0438\u0442 \u0442\u043E\u043A\u0435\u043D\u043E\u0432 \u043E\u0442\u0432\u0435\u0442\u0430</span><input type="number" min="256" max="16384" class="svelte-1u3w06f"/><!></label></div> <label class="field svelte-1u3w06f"><span class="svelte-1u3w06f">\u0418\u043C\u044F \u043F\u0430\u0440\u0430\u043C\u0435\u0442\u0440\u0430 \u043B\u0438\u043C\u0438\u0442\u0430 \u0442\u043E\u043A\u0435\u043D\u043E\u0432</span><select class="svelte-1u3w06f"><option>max_tokens</option><option>max_completion_tokens</option></select><small class="svelte-1u3w06f">\u0412\u044B\u0431\u0435\u0440\u0438 \u0444\u043E\u0440\u043C\u0430\u0442, \u043A\u043E\u0442\u043E\u0440\u044B\u0439 \u043F\u0440\u0438\u043D\u0438\u043C\u0430\u0435\u0442 API-\u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440.</small></label> <!> <label class="toggle svelte-1u3w06f"><input type="checkbox" class="svelte-1u3w06f"/><span class="svelte-1u3w06f"><strong>\u0417\u0430\u0434\u0430\u0442\u044C temperature \u0432\u0440\u0443\u0447\u043D\u0443\u044E</strong><small class="svelte-1u3w06f">\u0415\u0441\u043B\u0438 \u0432\u044B\u043A\u043B\u044E\u0447\u0435\u043D\u043E, \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0435\u0442\u0441\u044F \u0437\u043D\u0430\u0447\u0435\u043D\u0438\u0435 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430 \u043F\u043E \u0443\u043C\u043E\u043B\u0447\u0430\u043D\u0438\u044E.</small></span></label> <!> <!> <label class="toggle svelte-1u3w06f"><input type="checkbox" class="svelte-1u3w06f"/><span class="svelte-1u3w06f"><strong>\u0420\u0430\u0437\u0440\u0435\u0448\u0438\u0442\u044C \u0438\u043D\u0441\u0442\u0440\u0443\u043C\u0435\u043D\u0442\u044B</strong><small class="svelte-1u3w06f">\u041F\u0435\u0440\u0435\u0434\u0430\u0432\u0430\u0442\u044C \u043F\u043E\u0434\u0434\u0435\u0440\u0436\u0438\u0432\u0430\u0435\u043C\u044B\u0435 tools/function calls AI-\u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0443.</small></span></label> <!> <label class="field svelte-1u3w06f"><span class="svelte-1u3w06f">\u0421\u0438\u0441\u0442\u0435\u043C\u043D\u0430\u044F \u0438\u043D\u0441\u0442\u0440\u0443\u043A\u0446\u0438\u044F</span><textarea rows="7" class="svelte-1u3w06f"></textarea><!></label> <div class="key-panel svelte-1u3w06f"><div class="svelte-1u3w06f"><strong>API-\u043A\u043B\u044E\u0447</strong><p class="muted svelte-1u3w06f"> </p></div> <label class="field svelte-1u3w06f"><span class="svelte-1u3w06f"> </span><input type="password" autocomplete="new-password" class="svelte-1u3w06f"/></label> <!> <!> <!></div> <div class="actions footer-actions svelte-1u3w06f"><button class="primary svelte-1u3w06f" type="button"> </button> <!> <!></div></div>`);
+  var root_30 = from_html(`<div class="svelte-1u3w06f"><small class="svelte-1u3w06f"> </small><strong class="svelte-1u3w06f"> </strong></div>`);
+  var root_31 = from_html(`<button class="primary svelte-1u3w06f" type="button">\u0421\u043A\u0430\u0447\u0430\u0442\u044C .env.example</button>`);
+  var root_322 = from_html(`<label class="field svelte-1u3w06f"><span class="svelte-1u3w06f">\u0422\u0435\u043A\u0441\u0442 \u0444\u0430\u0439\u043B\u0430 .env.example</span><textarea class="code svelte-1u3w06f" rows="14" spellcheck="false"></textarea></label>`);
+  var root_332 = from_html(`<div class="panel svelte-1u3w06f"><div class="section-title svelte-1u3w06f"><h3 class="svelte-1u3w06f">\u0420\u0430\u0437\u0432\u0451\u0440\u0442\u044B\u0432\u0430\u043D\u0438\u0435</h3><p class="svelte-1u3w06f">\u041F\u0430\u0440\u0430\u043C\u0435\u0442\u0440\u044B \u0440\u0430\u0431\u043E\u0442\u0430\u044E\u0449\u0435\u0433\u043E \u043F\u0440\u043E\u0446\u0435\u0441\u0441\u0430 \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u044B \u0442\u043E\u043B\u044C\u043A\u043E \u0434\u043B\u044F \u0447\u0442\u0435\u043D\u0438\u044F.</p></div> <div class="notice info svelte-1u3w06f"><div><strong>\u041F\u0440\u0438\u043C\u0435\u043D\u0435\u043D\u0438\u0435 \u0447\u0435\u0440\u0435\u0437 \u043E\u043A\u0440\u0443\u0436\u0435\u043D\u0438\u0435 \u0438 \u043F\u0435\u0440\u0435\u0437\u0430\u043F\u0443\u0441\u043A</strong><p class="svelte-1u3w06f">\u0418\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F runtime-\u043F\u0430\u0440\u0430\u043C\u0435\u0442\u0440\u043E\u0432 \u0437\u0430\u0434\u0430\u044E\u0442\u0441\u044F \u043F\u0435\u0440\u0435\u043C\u0435\u043D\u043D\u044B\u043C\u0438 \u043E\u043A\u0440\u0443\u0436\u0435\u043D\u0438\u044F \u0438 \u0432\u0441\u0442\u0443\u043F\u0430\u044E\u0442 \u0432 \u0441\u0438\u043B\u0443 \u043F\u043E\u0441\u043B\u0435 \u043F\u0435\u0440\u0435\u0437\u0430\u043F\u0443\u0441\u043A\u0430 \u0441\u0435\u0440\u0432\u0438\u0441\u0430.</p></div></div> <div class="runtime-grid svelte-1u3w06f"></div> <div class="subsection deployment-export svelte-1u3w06f"><div class="svelte-1u3w06f"><h4 class="svelte-1u3w06f">\u0424\u0430\u0439\u043B \u043E\u043A\u0440\u0443\u0436\u0435\u043D\u0438\u044F</h4><p class="muted svelte-1u3w06f">\u0413\u0435\u043D\u0435\u0440\u0438\u0440\u0443\u0435\u0442\u0441\u044F \u0431\u0435\u0437 \u0441\u0435\u043A\u0440\u0435\u0442\u043E\u0432. \u041F\u0435\u0440\u0435\u0434 \u0441\u043A\u0430\u0447\u0438\u0432\u0430\u043D\u0438\u0435\u043C \u043C\u043E\u0436\u043D\u043E \u043E\u0442\u0440\u0435\u0434\u0430\u043A\u0442\u0438\u0440\u043E\u0432\u0430\u0442\u044C.</p></div> <div class="actions svelte-1u3w06f"><button type="button"> </button><!></div></div> <!> <!></div>`);
+  var root_342 = from_html(`<fieldset class="settings-fields svelte-1u3w06f"><!> <!> <!> <nav class="tabs svelte-1u3w06f" aria-label="\u041A\u0430\u0442\u0435\u0433\u043E\u0440\u0438\u0438 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043A"><button type="button">\u041E\u0431\u0449\u0438\u0435</button> <button type="button">\u041A\u043E\u043D\u0442\u0435\u043D\u0442</button> <button type="button">AI</button> <button type="button">\u0420\u0430\u0437\u0432\u0451\u0440\u0442\u044B\u0432\u0430\u043D\u0438\u0435</button></nav> <!></fieldset>`);
+  var root_352 = from_html(`<div class="state-card svelte-1u3w06f">\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u0435\u0449\u0451 \u043D\u0435 \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043D\u044B.</div>`);
+  var root_362 = from_html(`<section class="settings-page svelte-1u3w06f" aria-labelledby="settings-title"><div class="page-heading svelte-1u3w06f"><div><h2 id="settings-title" class="svelte-1u3w06f">\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u0441\u0435\u0440\u0432\u0438\u0441\u0430</h2> <p class="muted svelte-1u3w06f">\u041E\u0431\u0449\u0438\u0435 \u043F\u0430\u0440\u0430\u043C\u0435\u0442\u0440\u044B, \u043A\u043E\u043D\u0442\u0435\u043D\u0442, AI \u0438 \u043A\u043E\u043D\u0444\u0438\u0433\u0443\u0440\u0430\u0446\u0438\u044F \u0440\u0430\u0437\u0432\u0451\u0440\u0442\u044B\u0432\u0430\u043D\u0438\u044F.</p></div> <!></div> <!></section>`);
   var $$css7 = {
+    hash: "svelte-1u3w06f",
+    code: ".settings-fields.svelte-1u3w06f {border:0;margin:0;padding:0;min-width:0;display:grid;gap:16px;}.settings-page.svelte-1u3w06f {display:grid;gap:16px;min-width:0;}.page-heading.svelte-1u3w06f {display:flex;align-items:flex-start;justify-content:space-between;gap:12px;}h2.svelte-1u3w06f, h3.svelte-1u3w06f, h4.svelte-1u3w06f, p.svelte-1u3w06f {margin:0;}h2.svelte-1u3w06f {font-size:1.1rem;}h3.svelte-1u3w06f {font-size:0.95rem;}h4.svelte-1u3w06f {font-size:0.82rem;}.muted.svelte-1u3w06f, .section-title.svelte-1u3w06f p:where(.svelte-1u3w06f) {color:#858585;font-size:0.76rem;}.page-heading.svelte-1u3w06f .muted:where(.svelte-1u3w06f) {margin-top:4px;}.revision.svelte-1u3w06f {color:#858585;font-size:0.72rem;white-space:nowrap;}.tabs.svelte-1u3w06f {display:flex;gap:4px;border-bottom:1px solid #3c3c3c;overflow-x:auto;}.tabs.svelte-1u3w06f button:where(.svelte-1u3w06f) {padding:8px 12px;background:transparent;color:#858585;border:0;border-bottom:2px solid transparent;white-space:nowrap;}.tabs.svelte-1u3w06f button.active:where(.svelte-1u3w06f) {color:#d4d4d4;border-bottom-color:#007acc;}.panel.svelte-1u3w06f {display:grid;gap:16px;min-width:0;}.section-title.svelte-1u3w06f {display:grid;gap:3px;padding-bottom:4px;}.form-grid.svelte-1u3w06f {display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:14px;}.field.svelte-1u3w06f {display:grid;gap:5px;min-width:0;}.field.svelte-1u3w06f > span:where(.svelte-1u3w06f) {font-size:0.77rem;font-weight:600;}.field.svelte-1u3w06f small:where(.svelte-1u3w06f), .toggle.svelte-1u3w06f small:where(.svelte-1u3w06f) {color:#858585;font-size:0.7rem;line-height:1.4;}.field.svelte-1u3w06f input:where(.svelte-1u3w06f), .field.svelte-1u3w06f select:where(.svelte-1u3w06f), .field.svelte-1u3w06f textarea:where(.svelte-1u3w06f) {width:100%;box-sizing:border-box;min-width:0;}.field.svelte-1u3w06f textarea:where(.svelte-1u3w06f) {resize:vertical;}.field.svelte-1u3w06f input:where(.svelte-1u3w06f):disabled, .field.svelte-1u3w06f select:where(.svelte-1u3w06f):disabled, .field.svelte-1u3w06f textarea:where(.svelte-1u3w06f):disabled {opacity:0.62;cursor:not-allowed;}.compact.svelte-1u3w06f {max-width:260px;}.toggle.svelte-1u3w06f {display:flex;align-items:flex-start;gap:9px;}.toggle.svelte-1u3w06f input:where(.svelte-1u3w06f) {margin-top:3px;}.toggle.svelte-1u3w06f > span:where(.svelte-1u3w06f) {display:grid;gap:2px;}.lock-note.svelte-1u3w06f {color:#d0a85c;font-size:0.7rem;margin-top:-10px;}.notice.svelte-1u3w06f, .dirty-bar.svelte-1u3w06f, .result-card.svelte-1u3w06f, .state-card.svelte-1u3w06f {padding:12px 14px;border:1px solid #3c3c3c;border-radius:6px;background:#252526;}.notice.svelte-1u3w06f {display:flex;justify-content:space-between;align-items:flex-start;gap:12px;}.notice.svelte-1u3w06f p:where(.svelte-1u3w06f) {margin-top:3px;color:#a0a0a0;font-size:0.75rem;}.notice.conflict.svelte-1u3w06f {border-color:#9a6b2f;}.notice.info.svelte-1u3w06f {border-color:#36556a;}.notice.error.svelte-1u3w06f, .state-card.error.svelte-1u3w06f {color:#f87171;border-color:#704040;}.notice.svelte-1u3w06f details:where(.svelte-1u3w06f) {margin-top:8px;}.notice.svelte-1u3w06f summary:where(.svelte-1u3w06f) {font-size:0.72rem;cursor:pointer;}.notice.svelte-1u3w06f pre:where(.svelte-1u3w06f) {max-height:240px;overflow:auto;white-space:pre-wrap;font-size:0.7rem;color:#c6c6c6;}.actions.svelte-1u3w06f {display:flex;align-items:center;flex-wrap:wrap;gap:8px;}.dirty-bar.svelte-1u3w06f {display:flex;align-items:center;justify-content:space-between;gap:10px;border-color:#886828;}.dirty-bar.svelte-1u3w06f > span:where(.svelte-1u3w06f) {font-size:0.78rem;color:#e4c477;}.primary.svelte-1u3w06f {border-color:#007acc !important;color:#fff !important;background:#0e639c !important;}.subsection.svelte-1u3w06f {display:flex;justify-content:space-between;align-items:center;gap:14px;padding-top:12px;border-top:1px solid #333;}.subsection.svelte-1u3w06f > div:where(.svelte-1u3w06f):first-child {display:grid;gap:3px;}.result-card.svelte-1u3w06f {display:flex;flex-wrap:wrap;gap:8px 16px;font-size:0.76rem;}.result-card.svelte-1u3w06f span:where(.svelte-1u3w06f) {color:#a0a0a0;}.log-box.svelte-1u3w06f {border:1px solid #333;border-radius:5px;padding:10px;}.log-box.svelte-1u3w06f ul:where(.svelte-1u3w06f) {list-style:none;padding:0;margin:0;display:grid;gap:8px;}.log-box.svelte-1u3w06f li:where(.svelte-1u3w06f) {display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:baseline;font-size:0.72rem;}.log-box.svelte-1u3w06f li:where(.svelte-1u3w06f) span:where(.svelte-1u3w06f) {color:#858585;}.log-box.svelte-1u3w06f li:where(.svelte-1u3w06f) small:where(.svelte-1u3w06f) {grid-column:1 / -1;color:#f87171;}.input-action.svelte-1u3w06f {display:flex;gap:6px;}.input-action.svelte-1u3w06f input:where(.svelte-1u3w06f) {flex:1;}.key-panel.svelte-1u3w06f {display:grid;gap:10px;padding:14px;border:1px solid #3c3c3c;border-radius:5px;}.key-panel.svelte-1u3w06f > div:where(.svelte-1u3w06f):first-child {display:grid;gap:3px;}.danger-toggle.svelte-1u3w06f strong:where(.svelte-1u3w06f) {color:#f0a0a0;}.footer-actions.svelte-1u3w06f {border-top:1px solid #333;padding-top:14px;}.test-status.svelte-1u3w06f {font-size:0.75rem;}.success.svelte-1u3w06f {color:#75c687;}.failure.svelte-1u3w06f, .inline-error.svelte-1u3w06f {color:#f87171;}.runtime-grid.svelte-1u3w06f {display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:8px;}.runtime-grid.svelte-1u3w06f > div:where(.svelte-1u3w06f) {min-width:0;padding:9px 10px;display:grid;gap:4px;border:1px solid #333;border-radius:4px;}.runtime-grid.svelte-1u3w06f small:where(.svelte-1u3w06f) {color:#858585;font-size:0.68rem;}.runtime-grid.svelte-1u3w06f strong:where(.svelte-1u3w06f) {overflow-wrap:anywhere;font-size:0.75rem;font-weight:500;}.deployment-export.svelte-1u3w06f {margin-top:4px;}.field.svelte-1u3w06f textarea.code:where(.svelte-1u3w06f) {font-family:'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;font-size:0.75rem;}.state-card.svelte-1u3w06f {color:#a0a0a0;text-align:center;}.state-card.svelte-1u3w06f p:where(.svelte-1u3w06f) {margin-bottom:10px;}\r\n\r\n	@media (max-width: 700px) {.form-grid.svelte-1u3w06f, .runtime-grid.svelte-1u3w06f {grid-template-columns:1fr;}.page-heading.svelte-1u3w06f, .dirty-bar.svelte-1u3w06f, .subsection.svelte-1u3w06f, .notice.svelte-1u3w06f {align-items:stretch;flex-direction:column;}.revision.svelte-1u3w06f {white-space:normal;}.log-box.svelte-1u3w06f li:where(.svelte-1u3w06f) {grid-template-columns:1fr;}\r\n	}"
+  };
+  function Settings($$anchor, $$props) {
+    push($$props, true);
+    append_styles($$anchor, $$css7);
+    let draft = prop($$props, "draft", 3, null);
+    let activeTab = state("general");
+    let snapshot2 = state(null);
+    let config = state(null);
+    let loading = state(true);
+    let loadError = state("");
+    let saving = state(false);
+    let actionError = state("");
+    let apiKey = state("");
+    let clearApiKey = state(false);
+    let revisionConflict = state(false);
+    let pendingProposal = state(null);
+    let appliedDraft = null;
+    let models = state(proxy([]));
+    let modelsLoading = state(false);
+    let modelsError = state("");
+    let aiTest = state(null);
+    let aiTestError = state("");
+    let aiTesting = state(false);
+    let syncBusy = state(false);
+    let syncError = state("");
+    let syncResult = state(null);
+    let logsOpen = state(false);
+    let logsLoading = state(false);
+    let logsError = state("");
+    let logs = state(null);
+    let deploymentLoading = state(false);
+    let deploymentError = state("");
+    let deploymentText = state("");
+    let deploymentReady = state(false);
+    let dirty = user_derived(() => Boolean(get2(snapshot2) && get2(config) && (JSON.stringify(get2(config)) !== JSON.stringify(get2(snapshot2).config) || get2(apiKey).length > 0 || get2(clearApiKey))));
+    function copyConfig(source2) {
+      return { ...source2 };
+    }
+    function setBaseline(data) {
+      set(snapshot2, data, true);
+      set(config, copyConfig(data.config), true);
+      set(apiKey, "");
+      set(clearApiKey, false);
+      set(revisionConflict, false);
+      set(actionError, "");
+      set(aiTest, null);
+      set(aiTestError, "");
+    }
+    async function loadSettings(discardDirty = false) {
+      if (get2(dirty) && !discardDirty && !window.confirm("\u0415\u0441\u0442\u044C \u043D\u0435\u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0435 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F. \u041F\u0435\u0440\u0435\u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u0438 \u043F\u043E\u0442\u0435\u0440\u044F\u0442\u044C \u0438\u0445?")) return;
+      set(loading, true);
+      set(loadError, "");
+      try {
+        const data = await getSettings();
+        setBaseline(data);
+        set(pendingProposal, null);
+        appliedDraft = null;
+      } catch (error) {
+        set(loadError, error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438.", true);
+      } finally {
+        set(loading, false);
+      }
+    }
+    function isRevisionConflict(error) {
+      const e = error;
+      return e?.status === 409 || /\b409\b|revision|revision conflict|верси.{0,20}(измен|конфликт)|конфликт/i.test(e?.message || "");
+    }
+    function isLocked(field) {
+      return Boolean(get2(snapshot2)?.locked_fields?.[field]);
+    }
+    function lockMessage(field) {
+      const variable = get2(snapshot2)?.locked_fields?.[field];
+      return variable ? `\u0417\u0430\u0434\u0430\u043D\u043E \u043F\u0435\u0440\u0435\u043C\u0435\u043D\u043D\u043E\u0439 \u043E\u043A\u0440\u0443\u0436\u0435\u043D\u0438\u044F ${variable}; \u0438\u0437\u043C\u0435\u043D\u0438\u0442\u044C \u0437\u0434\u0435\u0441\u044C \u043D\u0435\u043B\u044C\u0437\u044F.` : "";
+    }
+    function handleIncomingDraft(incoming) {
+      if (!incoming || incoming === appliedDraft || !get2(snapshot2) || !get2(config)) return;
+      if (get2(dirty)) {
+        set(pendingProposal, incoming, true);
+        return;
+      }
+      if (incoming.expected_revision !== get2(snapshot2).revision) {
+        set(pendingProposal, incoming, true);
+        return;
+      }
+      set(config, copyConfig(incoming.config), true);
+      set(pendingProposal, null);
+      appliedDraft = incoming;
+    }
+    user_effect(() => {
+      handleIncomingDraft(draft());
+    });
+    user_effect(() => {
+      $$props.onDirtyChange?.(get2(dirty));
+    });
+    function beforeUnload(event2) {
+      if (!get2(dirty)) return;
+      event2.preventDefault();
+      event2.returnValue = "";
+    }
+    onMount(() => {
+      void loadSettings(true);
+      window.addEventListener("beforeunload", beforeUnload);
+      return () => window.removeEventListener("beforeunload", beforeUnload);
+    });
+    async function save2(andTest = false) {
+      if (!get2(snapshot2) || !get2(config) || get2(saving)) return;
+      set(saving, true);
+      set(actionError, "");
+      if (andTest) {
+        set(aiTest, null);
+        set(aiTestError, "");
+      }
+      try {
+        const saved = await saveSettings(
+          {
+            expected_revision: get2(snapshot2).revision,
+            config: copyConfig(get2(config))
+          },
+          get2(apiKey) || void 0,
+          get2(clearApiKey)
+        );
+        setBaseline(saved);
+        set(pendingProposal, null);
+        appliedDraft = null;
+        $$props.onSaved?.(saved);
+        if (andTest) {
+          set(aiTesting, true);
+          try {
+            set(aiTest, await testAI(), true);
+          } catch (error) {
+            set(aiTestError, error.message || "\u041F\u0440\u043E\u0432\u0435\u0440\u043A\u0430 \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u044F \u0437\u0430\u0432\u0435\u0440\u0448\u0438\u043B\u0430\u0441\u044C \u043E\u0448\u0438\u0431\u043A\u043E\u0439.", true);
+          } finally {
+            set(aiTesting, false);
+          }
+        }
+      } catch (error) {
+        if (isRevisionConflict(error)) {
+          set(revisionConflict, true);
+          set(actionError, "\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u043D\u0430 \u0441\u0435\u0440\u0432\u0435\u0440\u0435 \u0443\u0436\u0435 \u0438\u0437\u043C\u0435\u043D\u0438\u043B\u0438\u0441\u044C. \u0422\u0432\u043E\u0438 \u043F\u043E\u043B\u044F \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u044B \u0432 \u0444\u043E\u0440\u043C\u0435; \u043E\u0431\u043D\u043E\u0432\u0438 \u0434\u0430\u043D\u043D\u044B\u0435 \u0438 \u043F\u0435\u0440\u0435\u043D\u0435\u0441\u0438 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F \u0432\u0440\u0443\u0447\u043D\u0443\u044E.");
+        } else {
+          set(actionError, error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438.", true);
+        }
+      } finally {
+        set(saving, false);
+      }
+    }
+    function revert() {
+      if (!get2(snapshot2) || !get2(dirty)) return;
+      if (!window.confirm("\u041E\u0442\u043C\u0435\u043D\u0438\u0442\u044C \u0432\u0441\u0435 \u043D\u0435\u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0435 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F?")) return;
+      set(config, copyConfig(get2(snapshot2).config), true);
+      set(apiKey, "");
+      set(clearApiKey, false);
+      set(actionError, "");
+      set(revisionConflict, false);
+      set(pendingProposal, null);
+    }
+    function acceptProposal() {
+      if (!get2(pendingProposal) || !get2(snapshot2) || !get2(config)) return;
+      if (get2(pendingProposal).expected_revision !== get2(snapshot2).revision) {
+        set(revisionConflict, true);
+        return;
+      }
+      if (get2(dirty) && !window.confirm("\u0417\u0430\u043C\u0435\u043D\u0438\u0442\u044C \u0442\u0435\u043A\u0443\u0449\u0438\u0435 \u043D\u0435\u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0435 \u043F\u043E\u043B\u044F \u0447\u0435\u0440\u043D\u043E\u0432\u0438\u043A\u043E\u043C \u043F\u043E\u043C\u043E\u0449\u043D\u0438\u043A\u0430?")) return;
+      set(config, copyConfig(get2(pendingProposal).config), true);
+      appliedDraft = get2(pendingProposal);
+      set(pendingProposal, null);
+      set(revisionConflict, false);
+    }
+    async function loadModels() {
+      set(modelsLoading, true);
+      set(modelsError, "");
+      try {
+        set(models, await listModels(), true);
+      } catch (error) {
+        set(modelsError, error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u043C\u043E\u0434\u0435\u043B\u0438.", true);
+      } finally {
+        set(modelsLoading, false);
+      }
+    }
+    async function showLogs() {
+      set(logsOpen, !get2(logsOpen));
+      if (!get2(logsOpen) || get2(logs)) return;
+      set(logsLoading, true);
+      set(logsError, "");
+      try {
+        set(logs, await syncLog(), true);
+      } catch (error) {
+        set(logsError, error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0436\u0443\u0440\u043D\u0430\u043B \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u0438.", true);
+      } finally {
+        set(logsLoading, false);
+      }
+    }
+    async function runSync() {
+      if (!get2(snapshot2) || get2(dirty) || get2(syncBusy)) return;
+      set(syncBusy, true);
+      set(syncError, "");
+      set(syncResult, null);
+      try {
+        set(syncResult, await syncContent(get2(snapshot2).config.content_path), true);
+        set(logs, null);
+      } catch (error) {
+        set(syncError, error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u043A\u043E\u043D\u0442\u0435\u043D\u0442.", true);
+      } finally {
+        set(syncBusy, false);
+      }
+    }
+    function redactSecrets(text2) {
+      return text2.replace(/^([A-Z0-9_]*(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD)[A-Z0-9_]*)\s*=.*$/gim, "$1=");
+    }
+    async function prepareDeployment() {
+      set(deploymentLoading, true);
+      set(deploymentError, "");
+      try {
+        set(deploymentText, redactSecrets(await exportDeployment()), true);
+        set(deploymentReady, true);
+      } catch (error) {
+        set(deploymentError, error.message || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u0438\u0442\u044C \u0444\u0430\u0439\u043B \u043E\u043A\u0440\u0443\u0436\u0435\u043D\u0438\u044F.", true);
+      } finally {
+        set(deploymentLoading, false);
+      }
+    }
+    function downloadDeployment() {
+      const blob = new Blob([get2(deploymentText)], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = ".env.example";
+      anchor.click();
+      URL.revokeObjectURL(url);
+    }
+    function setTemperatureEnabled(event2) {
+      if (!get2(config)) return;
+      const enabled = event2.currentTarget.checked;
+      get2(config).ai_temperature = enabled ? 0.7 : null;
+    }
+    user_effect(() => {
+      $$props.onBusyChange?.(get2(saving) || get2(syncBusy) || get2(aiTesting));
+    });
+    onDestroy(() => {
+      $$props.onBusyChange?.(false);
+    });
+    var section = root_362();
+    var div = child(section);
+    var node = sibling(child(div), 2);
+    {
+      var consequent = ($$anchor2) => {
+        var span = root7();
+        var text_1 = only_child(span);
+        template_effect(() => set_text(text_1, `\u0412\u0435\u0440\u0441\u0438\u044F \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043A \xB7 ${get2(snapshot2).revision ?? ""}`));
+        append($$anchor2, span);
+      };
+      if_block(node, ($$render) => {
+        if (get2(snapshot2)) $$render(consequent);
+      });
+    }
+    reset(div);
+    var node_1 = sibling(div, 2);
+    {
+      var consequent_1 = ($$anchor2) => {
+        var div_1 = root_18();
+        append($$anchor2, div_1);
+      };
+      var consequent_2 = ($$anchor2) => {
+        var div_2 = root_26();
+        var p = child(div_2);
+        var text_2 = only_child(p, true);
+        var button = sibling(p, 2);
+        reset(div_2);
+        template_effect(() => set_text(text_2, get2(loadError)));
+        delegated("click", button, () => void loadSettings(true));
+        append($$anchor2, div_2);
+      };
+      var consequent_46 = ($$anchor2) => {
+        var fieldset = root_342();
+        var node_2 = child(fieldset);
+        {
+          var consequent_5 = ($$anchor3) => {
+            var div_3 = root_55();
+            var div_4 = child(div_3);
+            var p_1 = sibling(child(div_4), 2);
+            var node_3 = child(p_1);
+            {
+              var consequent_3 = ($$anchor4) => {
+                var text_3 = text();
+                template_effect(() => set_text(text_3, `\u041E\u043D \u0441\u043E\u0437\u0434\u0430\u043D \u0434\u043B\u044F \u0432\u0435\u0440\u0441\u0438\u0438 ${get2(pendingProposal).expected_revision ?? ""}, \u0430 \u0437\u0430\u0433\u0440\u0443\u0436\u0435\u043D\u0430 \u0432\u0435\u0440\u0441\u0438\u044F ${get2(snapshot2).revision ?? ""}.`));
+                append($$anchor4, text_3);
+              };
+              var alternate = ($$anchor4) => {
+                var text_4 = text("\u0412 \u0444\u043E\u0440\u043C\u0435 \u0443\u0436\u0435 \u0435\u0441\u0442\u044C \u043D\u0435\u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0435 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F.");
+                append($$anchor4, text_4);
+              };
+              if_block(node_3, ($$render) => {
+                if (get2(pendingProposal).expected_revision !== get2(snapshot2).revision) $$render(consequent_3);
+                else $$render(alternate, -1);
+              });
+            }
+            next();
+            reset(p_1);
+            var node_4 = sibling(p_1, 2);
+            {
+              var consequent_4 = ($$anchor4) => {
+                var details = root_36();
+                var pre = sibling(child(details));
+                var text_5 = only_child(pre, true);
+                reset(details);
+                template_effect(($0) => set_text(text_5, $0), [
+                  () => JSON.stringify(get2(pendingProposal).changes, null, 2)
+                ]);
+                append($$anchor4, details);
+              };
+              var alternate_1 = ($$anchor4) => {
+                var details_1 = root_45();
+                var pre_1 = sibling(child(details_1));
+                var text_6 = only_child(pre_1, true);
+                reset(details_1);
+                template_effect(($0) => set_text(text_6, $0), [() => JSON.stringify(get2(pendingProposal).config, null, 2)]);
+                append($$anchor4, details_1);
+              };
+              if_block(node_4, ($$render) => {
+                if (get2(pendingProposal).changes) $$render(consequent_4);
+                else $$render(alternate_1, -1);
+              });
+            }
+            reset(div_4);
+            var div_5 = sibling(div_4, 2);
+            var button_1 = child(div_5);
+            var button_2 = sibling(button_1, 2);
+            reset(div_5);
+            reset(div_3);
+            template_effect(() => button_1.disabled = get2(pendingProposal).expected_revision !== get2(snapshot2).revision);
+            delegated("click", button_1, acceptProposal);
+            delegated("click", button_2, () => {
+              set(pendingProposal, null);
+            });
+            append($$anchor3, div_3);
+          };
+          if_block(node_2, ($$render) => {
+            if (get2(pendingProposal)) $$render(consequent_5);
+          });
+        }
+        var node_5 = sibling(node_2, 2);
+        {
+          var consequent_6 = ($$anchor3) => {
+            var div_6 = root_64();
+            var div_7 = child(div_6);
+            var p_2 = sibling(child(div_7));
+            var text_7 = only_child(p_2, true);
+            reset(div_7);
+            var button_3 = sibling(div_7, 2);
+            reset(div_6);
+            template_effect(() => set_text(text_7, get2(actionError) || "\u0421\u0435\u0440\u0432\u0435\u0440 \u0441\u043E\u043E\u0431\u0449\u0438\u043B, \u0447\u0442\u043E revision \u0438\u0437\u043C\u0435\u043D\u0438\u043B\u0441\u044F. \u041B\u043E\u043A\u0430\u043B\u044C\u043D\u044B\u0435 \u043F\u043E\u043B\u044F \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u044B."));
+            delegated("click", button_3, () => void loadSettings());
+            append($$anchor3, div_6);
+          };
+          var consequent_7 = ($$anchor3) => {
+            var div_8 = root_74();
+            var text_8 = only_child(div_8, true);
+            template_effect(() => set_text(text_8, get2(actionError)));
+            append($$anchor3, div_8);
+          };
+          if_block(node_5, ($$render) => {
+            if (get2(revisionConflict)) $$render(consequent_6);
+            else if (get2(actionError)) $$render(consequent_7, 1);
+          });
+        }
+        var node_6 = sibling(node_5, 2);
+        {
+          var consequent_8 = ($$anchor3) => {
+            var div_9 = root_84();
+            var div_10 = sibling(child(div_9), 2);
+            var button_4 = child(div_10);
+            var button_5 = sibling(button_4, 2);
+            var button_6 = sibling(button_5, 2);
+            var text_9 = only_child(button_6, true);
+            reset(div_10);
+            reset(div_9);
+            template_effect(() => {
+              button_5.disabled = get2(loading);
+              button_6.disabled = get2(saving);
+              set_text(text_9, get2(saving) ? "\u0421\u043E\u0445\u0440\u0430\u043D\u044F\u044E\u2026" : "\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C");
+            });
+            delegated("click", button_4, revert);
+            delegated("click", button_5, () => void loadSettings());
+            delegated("click", button_6, () => void save2());
+            append($$anchor3, div_9);
+          };
+          if_block(node_6, ($$render) => {
+            if (get2(dirty)) $$render(consequent_8);
+          });
+        }
+        var nav = sibling(node_6, 2);
+        var button_7 = child(nav);
+        let classes;
+        var button_8 = sibling(button_7, 2);
+        let classes_1;
+        var button_9 = sibling(button_8, 2);
+        let classes_2;
+        var button_10 = sibling(button_9, 2);
+        let classes_3;
+        reset(nav);
+        var node_7 = sibling(nav, 2);
+        {
+          var consequent_14 = ($$anchor3) => {
+            var div_11 = root_114();
+            var label_1 = sibling(child(div_11), 2);
+            var input = sibling(child(label_1));
+            remove_input_defaults(input);
+            var node_8 = sibling(input, 2);
+            {
+              var consequent_9 = ($$anchor4) => {
+                var small = root_94();
+                var text_10 = only_child(small, true);
+                template_effect(($0) => set_text(text_10, $0), [() => lockMessage("service_name")]);
+                append($$anchor4, small);
+              };
+              var d = user_derived(() => isLocked("service_name"));
+              if_block(node_8, ($$render) => {
+                if (get2(d)) $$render(consequent_9);
+              });
+            }
+            reset(label_1);
+            var label_2 = sibling(label_1, 2);
+            var input_1 = child(label_2);
+            remove_input_defaults(input_1);
+            next();
+            reset(label_2);
+            var node_9 = sibling(label_2, 2);
+            {
+              var consequent_10 = ($$anchor4) => {
+                var p_3 = root_104();
+                var text_11 = only_child(p_3, true);
+                template_effect(($0) => set_text(text_11, $0), [() => lockMessage("registration_enabled")]);
+                append($$anchor4, p_3);
+              };
+              var d_1 = user_derived(() => isLocked("registration_enabled"));
+              if_block(node_9, ($$render) => {
+                if (get2(d_1)) $$render(consequent_10);
+              });
+            }
+            var div_12 = sibling(node_9, 2);
+            var label_3 = child(div_12);
+            var input_2 = sibling(child(label_3));
+            remove_input_defaults(input_2);
+            var node_10 = sibling(input_2);
+            {
+              var consequent_11 = ($$anchor4) => {
+                var small_1 = root_94();
+                var text_12 = only_child(small_1, true);
+                template_effect(($0) => set_text(text_12, $0), [() => lockMessage("session_minutes")]);
+                append($$anchor4, small_1);
+              };
+              var d_2 = user_derived(() => isLocked("session_minutes"));
+              if_block(node_10, ($$render) => {
+                if (get2(d_2)) $$render(consequent_11);
+              });
+            }
+            reset(label_3);
+            var label_4 = sibling(label_3, 2);
+            var input_3 = sibling(child(label_4));
+            remove_input_defaults(input_3);
+            var node_11 = sibling(input_3);
+            {
+              var consequent_12 = ($$anchor4) => {
+                var small_2 = root_94();
+                var text_13 = only_child(small_2, true);
+                template_effect(($0) => set_text(text_13, $0), [() => lockMessage("check_timeout_seconds")]);
+                append($$anchor4, small_2);
+              };
+              var d_3 = user_derived(() => isLocked("check_timeout_seconds"));
+              if_block(node_11, ($$render) => {
+                if (get2(d_3)) $$render(consequent_12);
+              });
+            }
+            reset(label_4);
+            var label_5 = sibling(label_4, 2);
+            var input_4 = sibling(child(label_5));
+            remove_input_defaults(input_4);
+            var node_12 = sibling(input_4);
+            {
+              var consequent_13 = ($$anchor4) => {
+                var small_3 = root_94();
+                var text_14 = only_child(small_3, true);
+                template_effect(($0) => set_text(text_14, $0), [() => lockMessage("max_code_chars")]);
+                append($$anchor4, small_3);
+              };
+              var d_4 = user_derived(() => isLocked("max_code_chars"));
+              if_block(node_12, ($$render) => {
+                if (get2(d_4)) $$render(consequent_13);
+              });
+            }
+            reset(label_5);
+            reset(div_12);
+            reset(div_11);
+            template_effect(
+              ($0, $1, $2, $3, $4) => {
+                input.disabled = $0;
+                input_1.disabled = $1;
+                input_2.disabled = $2;
+                input_3.disabled = $3;
+                input_4.disabled = $4;
+              },
+              [
+                () => isLocked("service_name"),
+                () => isLocked("registration_enabled"),
+                () => isLocked("session_minutes"),
+                () => isLocked("check_timeout_seconds"),
+                () => isLocked("max_code_chars")
+              ]
+            );
+            bind_value(input, () => get2(config).service_name, ($$value) => get2(config).service_name = $$value);
+            bind_checked(input_1, () => get2(config).registration_enabled, ($$value) => get2(config).registration_enabled = $$value);
+            bind_value(input_2, () => get2(config).session_minutes, ($$value) => get2(config).session_minutes = $$value);
+            bind_value(input_3, () => get2(config).check_timeout_seconds, ($$value) => get2(config).check_timeout_seconds = $$value);
+            bind_value(input_4, () => get2(config).max_code_chars, ($$value) => get2(config).max_code_chars = $$value);
+            append($$anchor3, div_11);
+          };
+          var consequent_25 = ($$anchor3) => {
+            var div_13 = root_21();
+            var label_6 = sibling(child(div_13), 2);
+            var input_5 = sibling(child(label_6));
+            remove_input_defaults(input_5);
+            var node_13 = sibling(input_5, 2);
+            {
+              var consequent_15 = ($$anchor4) => {
+                var small_4 = root_94();
+                var text_15 = only_child(small_4, true);
+                template_effect(($0) => set_text(text_15, $0), [() => lockMessage("content_path")]);
+                append($$anchor4, small_4);
+              };
+              var d_5 = user_derived(() => isLocked("content_path"));
+              var alternate_2 = ($$anchor4) => {
+                var small_5 = root_124();
+                append($$anchor4, small_5);
+              };
+              if_block(node_13, ($$render) => {
+                if (get2(d_5)) $$render(consequent_15);
+                else $$render(alternate_2, -1);
+              });
+            }
+            reset(label_6);
+            var div_14 = sibling(label_6, 2);
+            var div_15 = sibling(child(div_14), 2);
+            var button_11 = child(div_15);
+            var text_16 = only_child(button_11, true);
+            var button_12 = sibling(button_11, 2);
+            var text_17 = only_child(button_12, true);
+            reset(div_15);
+            reset(div_14);
+            var node_14 = sibling(div_14, 2);
+            {
+              var consequent_16 = ($$anchor4) => {
+                var p_4 = root_134();
+                append($$anchor4, p_4);
+              };
+              if_block(node_14, ($$render) => {
+                if (get2(dirty)) $$render(consequent_16);
+              });
+            }
+            var node_15 = sibling(node_14, 2);
+            {
+              var consequent_17 = ($$anchor4) => {
+                var p_5 = root_142();
+                var text_18 = only_child(p_5, true);
+                template_effect(() => set_text(text_18, get2(syncError)));
+                append($$anchor4, p_5);
+              };
+              if_block(node_15, ($$render) => {
+                if (get2(syncError)) $$render(consequent_17);
+              });
+            }
+            var node_16 = sibling(node_15, 2);
+            {
+              var consequent_18 = ($$anchor4) => {
+                var div_16 = root_152();
+                var span_1 = sibling(child(div_16));
+                var text_19 = only_child(span_1);
+                reset(div_16);
+                template_effect(() => set_text(text_19, `\u0414\u043E\u0431\u0430\u0432\u043B\u0435\u043D\u043E: ${get2(syncResult).added ?? ""} \xB7 \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u043E: ${get2(syncResult).updated ?? ""} \xB7 \u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E: ${get2(syncResult).skipped ?? ""} \xB7 \u043E\u0448\u0438\u0431\u043E\u043A: ${get2(syncResult).errors ?? ""}`));
+                append($$anchor4, div_16);
+              };
+              if_block(node_16, ($$render) => {
+                if (get2(syncResult)) $$render(consequent_18);
+              });
+            }
+            var node_17 = sibling(node_16, 2);
+            {
+              var consequent_24 = ($$anchor4) => {
+                var div_17 = root_20();
+                var node_18 = child(div_17);
+                {
+                  var consequent_19 = ($$anchor5) => {
+                    var p_6 = root_162();
+                    append($$anchor5, p_6);
+                  };
+                  var consequent_20 = ($$anchor5) => {
+                    var p_7 = root_142();
+                    var text_20 = only_child(p_7, true);
+                    template_effect(() => set_text(text_20, get2(logsError)));
+                    append($$anchor5, p_7);
+                  };
+                  var consequent_21 = ($$anchor5) => {
+                    var p_8 = root_172();
+                    append($$anchor5, p_8);
+                  };
+                  var consequent_23 = ($$anchor5) => {
+                    var ul = root_19();
+                    each(ul, 21, () => get2(logs), (item) => item.id, ($$anchor6, item) => {
+                      var li = root_182();
+                      var strong = child(li);
+                      var text_21 = only_child(strong, true);
+                      var span_2 = sibling(strong);
+                      var text_22 = only_child(span_2, true);
+                      var span_3 = sibling(span_2);
+                      var text_23 = only_child(span_3);
+                      var node_19 = sibling(span_3);
+                      {
+                        var consequent_22 = ($$anchor7) => {
+                          var small_6 = root_94();
+                          var text_24 = only_child(small_6, true);
+                          template_effect(() => set_text(text_24, get2(item).error_details));
+                          append($$anchor7, small_6);
+                        };
+                        if_block(node_19, ($$render) => {
+                          if (get2(item).error_details) $$render(consequent_22);
+                        });
+                      }
+                      reset(li);
+                      template_effect(() => {
+                        set_text(text_21, get2(item).status);
+                        set_text(text_22, get2(item).finished_at || "\u0412\u0440\u0435\u043C\u044F \u043D\u0435 \u0443\u043A\u0430\u0437\u0430\u043D\u043E");
+                        set_text(text_23, `\u041E\u0448\u0438\u0431\u043E\u043A: ${get2(item).errors ?? ""}`);
+                      });
+                      append($$anchor6, li);
+                    });
+                    reset(ul);
+                    append($$anchor5, ul);
+                  };
+                  if_block(node_18, ($$render) => {
+                    if (get2(logsLoading)) $$render(consequent_19);
+                    else if (get2(logsError)) $$render(consequent_20, 1);
+                    else if (get2(logs) && get2(logs).length === 0) $$render(consequent_21, 2);
+                    else if (get2(logs)) $$render(consequent_23, 3);
+                  });
+                }
+                reset(div_17);
+                append($$anchor4, div_17);
+              };
+              if_block(node_17, ($$render) => {
+                if (get2(logsOpen)) $$render(consequent_24);
+              });
+            }
+            reset(div_13);
+            template_effect(
+              ($0) => {
+                input_5.disabled = $0;
+                button_11.disabled = get2(dirty) || get2(syncBusy) || !get2(snapshot2).config.content_path;
+                set_text(text_16, get2(syncBusy) ? "\u0421\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0438\u0440\u0443\u044E\u2026" : "\u0421\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u0441\u0435\u0439\u0447\u0430\u0441");
+                set_text(text_17, get2(logsOpen) ? "\u0421\u043A\u0440\u044B\u0442\u044C \u0436\u0443\u0440\u043D\u0430\u043B" : "\u0416\u0443\u0440\u043D\u0430\u043B \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u0438");
+              },
+              [() => isLocked("content_path")]
+            );
+            bind_value(input_5, () => get2(config).content_path, ($$value) => get2(config).content_path = $$value);
+            delegated("click", button_11, () => void runSync());
+            delegated("click", button_12, () => void showLogs());
+            append($$anchor3, div_13);
+          };
+          var consequent_42 = ($$anchor3) => {
+            var div_18 = root_29();
+            var label_7 = sibling(child(div_18), 2);
+            var input_6 = child(label_7);
+            remove_input_defaults(input_6);
+            next();
+            reset(label_7);
+            var node_20 = sibling(label_7, 2);
+            {
+              var consequent_26 = ($$anchor4) => {
+                var p_9 = root_104();
+                var text_25 = only_child(p_9, true);
+                template_effect(($0) => set_text(text_25, $0), [() => lockMessage("ai_enabled")]);
+                append($$anchor4, p_9);
+              };
+              var d_6 = user_derived(() => isLocked("ai_enabled"));
+              if_block(node_20, ($$render) => {
+                if (get2(d_6)) $$render(consequent_26);
+              });
+            }
+            var div_19 = sibling(node_20, 2);
+            var label_8 = child(div_19);
+            var input_7 = sibling(child(label_8));
+            remove_input_defaults(input_7);
+            var node_21 = sibling(input_7);
+            {
+              var consequent_27 = ($$anchor4) => {
+                var small_7 = root_94();
+                var text_26 = only_child(small_7, true);
+                template_effect(($0) => set_text(text_26, $0), [() => lockMessage("ai_base_url")]);
+                append($$anchor4, small_7);
+              };
+              var d_7 = user_derived(() => isLocked("ai_base_url"));
+              if_block(node_21, ($$render) => {
+                if (get2(d_7)) $$render(consequent_27);
+              });
+            }
+            reset(label_8);
+            var label_9 = sibling(label_8, 2);
+            var div_20 = sibling(child(label_9));
+            var input_8 = child(div_20);
+            remove_input_defaults(input_8);
+            var datalist = sibling(input_8);
+            each(datalist, 21, () => get2(models), index, ($$anchor4, model) => {
+              var option = root_222();
+              var option_value = {};
+              template_effect(() => {
+                if (option_value !== (option_value = get2(model))) {
+                  option.value = (option.__value = option_value) ?? "";
+                }
+              });
+              append($$anchor4, option);
+            });
+            reset(datalist);
+            var button_13 = sibling(datalist);
+            var text_27 = only_child(button_13, true);
+            reset(div_20);
+            var node_22 = sibling(div_20);
+            {
+              var consequent_28 = ($$anchor4) => {
+                var small_8 = root_94();
+                var text_28 = only_child(small_8, true);
+                template_effect(($0) => set_text(text_28, $0), [() => lockMessage("ai_model")]);
+                append($$anchor4, small_8);
+              };
+              var d_8 = user_derived(() => isLocked("ai_model"));
+              if_block(node_22, ($$render) => {
+                if (get2(d_8)) $$render(consequent_28);
+              });
+            }
+            var node_23 = sibling(node_22);
+            {
+              var consequent_29 = ($$anchor4) => {
+                var small_9 = root_232();
+                var text_29 = only_child(small_9, true);
+                template_effect(() => set_text(text_29, get2(modelsError)));
+                append($$anchor4, small_9);
+              };
+              if_block(node_23, ($$render) => {
+                if (get2(modelsError)) $$render(consequent_29);
+              });
+            }
+            reset(label_9);
+            var label_10 = sibling(label_9, 2);
+            var input_9 = sibling(child(label_10));
+            remove_input_defaults(input_9);
+            var node_24 = sibling(input_9);
+            {
+              var consequent_30 = ($$anchor4) => {
+                var small_10 = root_94();
+                var text_30 = only_child(small_10, true);
+                template_effect(($0) => set_text(text_30, $0), [() => lockMessage("ai_timeout_seconds")]);
+                append($$anchor4, small_10);
+              };
+              var d_9 = user_derived(() => isLocked("ai_timeout_seconds"));
+              if_block(node_24, ($$render) => {
+                if (get2(d_9)) $$render(consequent_30);
+              });
+            }
+            reset(label_10);
+            var label_11 = sibling(label_10, 2);
+            var input_10 = sibling(child(label_11));
+            remove_input_defaults(input_10);
+            var node_25 = sibling(input_10);
+            {
+              var consequent_31 = ($$anchor4) => {
+                var small_11 = root_94();
+                var text_31 = only_child(small_11, true);
+                template_effect(($0) => set_text(text_31, $0), [() => lockMessage("ai_max_tokens")]);
+                append($$anchor4, small_11);
+              };
+              var d_10 = user_derived(() => isLocked("ai_max_tokens"));
+              if_block(node_25, ($$render) => {
+                if (get2(d_10)) $$render(consequent_31);
+              });
+            }
+            reset(label_11);
+            reset(div_19);
+            var label_12 = sibling(div_19, 2);
+            var select = sibling(child(label_12));
+            var option_1 = child(select);
+            option_1.value = option_1.__value = "max_tokens";
+            var option_2 = sibling(option_1);
+            option_2.value = option_2.__value = "max_completion_tokens";
+            reset(select);
+            init_select(select);
+            next();
+            reset(label_12);
+            var node_26 = sibling(label_12, 2);
+            {
+              var consequent_32 = ($$anchor4) => {
+                var p_10 = root_104();
+                var text_32 = only_child(p_10, true);
+                template_effect(($0) => set_text(text_32, $0), [() => lockMessage("ai_token_limit_parameter")]);
+                append($$anchor4, p_10);
+              };
+              var d_11 = user_derived(() => isLocked("ai_token_limit_parameter"));
+              if_block(node_26, ($$render) => {
+                if (get2(d_11)) $$render(consequent_32);
+              });
+            }
+            var label_13 = sibling(node_26, 2);
+            var input_11 = child(label_13);
+            remove_input_defaults(input_11);
+            next();
+            reset(label_13);
+            var node_27 = sibling(label_13, 2);
+            {
+              var consequent_33 = ($$anchor4) => {
+                var label_14 = root_242();
+                var input_12 = sibling(child(label_14));
+                remove_input_defaults(input_12);
+                reset(label_14);
+                template_effect(($0) => input_12.disabled = $0, [() => isLocked("ai_temperature")]);
+                bind_value(input_12, () => get2(config).ai_temperature, ($$value) => get2(config).ai_temperature = $$value);
+                append($$anchor4, label_14);
+              };
+              if_block(node_27, ($$render) => {
+                if (get2(config).ai_temperature !== null) $$render(consequent_33);
+              });
+            }
+            var node_28 = sibling(node_27, 2);
+            {
+              var consequent_34 = ($$anchor4) => {
+                var p_11 = root_104();
+                var text_33 = only_child(p_11, true);
+                template_effect(($0) => set_text(text_33, $0), [() => lockMessage("ai_temperature")]);
+                append($$anchor4, p_11);
+              };
+              var d_12 = user_derived(() => isLocked("ai_temperature"));
+              if_block(node_28, ($$render) => {
+                if (get2(d_12)) $$render(consequent_34);
+              });
+            }
+            var label_15 = sibling(node_28, 2);
+            var input_13 = child(label_15);
+            remove_input_defaults(input_13);
+            next();
+            reset(label_15);
+            var node_29 = sibling(label_15, 2);
+            {
+              var consequent_35 = ($$anchor4) => {
+                var p_12 = root_104();
+                var text_34 = only_child(p_12, true);
+                template_effect(($0) => set_text(text_34, $0), [() => lockMessage("ai_tools_enabled")]);
+                append($$anchor4, p_12);
+              };
+              var d_13 = user_derived(() => isLocked("ai_tools_enabled"));
+              if_block(node_29, ($$render) => {
+                if (get2(d_13)) $$render(consequent_35);
+              });
+            }
+            var label_16 = sibling(node_29, 2);
+            var textarea = sibling(child(label_16));
+            remove_textarea_child(textarea);
+            var node_30 = sibling(textarea);
+            {
+              var consequent_36 = ($$anchor4) => {
+                var small_12 = root_94();
+                var text_35 = only_child(small_12, true);
+                template_effect(($0) => set_text(text_35, $0), [() => lockMessage("ai_system_prompt")]);
+                append($$anchor4, small_12);
+              };
+              var d_14 = user_derived(() => isLocked("ai_system_prompt"));
+              if_block(node_30, ($$render) => {
+                if (get2(d_14)) $$render(consequent_36);
+              });
+            }
+            reset(label_16);
+            var div_21 = sibling(label_16, 2);
+            var div_22 = child(div_21);
+            var p_13 = sibling(child(div_22));
+            var text_36 = only_child(p_13);
+            reset(div_22);
+            var label_17 = sibling(div_22, 2);
+            var span_4 = child(label_17);
+            var text_37 = only_child(span_4, true);
+            var input_14 = sibling(span_4);
+            remove_input_defaults(input_14);
+            reset(label_17);
+            var node_31 = sibling(label_17, 2);
+            {
+              var consequent_37 = ($$anchor4) => {
+                var p_14 = root_104();
+                var text_38 = only_child(p_14, true);
+                template_effect(($0) => set_text(text_38, $0), [() => lockMessage("api_key")]);
+                append($$anchor4, p_14);
+              };
+              var d_15 = user_derived(() => isLocked("api_key"));
+              if_block(node_31, ($$render) => {
+                if (get2(d_15)) $$render(consequent_37);
+              });
+            }
+            var node_32 = sibling(node_31, 2);
+            {
+              var consequent_38 = ($$anchor4) => {
+                var p_15 = root_252();
+                var text_39 = only_child(p_15);
+                template_effect(() => set_text(text_39, `\u041E\u0448\u0438\u0431\u043A\u0430 \u043A\u043B\u044E\u0447\u0430: ${get2(snapshot2).api_key_error ?? ""}`));
+                append($$anchor4, p_15);
+              };
+              if_block(node_32, ($$render) => {
+                if (get2(snapshot2).api_key_error) $$render(consequent_38);
+              });
+            }
+            var node_33 = sibling(node_32, 2);
+            {
+              var consequent_39 = ($$anchor4) => {
+                var label_18 = root_262();
+                var input_15 = child(label_18);
+                remove_input_defaults(input_15);
+                next();
+                reset(label_18);
+                template_effect(($0) => input_15.disabled = $0, [() => isLocked("api_key")]);
+                bind_checked(input_15, () => get2(clearApiKey), ($$value) => set(clearApiKey, $$value));
+                append($$anchor4, label_18);
+              };
+              if_block(node_33, ($$render) => {
+                if (get2(snapshot2).api_key_configured) $$render(consequent_39);
+              });
+            }
+            reset(div_21);
+            var div_23 = sibling(div_21, 2);
+            var button_14 = child(div_23);
+            var text_40 = only_child(button_14, true);
+            var node_34 = sibling(button_14, 2);
+            {
+              var consequent_40 = ($$anchor4) => {
+                var span_5 = root_27();
+                let classes_4;
+                var text_41 = only_child(span_5);
+                template_effect(() => {
+                  classes_4 = set_class(span_5, 1, "test-status svelte-1u3w06f", null, classes_4, { success: get2(aiTest).ok, failure: !get2(aiTest).ok });
+                  set_text(text_41, `${get2(aiTest).ok ? "\u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u0435 \u0443\u0441\u043F\u0435\u0448\u043D\u043E" : "\u041F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440 \u0432\u0435\u0440\u043D\u0443\u043B \u043E\u0448\u0438\u0431\u043A\u0443"} \xB7 ${get2(aiTest).latency_ms ?? ""} \u043C\u0441 \xB7 ${get2(aiTest).model ?? ""}`);
+                });
+                append($$anchor4, span_5);
+              };
+              if_block(node_34, ($$render) => {
+                if (get2(aiTest)) $$render(consequent_40);
+              });
+            }
+            var node_35 = sibling(node_34, 2);
+            {
+              var consequent_41 = ($$anchor4) => {
+                var span_6 = root_28();
+                var text_42 = only_child(span_6, true);
+                template_effect(() => set_text(text_42, get2(aiTestError)));
+                append($$anchor4, span_6);
+              };
+              if_block(node_35, ($$render) => {
+                if (get2(aiTestError)) $$render(consequent_41);
+              });
+            }
+            reset(div_23);
+            reset(div_18);
+            template_effect(
+              ($0, $1, $2, $3, $4, $5, $6, $7, $8, $9) => {
+                input_6.disabled = $0;
+                input_7.disabled = $1;
+                input_8.disabled = $2;
+                button_13.disabled = get2(modelsLoading);
+                set_text(text_27, get2(modelsLoading) ? "\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430\u2026" : "\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u043C\u043E\u0434\u0435\u043B\u0438");
+                input_9.disabled = $3;
+                input_10.disabled = $4;
+                select.disabled = $5;
+                set_checked(input_11, get2(config).ai_temperature !== null);
+                input_11.disabled = $6;
+                input_13.disabled = $7;
+                textarea.disabled = $8;
+                set_text(text_36, `${get2(snapshot2).api_key_configured ? "\u041A\u043B\u044E\u0447 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D. \u041F\u043E\u043B\u0435 \u043F\u0443\u0441\u0442\u043E\u0435 \u2014 \u043E\u0441\u0442\u0430\u0432\u0438\u0442\u044C \u0442\u0435\u043A\u0443\u0449\u0438\u0439 \u043A\u043B\u044E\u0447." : "\u041A\u043B\u044E\u0447 \u0435\u0449\u0451 \u043D\u0435 \u0437\u0430\u0434\u0430\u043D."} \u0412\u0432\u0435\u0434\u0451\u043D\u043D\u043E\u0435 \u0437\u043D\u0430\u0447\u0435\u043D\u0438\u0435 \u0441\u0435\u0440\u0432\u0435\u0440 \u043D\u0435 \u043F\u043E\u043A\u0430\u0436\u0435\u0442 \u043F\u043E\u0432\u0442\u043E\u0440\u043D\u043E.`);
+                set_text(text_37, get2(snapshot2).api_key_configured ? "\u041D\u043E\u0432\u044B\u0439 \u043A\u043B\u044E\u0447 (\u043D\u0435\u043E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u043E)" : "\u041A\u043B\u044E\u0447");
+                set_attribute2(input_14, "placeholder", get2(snapshot2).api_key_configured ? "\u041E\u0441\u0442\u0430\u0432\u044C \u043F\u0443\u0441\u0442\u044B\u043C, \u0447\u0442\u043E\u0431\u044B \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C \u0442\u0435\u043A\u0443\u0449\u0438\u0439" : "\u0412\u0432\u0435\u0434\u0438 API-\u043A\u043B\u044E\u0447");
+                input_14.disabled = $9;
+                button_14.disabled = get2(saving) || get2(aiTesting);
+                set_text(text_40, get2(saving) ? "\u0421\u043E\u0445\u0440\u0430\u043D\u044F\u044E\u2026" : get2(aiTesting) ? "\u041F\u0440\u043E\u0432\u0435\u0440\u044F\u044E\u2026" : "\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C \u0438 \u043F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C AI");
+              },
+              [
+                () => isLocked("ai_enabled"),
+                () => isLocked("ai_base_url"),
+                () => isLocked("ai_model"),
+                () => isLocked("ai_timeout_seconds"),
+                () => isLocked("ai_max_tokens"),
+                () => isLocked("ai_token_limit_parameter"),
+                () => isLocked("ai_temperature"),
+                () => isLocked("ai_tools_enabled"),
+                () => isLocked("ai_system_prompt"),
+                () => isLocked("api_key")
+              ]
+            );
+            bind_checked(input_6, () => get2(config).ai_enabled, ($$value) => get2(config).ai_enabled = $$value);
+            bind_value(input_7, () => get2(config).ai_base_url, ($$value) => get2(config).ai_base_url = $$value);
+            bind_value(input_8, () => get2(config).ai_model, ($$value) => get2(config).ai_model = $$value);
+            delegated("click", button_13, () => void loadModels());
+            bind_value(input_9, () => get2(config).ai_timeout_seconds, ($$value) => get2(config).ai_timeout_seconds = $$value);
+            bind_value(input_10, () => get2(config).ai_max_tokens, ($$value) => get2(config).ai_max_tokens = $$value);
+            bind_select_value(select, () => get2(config).ai_token_limit_parameter, ($$value) => get2(config).ai_token_limit_parameter = $$value);
+            delegated("change", input_11, setTemperatureEnabled);
+            bind_checked(input_13, () => get2(config).ai_tools_enabled, ($$value) => get2(config).ai_tools_enabled = $$value);
+            bind_value(textarea, () => get2(config).ai_system_prompt, ($$value) => get2(config).ai_system_prompt = $$value);
+            bind_value(input_14, () => get2(apiKey), ($$value) => set(apiKey, $$value));
+            delegated("click", button_14, () => void save2(true));
+            append($$anchor3, div_18);
+          };
+          var alternate_3 = ($$anchor3) => {
+            var div_24 = root_332();
+            var div_25 = sibling(child(div_24), 4);
+            each(
+              div_25,
+              21,
+              () => Object.entries({
+                \u0412\u0435\u0440\u0441\u0438\u044F: get2(snapshot2).runtime.version,
+                \u041E\u043A\u0440\u0443\u0436\u0435\u043D\u0438\u0435: get2(snapshot2).runtime.environment,
+                "\u041F\u0443\u0442\u044C \u043A \u0411\u0414": get2(snapshot2).runtime.db_path,
+                "\u0410\u0434\u0440\u0435\u0441 \u043F\u0440\u0438\u0432\u044F\u0437\u043A\u0438": get2(snapshot2).runtime.bind_host,
+                \u041F\u043E\u0440\u0442: get2(snapshot2).runtime.bind_port,
+                \u0412\u043E\u0440\u043A\u0435\u0440\u044B: get2(snapshot2).runtime.workers,
+                "JWT secret \u0437\u0430\u0434\u0430\u043D": get2(snapshot2).runtime.jwt_secret_configured ? "\u0414\u0430" : "\u041D\u0435\u0442",
+                "Allowed hosts": get2(snapshot2).runtime.allowed_hosts.join(", ") || "\u2014",
+                "CORS origins": get2(snapshot2).runtime.cors_origins.join(", ") || "\u2014"
+              }),
+              index,
+              ($$anchor4, $$item) => {
+                var $$array = user_derived(() => to_array(get2($$item), 2));
+                let label = () => get2($$array)[0];
+                let value = () => get2($$array)[1];
+                var div_26 = root_30();
+                var small_13 = child(div_26);
+                var text_43 = only_child(small_13, true);
+                var strong_1 = sibling(small_13);
+                var text_44 = only_child(strong_1, true);
+                reset(div_26);
+                template_effect(() => {
+                  set_text(text_43, label());
+                  set_text(text_44, value());
+                });
+                append($$anchor4, div_26);
+              }
+            );
+            reset(div_25);
+            var div_27 = sibling(div_25, 2);
+            var div_28 = sibling(child(div_27), 2);
+            var button_15 = child(div_28);
+            var text_45 = only_child(button_15, true);
+            var node_36 = sibling(button_15);
+            {
+              var consequent_43 = ($$anchor4) => {
+                var button_16 = root_31();
+                delegated("click", button_16, downloadDeployment);
+                append($$anchor4, button_16);
+              };
+              if_block(node_36, ($$render) => {
+                if (get2(deploymentReady)) $$render(consequent_43);
+              });
+            }
+            reset(div_28);
+            reset(div_27);
+            var node_37 = sibling(div_27, 2);
+            {
+              var consequent_44 = ($$anchor4) => {
+                var p_16 = root_142();
+                var text_46 = only_child(p_16, true);
+                template_effect(() => set_text(text_46, get2(deploymentError)));
+                append($$anchor4, p_16);
+              };
+              if_block(node_37, ($$render) => {
+                if (get2(deploymentError)) $$render(consequent_44);
+              });
+            }
+            var node_38 = sibling(node_37, 2);
+            {
+              var consequent_45 = ($$anchor4) => {
+                var label_19 = root_322();
+                var textarea_1 = sibling(child(label_19));
+                remove_textarea_child(textarea_1);
+                reset(label_19);
+                bind_value(textarea_1, () => get2(deploymentText), ($$value) => set(deploymentText, $$value));
+                append($$anchor4, label_19);
+              };
+              if_block(node_38, ($$render) => {
+                if (get2(deploymentReady)) $$render(consequent_45);
+              });
+            }
+            reset(div_24);
+            template_effect(() => {
+              button_15.disabled = get2(deploymentLoading);
+              set_text(text_45, get2(deploymentLoading) ? "\u0413\u043E\u0442\u043E\u0432\u043B\u044E\u2026" : "\u041F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u0438\u0442\u044C .env.example");
+            });
+            delegated("click", button_15, () => void prepareDeployment());
+            append($$anchor3, div_24);
+          };
+          if_block(node_7, ($$render) => {
+            if (get2(activeTab) === "general") $$render(consequent_14);
+            else if (get2(activeTab) === "content") $$render(consequent_25, 1);
+            else if (get2(activeTab) === "ai") $$render(consequent_42, 2);
+            else $$render(alternate_3, -1);
+          });
+        }
+        reset(fieldset);
+        template_effect(() => {
+          fieldset.disabled = get2(saving) || get2(syncBusy) || get2(aiTesting);
+          classes = set_class(button_7, 1, "svelte-1u3w06f", null, classes, { active: get2(activeTab) === "general" });
+          classes_1 = set_class(button_8, 1, "svelte-1u3w06f", null, classes_1, { active: get2(activeTab) === "content" });
+          classes_2 = set_class(button_9, 1, "svelte-1u3w06f", null, classes_2, { active: get2(activeTab) === "ai" });
+          classes_3 = set_class(button_10, 1, "svelte-1u3w06f", null, classes_3, { active: get2(activeTab) === "deployment" });
+        });
+        delegated("click", button_7, () => set(activeTab, "general"));
+        delegated("click", button_8, () => set(activeTab, "content"));
+        delegated("click", button_9, () => set(activeTab, "ai"));
+        delegated("click", button_10, () => set(activeTab, "deployment"));
+        append($$anchor2, fieldset);
+      };
+      var alternate_4 = ($$anchor2) => {
+        var div_29 = root_352();
+        append($$anchor2, div_29);
+      };
+      if_block(node_1, ($$render) => {
+        if (get2(loading) && !get2(snapshot2)) $$render(consequent_1);
+        else if (get2(loadError) && !get2(snapshot2)) $$render(consequent_2, 1);
+        else if (get2(snapshot2) && get2(config)) $$render(consequent_46, 2);
+        else $$render(alternate_4, -1);
+      });
+    }
+    reset(section);
+    append($$anchor, section);
+    pop();
+  }
+  delegate(["click", "change"]);
+
+  // src/components/ChatContent.svelte
+  var root8 = from_html(`<div class="code-block svelte-1qmz6rz"><div class="code-title svelte-1qmz6rz"><span> </span><button type="button" class="svelte-1qmz6rz"> </button></div><pre class="svelte-1qmz6rz"><code class="svelte-1qmz6rz"> </code></pre></div>`);
+  var root_110 = from_html(`<strong> </strong>`);
+  var root_210 = from_html(`<code class="svelte-1qmz6rz"> </code>`);
+  var root_37 = from_html(`<p class="svelte-1qmz6rz"></p>`);
+  var root_46 = from_html(`<div class="chat-content svelte-1qmz6rz"></div>`);
+  var $$css8 = {
+    hash: "svelte-1qmz6rz",
+    code: ".chat-content.svelte-1qmz6rz {line-height:1.7;overflow-wrap:anywhere;}p.svelte-1qmz6rz {white-space:pre-wrap;margin:0 0 .8rem;}p.svelte-1qmz6rz:last-child {margin-bottom:0;}code.svelte-1qmz6rz {font-family:'Cascadia Code', Consolas, monospace;font-size:.9em;background:#252c34;padding:2px 5px;border-radius:4px;}.code-block.svelte-1qmz6rz {margin:14px 0;border:1px solid #39414c;border-radius:8px;overflow:hidden;}.code-title.svelte-1qmz6rz {display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:#252c34;color:#a5b2c2;font-size:12px;}.code-title.svelte-1qmz6rz button:where(.svelte-1qmz6rz) {background:transparent;border:0;padding:3px 8px;color:inherit;}pre.svelte-1qmz6rz {margin:0;padding:14px;background:#15191e;overflow-x:auto;white-space:pre;}pre.svelte-1qmz6rz code:where(.svelte-1qmz6rz) {padding:0;background:transparent;}"
+  };
+  function ChatContent($$anchor, $$props) {
+    push($$props, true);
+    append_styles($$anchor, $$css8);
+    let copied = state(-1);
+    const blocks = user_derived(() => $$props.content.split(/(```[\s\S]*?```)/g).filter(Boolean).map((part) => {
+      if (!part.startsWith("```") || !part.endsWith("```")) return { code: false, text: part, language: "" };
+      const inner = part.slice(3, -3);
+      const match = inner.match(/^([\w+-]*)\n([\s\S]*)$/);
+      return {
+        code: true,
+        text: match ? match[2] : inner,
+        language: match ? match[1] : ""
+      };
+    }));
+    async function copy(text2, index2) {
+      try {
+        await navigator.clipboard.writeText(text2);
+        set(copied, index2, true);
+      } catch {
+        set(copied, -1);
+      }
+    }
+    var div = root_46();
+    each(div, 21, () => get2(blocks), index, ($$anchor2, block2, i) => {
+      var fragment = comment();
+      var node = first_child(fragment);
+      {
+        var consequent = ($$anchor3) => {
+          var div_1 = root8();
+          var div_2 = child(div_1);
+          var span = child(div_2);
+          var text_1 = only_child(span, true);
+          var button = sibling(span);
+          var text_2 = only_child(button, true);
+          reset(div_2);
+          var pre = sibling(div_2);
+          var code = child(pre);
+          var text_3 = only_child(code, true);
+          reset(pre);
+          reset(div_1);
+          template_effect(() => {
+            set_text(text_1, get2(block2).language || "code");
+            set_text(text_2, get2(copied) === i ? "\u0421\u043A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u043D\u043E" : "\u041A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u043A\u043E\u0434");
+            set_text(text_3, get2(block2).text);
+          });
+          delegated("click", button, () => copy(get2(block2).text, i));
+          append($$anchor3, div_1);
+        };
+        var alternate_1 = ($$anchor3) => {
+          var fragment_1 = comment();
+          var node_1 = first_child(fragment_1);
+          each(node_1, 17, () => get2(block2).text.split(/\n{2,}/).filter(Boolean), index, ($$anchor4, paragraph) => {
+            var p = root_37();
+            each(p, 21, () => get2(paragraph).split(/(\*\*[^*]+\*\*|`[^`]+`)/g), index, ($$anchor5, part) => {
+              var fragment_2 = comment();
+              var node_2 = first_child(fragment_2);
+              {
+                var consequent_1 = ($$anchor6) => {
+                  var strong = root_110();
+                  var text_4 = only_child(strong, true);
+                  template_effect(($0) => set_text(text_4, $0), [() => get2(part).slice(2, -2)]);
+                  append($$anchor6, strong);
+                };
+                var d = user_derived(() => get2(part).startsWith("**") && get2(part).endsWith("**"));
+                var consequent_2 = ($$anchor6) => {
+                  var code_1 = root_210();
+                  var text_5 = only_child(code_1, true);
+                  template_effect(($0) => set_text(text_5, $0), [() => get2(part).slice(1, -1)]);
+                  append($$anchor6, code_1);
+                };
+                var d_1 = user_derived(() => get2(part).startsWith("`") && get2(part).endsWith("`"));
+                var alternate = ($$anchor6) => {
+                  var text_6 = text();
+                  template_effect(() => set_text(text_6, get2(part)));
+                  append($$anchor6, text_6);
+                };
+                if_block(node_2, ($$render) => {
+                  if (get2(d)) $$render(consequent_1);
+                  else if (get2(d_1)) $$render(consequent_2, 1);
+                  else $$render(alternate, -1);
+                });
+              }
+              append($$anchor5, fragment_2);
+            });
+            reset(p);
+            append($$anchor4, p);
+          });
+          append($$anchor3, fragment_1);
+        };
+        if_block(node, ($$render) => {
+          if (get2(block2).code) $$render(consequent);
+          else $$render(alternate_1, -1);
+        });
+      }
+      append($$anchor2, fragment);
+    });
+    reset(div);
+    append($$anchor, div);
+    pop();
+  }
+  delegate(["click"]);
+
+  // src/components/Assistant.svelte
+  var root9 = from_html(`<div><button class="chat-title svelte-1tlx730"> <small class="svelte-1tlx730"> </small></button> <button class="delete svelte-1tlx730">\xD7</button></div>`);
+  var root_111 = from_html(`<p class="muted svelte-1tlx730">\u0414\u0438\u0430\u043B\u043E\u0433\u0438 \u043F\u043E\u044F\u0432\u044F\u0442\u0441\u044F \u0437\u0434\u0435\u0441\u044C \u043F\u043E\u0441\u043B\u0435 \u043F\u0435\u0440\u0432\u043E\u0433\u043E \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F.</p>`);
+  var root_211 = from_html(`<p class="muted svelte-1tlx730">\u0417\u0430\u0433\u0440\u0443\u0436\u0430\u044E \u0434\u0438\u0430\u043B\u043E\u0433\u2026</p>`);
+  var root_38 = from_html(`<div class="empty-state svelte-1tlx730"><h2 class="svelte-1tlx730">\u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0438 \u0441\u0432\u043E\u0435\u0433\u043E AI-\u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430</h2><p>\u0423\u043A\u0430\u0436\u0438 URL API, \u043C\u043E\u0434\u0435\u043B\u044C \u0438 \u043A\u043B\u044E\u0447 \u0432 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430\u0445. \u0414\u0438\u0430\u043B\u043E\u0433\u0438 \u0438 \u0447\u0435\u0440\u043D\u043E\u0432\u0438\u043A\u0438 \u0431\u0443\u0434\u0443\u0442 \u0445\u0440\u0430\u043D\u0438\u0442\u044C\u0441\u044F \u043D\u0430 \u0441\u0435\u0440\u0432\u0435\u0440\u0435.</p><button class="primary">\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438</button></div>`);
+  var root_47 = from_html(`<button class="svelte-1tlx730"> </button>`);
+  var root_56 = from_html(`<div class="empty-state svelte-1tlx730"><span class="assistant-mark svelte-1tlx730">\u2726</span><h2 class="svelte-1tlx730">\u0427\u0442\u043E \u0440\u0430\u0437\u0431\u0435\u0440\u0451\u043C \u0432 \u0441\u0435\u0440\u0432\u0438\u0441\u0435?</h2><p>\u041C\u043E\u0433\u0443 \u043F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u0441\u043E\u0441\u0442\u043E\u044F\u043D\u0438\u0435, \u043D\u0430\u0439\u0442\u0438 \u0437\u0430\u0434\u0430\u0447\u0443, \u043F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u0438\u0442\u044C \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u0438 \u043F\u0440\u0435\u0434\u043B\u043E\u0436\u0438\u0442\u044C \u043F\u0440\u0430\u0432\u043A\u0443 \u0442\u0435\u043A\u0441\u0442\u0430 \u0438\u043B\u0438 \u0442\u0435\u0441\u0442\u043E\u0432.</p><div class="suggestions svelte-1tlx730"></div></div>`);
+  var root_65 = from_html(`<div class="proposal svelte-1tlx730"><div class="svelte-1tlx730"><small class="svelte-1tlx730">\u0427\u0435\u0440\u043D\u043E\u0432\u0438\u043A \xB7 \u0442\u0440\u0435\u0431\u0443\u0435\u0442\u0441\u044F \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0430</small><strong> </strong><span class="svelte-1tlx730"> </span></div><button class="primary">\u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F \u2192</button></div>`);
+  var root_75 = from_html(`<article><div class="message-heading svelte-1tlx730"><strong class="svelte-1tlx730"> </strong><span> </span><!></div> <!> <!></article>`);
+  var root_85 = from_html(`<div class="inline-error svelte-1tlx730" role="alert"> </div>`);
+  var root_95 = from_html(`<option> </option>`);
+  var root_105 = from_html(`<button>\u25A0 \u041E\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0442\u044C</button>`);
+  var root_115 = from_html(`<button class="primary">\u041E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u2191</button>`);
+  var root_125 = from_html(`<div class="assistant-layout svelte-1tlx730"><aside class="history svelte-1tlx730" aria-label="\u0418\u0441\u0442\u043E\u0440\u0438\u044F AI-\u0434\u0438\u0430\u043B\u043E\u0433\u043E\u0432"><button class="primary">\uFF0B \u041D\u043E\u0432\u044B\u0439 \u0434\u0438\u0430\u043B\u043E\u0433</button> <p class="eyebrow svelte-1tlx730">\u0418\u0441\u0442\u043E\u0440\u0438\u044F</p> <!> <!> <div class="history-footer svelte-1tlx730"><span class="model svelte-1tlx730"> </span><button>\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 AI \u2192</button></div></aside> <section class="conversation svelte-1tlx730" aria-label="\u0427\u0430\u0442 \u0441 AI-\u043F\u043E\u043C\u043E\u0449\u043D\u0438\u043A\u043E\u043C"><div class="context svelte-1tlx730"><span class="context-dot svelte-1tlx730"></span> \u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442: \u0441\u0435\u0440\u0432\u0438\u0441, \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u0438 \u043A\u0430\u0442\u0430\u043B\u043E\u0433 <span class="muted svelte-1tlx730">\xB7 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F \u0447\u0435\u0440\u0435\u0437 \u043F\u0440\u043E\u0432\u0435\u0440\u044F\u0435\u043C\u044B\u0435 \u0447\u0435\u0440\u043D\u043E\u0432\u0438\u043A\u0438</span></div> <div class="messages svelte-1tlx730" aria-live="polite"><!> <!> <!></div> <div class="composer svelte-1tlx730"><!> <label class="attachment svelte-1tlx730">\u0417\u0430\u0434\u0430\u0447\u0430 \u0432 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u0435 <select class="svelte-1tlx730"><option>\u041E\u0431\u0449\u0438\u0439 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u0441\u0435\u0440\u0432\u0438\u0441\u0430</option><!></select></label> <div class="input-box svelte-1tlx730"><textarea placeholder="\u041D\u0430\u043F\u0438\u0448\u0438, \u0447\u0442\u043E \u043D\u0443\u0436\u043D\u043E \u043F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u0438\u043B\u0438 \u043F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u0438\u0442\u044C\u2026" aria-label="\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 \u043F\u043E\u043C\u043E\u0449\u043D\u0438\u043A\u0443" maxlength="8000" class="svelte-1tlx730"></textarea><div class="composer-actions svelte-1tlx730"><small class="svelte-1tlx730"> </small><!></div></div></div></section></div>`);
+  var $$css9 = {
+    hash: "svelte-1tlx730",
+    code: ".assistant-layout.svelte-1tlx730 {display:grid;grid-template-columns:230px minmax(0, 1fr);height:calc(100vh - 140px);min-height:550px;border:1px solid #343a44;border-radius:12px;overflow:hidden;background:#1b2026;}.history.svelte-1tlx730 {padding:16px;border-right:1px solid #343a44;display:flex;flex-direction:column;gap:6px;overflow:auto;background:#191d23;}.eyebrow.svelte-1tlx730 {color:#8e9aaa;font-size:11px;text-transform:uppercase;letter-spacing:.1em;margin:18px 4px 8px;}.chat-row.svelte-1tlx730 {display:flex;border-radius:7px;}.chat-row.active.svelte-1tlx730 {background:#2c3848;}.chat-title.svelte-1tlx730 {border:0;background:transparent;text-align:left;flex:1;min-width:0;padding:10px;text-overflow:ellipsis;overflow:hidden;white-space:nowrap;}.chat-title.svelte-1tlx730 small:where(.svelte-1tlx730) {display:block;color:#8e9aaa;font-size:11px;margin-top:4px;}.delete.svelte-1tlx730 {background:transparent;border:0;color:#8e9aaa;padding:8px;}.history-footer.svelte-1tlx730 {margin-top:auto;padding-top:22px;display:grid;gap:8px;}.model.svelte-1tlx730 {overflow:hidden;text-overflow:ellipsis;color:#a5b2c2;font-size:12px;}.conversation.svelte-1tlx730 {display:flex;flex-direction:column;min-height:0;}.context.svelte-1tlx730 {padding:13px 20px;border-bottom:1px solid #343a44;font-size:12px;color:#a5b2c2;}.context-dot.svelte-1tlx730 {display:inline-block;width:6px;height:6px;border-radius:100%;background:#76c4aa;margin-right:6px;}.messages.svelte-1tlx730 {flex:1;overflow:auto;padding:24px 30px;}.empty-state.svelte-1tlx730 {max-width:550px;margin:45px auto;text-align:center;color:#a5b2c2;}h2.svelte-1tlx730 {color:#ecf0f6;font-size:24px;letter-spacing:-.03em;}.assistant-mark.svelte-1tlx730 {font-size:34px;color:#a9c9ff;}.suggestions.svelte-1tlx730 {display:grid;gap:9px;margin-top:24px;text-align:left;}.suggestions.svelte-1tlx730 button:where(.svelte-1tlx730) {text-align:left;background:#242b34;}.message.svelte-1tlx730 {padding:18px 0 24px;border-bottom:1px solid #30363f;}.message.user.svelte-1tlx730 {background:#252d38;border:0;border-radius:9px;padding:16px 20px;margin:12px 0;}.message.failed.svelte-1tlx730 {border-left:2px solid #dc8188;padding-left:14px;}.message-heading.svelte-1tlx730 {display:flex;gap:14px;align-items:center;color:#b9c5d6;font-size:12px;margin-bottom:12px;}.message-heading.svelte-1tlx730 strong:where(.svelte-1tlx730) {color:#e8edf5;}.message-heading.svelte-1tlx730 button:where(.svelte-1tlx730) {margin-left:auto;border:0;background:transparent;padding:3px;color:#8e9aaa;font-size:11px;}.proposal.svelte-1tlx730 {display:flex;gap:16px;align-items:center;justify-content:space-between;background:#263546;border:1px solid #405d7c;border-radius:8px;padding:14px;margin-top:16px;}.proposal.svelte-1tlx730 div:where(.svelte-1tlx730) {display:grid;gap:5px;}.proposal.svelte-1tlx730 small:where(.svelte-1tlx730), .proposal.svelte-1tlx730 span:where(.svelte-1tlx730) {font-size:11px;color:#afc0d7;}.composer.svelte-1tlx730 {padding:14px 22px 18px;border-top:1px solid #343a44;background:#1b2026;}.attachment.svelte-1tlx730 {display:flex;gap:12px;align-items:center;font-size:11px;color:#a5b2c2;margin-bottom:10px;}.attachment.svelte-1tlx730 select:where(.svelte-1tlx730) {padding:5px 8px;max-width:400px;font-size:12px;}.input-box.svelte-1tlx730 {border:1px solid #475262;background:#242b34;border-radius:10px;padding:10px 12px;}textarea.svelte-1tlx730 {resize:vertical;min-height:65px;max-height:200px;padding:6px;width:100%;box-sizing:border-box;border:0;background:transparent;font-family:inherit;color:inherit;font-size:14px;}textarea.svelte-1tlx730:focus {outline:none;}.composer-actions.svelte-1tlx730 {display:flex;align-items:center;justify-content:space-between;gap:10px;}.composer-actions.svelte-1tlx730 small:where(.svelte-1tlx730) {color:#8e9aaa;font-size:11px;}.muted.svelte-1tlx730 {color:#8e9aaa;}.inline-error.svelte-1tlx730 {padding:10px;color:#ffb4bb;background:#41262c;border-radius:6px;margin-bottom:10px;}\r\n  @media (max-width: 1000px) {.assistant-layout.svelte-1tlx730 {grid-template-columns:180px minmax(0, 1fr);}.messages.svelte-1tlx730 {padding:16px;}.context.svelte-1tlx730 .muted:where(.svelte-1tlx730) {display:none;} }\r\n  @media (max-width: 700px) {.assistant-layout.svelte-1tlx730 {grid-template-columns:1fr;height:calc(100vh - 180px);min-height:600px;}.history.svelte-1tlx730 {max-height:150px;border-right:0;border-bottom:1px solid #343a44;}.history-footer.svelte-1tlx730, .history.svelte-1tlx730 .eyebrow:where(.svelte-1tlx730) {display:none;}.conversation.svelte-1tlx730 {min-height:480px;}.attachment.svelte-1tlx730 select:where(.svelte-1tlx730) {max-width:100%;}.composer.svelte-1tlx730 {padding:10px;}.proposal.svelte-1tlx730 {flex-direction:column;align-items:flex-start;}.attachment.svelte-1tlx730 {flex-wrap:wrap;}.composer-actions.svelte-1tlx730 small:where(.svelte-1tlx730) {max-width:55%;} }"
+  };
+  function Assistant($$anchor, $$props) {
+    push($$props, true);
+    append_styles($$anchor, $$css9);
+    let chats = state(proxy([]));
+    let messages = state(proxy([]));
+    let activeId = state("");
+    let input = state("");
+    let error = state("");
+    let loading = state(true);
+    let busy = state(false);
+    let ready = state(false);
+    let model = state("");
+    let taskId = state("");
+    let tasks = state(proxy([]));
+    let status = state("");
+    let copied = state("");
+    let scroll;
+    let follow = true;
+    let controller = null;
+    let generation = 0;
+    const suggestions = [
+      "\u0427\u0442\u043E \u0441\u0435\u0439\u0447\u0430\u0441 \u0441\u043E \u0437\u0434\u043E\u0440\u043E\u0432\u044C\u0435\u043C \u0441\u0435\u0440\u0432\u0438\u0441\u0430?",
+      "\u041F\u043E\u043C\u043E\u0433\u0438 \u043D\u0430\u0441\u0442\u0440\u043E\u0438\u0442\u044C \u0441\u0435\u0440\u0432\u0438\u0441 \u0434\u043B\u044F \u0437\u0430\u043A\u0440\u044B\u0442\u043E\u0433\u043E \u043F\u0438\u043B\u043E\u0442\u0430.",
+      "\u041D\u0430\u0439\u0434\u0438 \u0437\u0430\u0434\u0430\u0447\u0443 \u0438 \u043F\u0440\u0435\u0434\u043B\u043E\u0436\u0438 \u0443\u043B\u0443\u0447\u0448\u0435\u043D\u0438\u044F \u0435\u0451 \u0442\u0435\u0441\u0442\u043E\u0432."
+    ];
+    async function init2() {
+      set(loading, true);
+      set(error, "");
+      const results = await Promise.allSettled([getSettings(), listChats(), getCatalog()]);
+      const config = results[0];
+      const history2 = results[1];
+      const catalog = results[2];
+      if (config.status === "fulfilled") {
+        set(ready, config.value.config.ai_enabled && !!config.value.config.ai_base_url && !!config.value.config.ai_model, true);
+        set(model, config.value.config.ai_model, true);
+      } else set(
+        error,
+        config.reason instanceof Error ? config.reason.message : "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 AI.",
+        true
+      );
+      if (history2.status === "fulfilled") set(chats, history2.value, true);
+      else set(
+        error,
+        history2.reason instanceof Error ? history2.reason.message : "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0434\u0438\u0430\u043B\u043E\u0433\u0438.",
+        true
+      );
+      if (catalog.status === "fulfilled") set(tasks, catalog.value.projects.flatMap((p) => p.folders.flatMap((f) => f.tasks)), true);
+      set(loading, false);
+      if (get2(chats).length && !get2(activeId)) await select(get2(chats)[0].id);
+    }
+    async function select(id) {
+      if (get2(busy)) return;
+      const request2 = ++generation;
+      set(error, "");
+      set(loading, true);
+      try {
+        const data = await readChat(id);
+        if (request2 !== generation) return;
+        set(activeId, id, true);
+        set(messages, data.messages, true);
+        follow = true;
+      } catch (e) {
+        if (request2 === generation) set(error, e.message, true);
+      } finally {
+        if (request2 === generation) set(loading, false);
+      }
+    }
+    async function create() {
+      if (get2(busy) || get2(loading)) return;
+      set(error, "");
+      set(loading, true);
+      try {
+        const chat = await newChat();
+        set(chats, [chat, ...get2(chats)], true);
+        set(activeId, chat.id, true);
+        set(messages, [], true);
+        set(input, "");
+        set(taskId, "");
+        follow = true;
+      } catch (e) {
+        set(error, e.message, true);
+      } finally {
+        set(loading, false);
+      }
+    }
+    async function remove(chat) {
+      if (get2(busy) || !confirm(`\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0434\u0438\u0430\u043B\u043E\u0433 \xAB${chat.title}\xBB?`)) return;
+      try {
+        await deleteChat(chat.id);
+        set(chats, get2(chats).filter((c) => c.id !== chat.id), true);
+        if (get2(activeId) === chat.id) {
+          set(activeId, "");
+          set(messages, [], true);
+          if (get2(chats).length) await select(get2(chats)[0].id);
+        }
+      } catch (e) {
+        set(error, e.message, true);
+      }
+    }
+    async function send(text2 = get2(input)) {
+      if (get2(busy) || !get2(ready) || !text2.trim()) return;
+      if (!get2(activeId)) {
+        await create();
+        if (!get2(activeId)) return;
+      }
+      const id = get2(activeId);
+      const content = text2.trim();
+      set(busy, true);
+      set(status, "\u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0430\u044E\u0441\u044C\u2026");
+      set(error, "");
+      follow = true;
+      controller = new AbortController();
+      const user = {
+        id: `local-user-${Date.now()}`,
+        role: "user",
+        content,
+        status: "complete",
+        created_at: (/* @__PURE__ */ new Date()).toISOString(),
+        proposals: []
+      };
+      let assistant = {
+        id: "pending",
+        role: "assistant",
+        content: "",
+        status: "streaming",
+        created_at: (/* @__PURE__ */ new Date()).toISOString(),
+        proposals: []
+      };
+      set(messages, [...get2(messages), user, assistant], true);
+      set(input, "");
+      try {
+        await streamChat(id, content, get2(taskId) || void 0, controller.signal, (kind, data) => {
+          if (kind === "start") {
+            assistant = { ...assistant, id: String(data.message_id) };
+            set(status, "\u041F\u0438\u0448\u0435\u0442 \u043E\u0442\u0432\u0435\u0442\u2026");
+          }
+          if (kind === "delta") assistant = {
+            ...assistant,
+            content: assistant.content + String(data.text || "")
+          };
+          if (kind === "tool") set(status, `\u0427\u0438\u0442\u0430\u0435\u0442 \u0434\u0430\u043D\u043D\u044B\u0435: ${String(data.name)}`);
+          if (kind === "proposal") assistant = { ...assistant, proposals: [...assistant.proposals, data] };
+          if (kind === "done") assistant = { ...assistant, status: String(data.status) };
+          if (kind === "error") {
+            set(error, String(data.message), true);
+            assistant = { ...assistant, status: "error" };
+          }
+          set(messages, [...get2(messages).slice(0, -1), assistant], true);
+        });
+      } catch (e) {
+        if (e.name === "AbortError") set(status, "\u041E\u0442\u0432\u0435\u0442 \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D");
+        else {
+          set(error, e.message, true);
+          set(input, content, true);
+        }
+      } finally {
+        controller = null;
+        try {
+          for (let attempt = 0; attempt < 15; attempt++) {
+            const data = await readChat(id);
+            if (get2(activeId) === id) set(messages, data.messages, true);
+            if (!data.messages.some((message) => message.status === "streaming")) break;
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          }
+          set(chats, await listChats(), true);
+        } catch (e) {
+          if (!get2(error)) set(error, e.message, true);
+        }
+        if (!get2(status).includes("\u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D")) set(status, "");
+        set(busy, false);
+      }
+    }
+    function stop() {
+      controller?.abort();
+    }
+    function keydown(e) {
+      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+        e.preventDefault();
+        void send();
+      }
+    }
+    function review(proposal) {
+      if (proposal.kind === "settings") $$props.onReviewSettings(proposal.payload);
+      else $$props.onReviewTask(proposal.payload);
+    }
+    async function copy(message) {
+      try {
+        await navigator.clipboard.writeText(message.content);
+        set(copied, message.id, true);
+      } catch {
+        set(error, "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0441\u043A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u0442\u044C \u043E\u0442\u0432\u0435\u0442.");
+      }
+    }
+    user_effect(() => {
+      get2(messages).map((m) => m.content.length + m.proposals.length).join(",");
+      if (follow) void tick().then(() => {
+        if (scroll) scroll.scrollTop = scroll.scrollHeight;
+      });
+    });
+    onMount(() => {
+      void init2();
+    });
+    onDestroy(() => {
+      generation++;
+      controller?.abort();
+    });
+    var div = root_125();
+    var aside = child(div);
+    var button = child(aside);
+    var node = sibling(button, 4);
+    each(node, 17, () => get2(chats), (chat) => chat.id, ($$anchor2, chat) => {
+      var div_1 = root9();
+      let classes;
+      var button_1 = child(div_1);
+      var text_1 = child(button_1, true);
+      var small = sibling(text_1);
+      var text_2 = only_child(small, true);
+      reset(button_1);
+      var button_2 = sibling(button_1, 2);
+      reset(div_1);
+      template_effect(
+        ($0) => {
+          classes = set_class(div_1, 1, "chat-row svelte-1tlx730", null, classes, { active: get2(chat).id === get2(activeId) });
+          button_1.disabled = get2(busy) || get2(loading);
+          set_attribute2(button_1, "title", get2(chat).title);
+          set_text(text_1, get2(chat).title);
+          set_text(text_2, $0);
+          button_2.disabled = get2(busy) || get2(loading);
+          set_attribute2(button_2, "aria-label", `\u0423\u0434\u0430\u043B\u0438\u0442\u044C ${get2(chat).title}`);
+        },
+        [
+          () => new Date(get2(chat).updated_at).toLocaleDateString("ru")
+        ]
+      );
+      delegated("click", button_1, () => select(get2(chat).id));
+      delegated("click", button_2, () => remove(get2(chat)));
+      append($$anchor2, div_1);
+    });
+    var node_1 = sibling(node, 2);
+    {
+      var consequent = ($$anchor2) => {
+        var p_1 = root_111();
+        append($$anchor2, p_1);
+      };
+      if_block(node_1, ($$render) => {
+        if (!get2(chats).length && !get2(loading)) $$render(consequent);
+      });
+    }
+    var div_2 = sibling(node_1, 2);
+    var span = child(div_2);
+    var text_3 = only_child(span, true);
+    var button_3 = sibling(span);
+    reset(div_2);
+    reset(aside);
+    var section = sibling(aside, 2);
+    var div_3 = sibling(child(section), 2);
+    var node_2 = child(div_3);
+    {
+      var consequent_1 = ($$anchor2) => {
+        var p_2 = root_211();
+        append($$anchor2, p_2);
+      };
+      if_block(node_2, ($$render) => {
+        if (get2(loading)) $$render(consequent_1);
+      });
+    }
+    var node_3 = sibling(node_2, 2);
+    {
+      var consequent_2 = ($$anchor2) => {
+        var div_4 = root_38();
+        var button_4 = sibling(child(div_4), 2);
+        reset(div_4);
+        delegated("click", button_4, function(...$$args) {
+          $$props.onSettings?.apply(this, $$args);
+        });
+        append($$anchor2, div_4);
+      };
+      var consequent_3 = ($$anchor2) => {
+        var div_5 = root_56();
+        var div_6 = sibling(child(div_5), 3);
+        each(div_6, 21, () => suggestions, index, ($$anchor3, suggestion) => {
+          var button_5 = root_47();
+          var text_4 = only_child(button_5, true);
+          template_effect(() => set_text(text_4, get2(suggestion)));
+          delegated("click", button_5, () => send(get2(suggestion)));
+          append($$anchor3, button_5);
+        });
+        reset(div_6);
+        reset(div_5);
+        append($$anchor2, div_5);
+      };
+      if_block(node_3, ($$render) => {
+        if (!get2(ready) && !get2(loading)) $$render(consequent_2);
+        else if (!get2(messages).length && !get2(loading)) $$render(consequent_3, 1);
+      });
+    }
+    var node_4 = sibling(node_3, 2);
+    each(node_4, 17, () => get2(messages), (message) => message.id, ($$anchor2, message) => {
+      var article = root_75();
+      let classes_1;
+      var div_7 = child(article);
+      var strong = child(div_7);
+      var text_5 = only_child(strong, true);
+      var span_1 = sibling(strong);
+      var text_6 = only_child(span_1, true);
+      var node_5 = sibling(span_1);
+      {
+        var consequent_4 = ($$anchor3) => {
+          var button_6 = root_47();
+          var text_7 = only_child(button_6, true);
+          template_effect(() => set_text(text_7, get2(copied) === get2(message).id ? "\u0421\u043A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u043D\u043E" : "\u041A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u0442\u044C"));
+          delegated("click", button_6, () => copy(get2(message)));
+          append($$anchor3, button_6);
+        };
+        if_block(node_5, ($$render) => {
+          if (get2(message).content) $$render(consequent_4);
+        });
+      }
+      reset(div_7);
+      var node_6 = sibling(div_7, 2);
+      {
+        let $0 = user_derived(() => get2(message).content || (get2(busy) ? "\u2026" : "\u041E\u0442\u0432\u0435\u0442 \u043D\u0435 \u0437\u0430\u0432\u0435\u0440\u0448\u0451\u043D. \u041C\u043E\u0436\u043D\u043E \u043F\u043E\u0432\u0442\u043E\u0440\u0438\u0442\u044C \u0437\u0430\u043F\u0440\u043E\u0441."));
+        ChatContent(node_6, {
+          get content() {
+            return get2($0);
+          }
+        });
+      }
+      var node_7 = sibling(node_6, 2);
+      each(node_7, 17, () => get2(message).proposals, (proposal) => proposal.id, ($$anchor3, proposal) => {
+        var div_8 = root_65();
+        var div_9 = child(div_8);
+        var strong_1 = sibling(child(div_9));
+        var text_8 = only_child(strong_1, true);
+        var span_2 = sibling(strong_1);
+        var text_9 = only_child(span_2, true);
+        reset(div_9);
+        var button_7 = sibling(div_9);
+        reset(div_8);
+        template_effect(() => {
+          set_text(text_8, get2(proposal).title);
+          set_text(text_9, get2(proposal).kind === "settings" ? "\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u0441\u0435\u0440\u0432\u0438\u0441\u0430" : "\u0421\u043E\u0434\u0435\u0440\u0436\u0438\u043C\u043E\u0435 \u0437\u0430\u0434\u0430\u0447\u0438");
+          button_7.disabled = get2(busy) || get2(loading);
+        });
+        delegated("click", button_7, () => review(get2(proposal)));
+        append($$anchor3, div_8);
+      });
+      reset(article);
+      template_effect(() => {
+        classes_1 = set_class(article, 1, "message svelte-1tlx730", null, classes_1, {
+          user: get2(message).role === "user",
+          failed: get2(message).status === "error"
+        });
+        set_text(text_5, get2(message).role === "user" ? "\u0422\u044B" : "\u041F\u043E\u043C\u043E\u0449\u043D\u0438\u043A");
+        set_text(text_6, get2(message).role === "assistant" && get2(message).status !== "complete" ? {
+          streaming: "\u041E\u0442\u0432\u0435\u0447\u0430\u0435\u0442\u2026",
+          interrupted: "\u041E\u0442\u0432\u0435\u0442 \u043E\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D",
+          truncated: "\u0414\u043E\u0441\u0442\u0438\u0433\u043D\u0443\u0442 \u043B\u0438\u043C\u0438\u0442 \u043E\u0442\u0432\u0435\u0442\u0430",
+          error: "\u041E\u0448\u0438\u0431\u043A\u0430"
+        }[get2(message).status] || get2(message).status : "");
+      });
+      append($$anchor2, article);
+    });
+    reset(div_3);
+    bind_this(div_3, ($$value) => scroll = $$value, () => scroll);
+    var div_10 = sibling(div_3, 2);
+    var node_8 = child(div_10);
+    {
+      var consequent_5 = ($$anchor2) => {
+        var div_11 = root_85();
+        var text_10 = only_child(div_11, true);
+        template_effect(() => set_text(text_10, get2(error)));
+        append($$anchor2, div_11);
+      };
+      if_block(node_8, ($$render) => {
+        if (get2(error)) $$render(consequent_5);
+      });
+    }
+    var label = sibling(node_8, 2);
+    var select_1 = sibling(child(label));
+    var option = child(select_1);
+    option.value = option.__value = "";
+    var node_9 = sibling(option);
+    each(node_9, 17, () => get2(tasks), (task) => task.id, ($$anchor2, task) => {
+      var option_1 = root_95();
+      var text_11 = only_child(option_1);
+      var option_1_value = {};
+      template_effect(() => {
+        set_text(text_11, `${get2(task).task_id ?? ""} \xB7 ${get2(task).title ?? ""}`);
+        if (option_1_value !== (option_1_value = get2(task).id)) {
+          option_1.value = (option_1.__value = option_1_value) ?? "";
+        }
+      });
+      append($$anchor2, option_1);
+    });
+    reset(select_1);
+    init_select(select_1);
+    reset(label);
+    var div_12 = sibling(label, 2);
+    var textarea = child(div_12);
+    remove_textarea_child(textarea);
+    var div_13 = sibling(textarea);
+    var small_1 = child(div_13);
+    var text_12 = only_child(small_1, true);
+    var node_10 = sibling(small_1);
+    {
+      var consequent_6 = ($$anchor2) => {
+        var button_8 = root_105();
+        delegated("click", button_8, stop);
+        append($$anchor2, button_8);
+      };
+      var alternate = ($$anchor2) => {
+        var button_9 = root_115();
+        template_effect(($0) => button_9.disabled = $0, [
+          () => !get2(ready) || get2(loading) || !get2(input).trim()
+        ]);
+        delegated("click", button_9, () => send());
+        append($$anchor2, button_9);
+      };
+      if_block(node_10, ($$render) => {
+        if (get2(busy)) $$render(consequent_6);
+        else $$render(alternate, -1);
+      });
+    }
+    reset(div_13);
+    reset(div_12);
+    reset(div_10);
+    reset(section);
+    reset(div);
+    template_effect(() => {
+      button.disabled = get2(busy) || get2(loading);
+      set_attribute2(span, "title", get2(model));
+      set_text(text_3, get2(model) || "AI \u043D\u0435 \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0451\u043D");
+      select_1.disabled = get2(busy) || get2(loading);
+      textarea.disabled = !get2(ready) || get2(loading);
+      set_text(text_12, get2(busy) ? get2(status) : "Enter \u2014 \u043E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \xB7 Shift+Enter \u2014 \u043D\u043E\u0432\u0430\u044F \u0441\u0442\u0440\u043E\u043A\u0430");
+    });
+    delegated("click", button, create);
+    delegated("click", button_3, function(...$$args) {
+      $$props.onSettings?.apply(this, $$args);
+    });
+    event("scroll", div_3, () => {
+      if (scroll) follow = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 100;
+    });
+    bind_select_value(select_1, () => get2(taskId), ($$value) => set(taskId, $$value));
+    delegated("keydown", textarea, keydown);
+    bind_value(textarea, () => get2(input), ($$value) => set(input, $$value));
+    append($$anchor, div);
+    pop();
+  }
+  delegate(["click", "keydown"]);
+
+  // src/App.svelte
+  var root10 = from_html(`<div class="boot svelte-1n46o8q">\u041F\u0440\u043E\u0432\u0435\u0440\u044F\u044E \u0441\u0435\u0441\u0441\u0438\u044E\u2026</div>`);
+  var root_116 = from_html(`<p class="auth-error svelte-1n46o8q" role="alert"> </p>`);
+  var root_212 = from_html(`<!><!>`, 1);
+  var root_39 = from_html(`<p class="nav-caption svelte-1n46o8q">\u0410\u0434\u043C\u0438\u043D\u0438\u0441\u0442\u0440\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435</p><button><span class="svelte-1n46o8q">\u2726</span> AI-\u043F\u043E\u043C\u043E\u0449\u043D\u0438\u043A</button><button><span class="svelte-1n46o8q">\u2699</span> \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438</button>`, 1);
+  var root_48 = from_html(`<span class="unsaved svelte-1n46o8q">\u25CF \u041D\u0435\u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0435 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F</span>`);
+  var root_57 = from_html(`<span class="online svelte-1n46o8q">\u25CF</span> \u0421\u0435\u0440\u0432\u0438\u0441 \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D`, 1);
+  var root_66 = from_html(`<main class="shell svelte-1n46o8q"><aside class="sidebar svelte-1n46o8q"><div class="brand svelte-1n46o8q"><span class="logo svelte-1n46o8q">e</span><div><strong class="svelte-1n46o8q"> </strong><small class="svelte-1n46o8q">\u041F\u0430\u043D\u0435\u043B\u044C \u0443\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u0438\u044F</small></div></div> <p class="nav-caption svelte-1n46o8q">\u0420\u0430\u0431\u043E\u0447\u0435\u0435 \u043F\u0440\u043E\u0441\u0442\u0440\u0430\u043D\u0441\u0442\u0432\u043E</p><nav aria-label="\u041D\u0430\u0432\u0438\u0433\u0430\u0446\u0438\u044F \u0430\u0434\u043C\u0438\u043D\u043A\u0438" class="svelte-1n46o8q"><button><span class="svelte-1n46o8q">\u25EB</span> \u041E\u0431\u0437\u043E\u0440</button> <button><span class="svelte-1n46o8q">\u2659</span> \u041F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u0438</button> <button><span class="svelte-1n46o8q">\u25A4</span> \u041A\u0430\u0442\u0430\u043B\u043E\u0433 \u0437\u0430\u0434\u0430\u0447</button> <!></nav> <div class="account svelte-1n46o8q"><strong> </strong><small class="svelte-1n46o8q"> </small><button class="svelte-1n46o8q">\u0412\u044B\u0439\u0442\u0438 \u0438\u0437 \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0430</button></div></aside> <section class="workspace svelte-1n46o8q"><header class="page-header svelte-1n46o8q"><div><p class="eyebrow svelte-1n46o8q"> </p><h1 class="svelte-1n46o8q"> </h1></div><div class="header-status svelte-1n46o8q"><!></div></header> <div class="page-body svelte-1n46o8q"><!></div></section></main>`);
+  var root_76 = from_html(`<!> <!>`, 1);
+  var $$css10 = {
     hash: "svelte-1n46o8q",
-    code: "html, body {margin:0;height:100%;font-family:'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;background:#1e1e1e;color:#d4d4d4;font-size:14px;line-height:1.5;}#app {height:100%;}main.svelte-1n46o8q {max-width:960px;margin:0 auto;padding:24px;}header.svelte-1n46o8q {display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;gap:16px;flex-wrap:wrap;}h1.svelte-1n46o8q {font-size:1.2rem;font-weight:700;}nav.svelte-1n46o8q {display:flex;gap:4px;flex:1 1 auto;}.nav-btn.svelte-1n46o8q {padding:6px 14px;background:transparent;border:1px solid transparent;border-radius:4px;color:#858585;font-family:inherit;font-size:0.8rem;cursor:pointer;}.nav-btn.svelte-1n46o8q:hover {color:#d4d4d4;}.nav-btn.active.svelte-1n46o8q {color:#d4d4d4;border-color:#3c3c3c;background:#2d2d2d;}.header-actions.svelte-1n46o8q {display:flex;align-items:center;gap:12px;}.role-pill.svelte-1n46o8q {color:#858585;font-size:0.8rem;text-transform:capitalize;}header.svelte-1n46o8q button:where(.svelte-1n46o8q):not(.nav-btn) {padding:6px 12px;background:transparent;border:1px solid #3c3c3c;border-radius:4px;color:#858585;font-family:inherit;font-size:0.8rem;cursor:pointer;}header.svelte-1n46o8q button:where(.svelte-1n46o8q):not(.nav-btn):hover {border-color:#007acc;color:#d4d4d4;}.auth-error.svelte-1n46o8q {color:#f87171;text-align:center;margin:16px 0;}\r\n\r\n	@media (max-width: 600px) {header.svelte-1n46o8q {flex-direction:column;align-items:stretch;}nav.svelte-1n46o8q {flex-wrap:wrap;}\r\n	}"
+    code: "html, body {margin:0;min-height:100%;background:#171b21;color:#dce3ed;font:14px/1.5 'Segoe UI', system-ui, sans-serif;}* {box-sizing:border-box;}button, input, select, textarea {font:inherit;}button {padding:8px 12px;border:1px solid #3b4654;border-radius:6px;background:#252d38;color:#dce3ed;cursor:pointer;}button:hover:not(:disabled) {border-color:#8cbaff;background:#2d394b;}button:disabled {opacity:.5;cursor:not-allowed;}button.primary {background:#aac9fb;color:#13223b;border-color:#aac9fb;font-weight:600;}button.primary:hover:not(:disabled) {background:#c1d8ff;}input, select, textarea {background:#202731;color:#e7edf6;border:1px solid #3b4654;border-radius:6px;padding:10px 12px;}input:focus, select:focus, textarea:focus {outline:2px solid #8cbaff;outline-offset:1px;}.shell.svelte-1n46o8q {display:grid;grid-template-columns:224px minmax(0, 1fr);min-height:100vh;}.shell[hidden].svelte-1n46o8q {display:none;}.sidebar.svelte-1n46o8q {position:sticky;top:0;height:100vh;background:#191e26;border-right:1px solid #303946;display:flex;flex-direction:column;padding:26px 16px 18px;}.brand.svelte-1n46o8q {display:flex;gap:10px;align-items:center;padding:0 8px 30px;}.brand.svelte-1n46o8q strong:where(.svelte-1n46o8q) {font-size:15px;letter-spacing:-.02em;display:block;}.brand.svelte-1n46o8q small:where(.svelte-1n46o8q) {color:#8e9aaa;font-size:11px;}.logo.svelte-1n46o8q {font-size:24px;line-height:36px;width:36px;text-align:center;color:#18283f;background:#aac9fb;font-weight:700;border-radius:10px;}.nav-caption.svelte-1n46o8q {font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:#7f8a9c;padding:0 10px;margin:8px 0 12px;}nav.svelte-1n46o8q {display:grid;gap:5px;}nav.svelte-1n46o8q button:where(.svelte-1n46o8q) {display:flex;gap:11px;align-items:center;background:transparent;border-color:transparent;text-align:left;padding:11px 12px;color:#a6b3c7;}nav.svelte-1n46o8q button:where(.svelte-1n46o8q) span:where(.svelte-1n46o8q) {width:18px;font-size:17px;}nav.svelte-1n46o8q button.active:where(.svelte-1n46o8q) {background:#2c3b52;color:#d4e5ff;border-color:#405677;}nav.svelte-1n46o8q .nav-caption:where(.svelte-1n46o8q) {margin-top:25px;}.account.svelte-1n46o8q {margin-top:auto;display:grid;gap:7px;padding:18px 8px 0;border-top:1px solid #303946;}.account.svelte-1n46o8q small:where(.svelte-1n46o8q) {color:#8e9aaa;}.account.svelte-1n46o8q button:where(.svelte-1n46o8q) {margin-top:6px;font-size:11px;}.workspace.svelte-1n46o8q {min-width:0;}.page-header.svelte-1n46o8q {display:flex;justify-content:space-between;align-items:center;gap:20px;padding:22px 32px;border-bottom:1px solid #303946;}.eyebrow.svelte-1n46o8q {color:#8e9aaa;font-size:11px;margin:0 0 5px;}h1.svelte-1n46o8q {font-size:22px;letter-spacing:-.025em;margin:0;font-weight:600;}.page-body.svelte-1n46o8q {padding:26px 32px;max-width:1600px;margin:0 auto;}.header-status.svelte-1n46o8q {font-size:11px;color:#8e9aaa;white-space:nowrap;}.online.svelte-1n46o8q {color:#76c4aa;padding-right:6px;}.unsaved.svelte-1n46o8q {color:#e8b86e;}.boot.svelte-1n46o8q {text-align:center;padding:20vh 20px;color:#a6b3c7;}.auth-error.svelte-1n46o8q {color:#ffb4bb;text-align:center;margin:25px 20px 0;}\r\n  @media (max-width: 1000px) {.shell.svelte-1n46o8q {grid-template-columns:190px minmax(0, 1fr);}.page-body.svelte-1n46o8q, .page-header.svelte-1n46o8q {padding:20px;}.header-status.svelte-1n46o8q {display:none;} }\r\n  @media (max-width: 700px) {.shell.svelte-1n46o8q {display:block;}.sidebar.svelte-1n46o8q {height:auto;position:static;padding:14px;border-right:0;border-bottom:1px solid #303946;}.brand.svelte-1n46o8q {padding-bottom:12px;}nav.svelte-1n46o8q {display:flex;flex-wrap:wrap;gap:4px;}nav.svelte-1n46o8q button:where(.svelte-1n46o8q) {padding:8px;font-size:12px;}.nav-caption.svelte-1n46o8q, nav.svelte-1n46o8q .nav-caption:where(.svelte-1n46o8q), .account.svelte-1n46o8q small:where(.svelte-1n46o8q) {display:none;}.account.svelte-1n46o8q {margin-top:10px;display:flex;justify-content:space-between;align-items:center;padding-top:10px;}.account.svelte-1n46o8q button:where(.svelte-1n46o8q) {margin-top:0;}.page-header.svelte-1n46o8q {padding:18px 14px;}.page-body.svelte-1n46o8q {padding:14px;}h1.svelte-1n46o8q {font-size:20px;} }"
   };
   function App($$anchor, $$props) {
     push($$props, true);
-    append_styles($$anchor, $$css7);
+    append_styles($$anchor, $$css10);
+    const titles = {
+      overview: "\u041E\u0431\u0437\u043E\u0440 \u0441\u0435\u0440\u0432\u0438\u0441\u0430",
+      students: "\u041F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u0438",
+      catalog: "\u041A\u0430\u0442\u0430\u043B\u043E\u0433 \u0437\u0430\u0434\u0430\u0447",
+      settings: "\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u0441\u0435\u0440\u0432\u0438\u0441\u0430",
+      assistant: "AI-\u043F\u043E\u043C\u043E\u0449\u043D\u0438\u043A"
+    };
+    let view = state(proxy(Object.keys(titles).includes(location.hash.slice(1)) ? location.hash.slice(1) : "overview"));
     let loggedIn = state(false);
+    let sessionSeen = state(false);
+    let checking = state(true);
     let userRole = state("");
+    let username = state("");
+    let userId = state("");
     let authError = state("");
-    let view = state("overview");
+    let serviceName = state("Ego Trainer");
+    let version = state("");
+    let dirty = state(false);
+    let workBusy = state(false);
     let selectedStudent = state(null);
     let selectedTask = state(null);
-    async function restoreSession() {
-      if (!getToken()) return;
+    let settingsDraft = state(null);
+    let taskDraft = state(null);
+    const isAdmin = user_derived(() => get2(userRole) === "admin");
+    async function brand() {
+      if (get2(userRole) !== "admin") return;
       try {
-        const data = await me();
-        if (data.role === "student") {
-          setToken(null);
-          set(authError, "Access denied: students cannot use the admin panel.");
-          return;
-        }
-        set(authError, "");
-        set(userRole, data.role, true);
-        set(loggedIn, true);
+        const data = await getSettings();
+        saved(data);
       } catch {
-        setToken(null);
-        set(loggedIn, false);
       }
     }
-    onMount(() => {
-      restoreSession();
-    });
-    function handleLogin(data) {
+    function saved(data) {
+      set(serviceName, data.config.service_name, true);
+      set(version, data.runtime.version, true);
+    }
+    function accept(data) {
       if (data.role === "student") {
         setToken(null);
-        set(authError, "Access denied: students cannot use the admin panel.");
+        set(authError, "\u0410\u0434\u043C\u0438\u043D\u043A\u0430 \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0430 \u043D\u0430\u0441\u0442\u0430\u0432\u043D\u0438\u043A\u0430\u043C \u0438 \u0430\u0434\u043C\u0438\u043D\u0438\u0441\u0442\u0440\u0430\u0442\u043E\u0440\u0430\u043C.");
         return;
       }
-      setToken(data.access_token);
-      set(authError, "");
+      if (get2(userId) && get2(userId) !== data.user_id) {
+        set(selectedTask, null);
+        set(selectedStudent, null);
+        set(taskDraft, null);
+        set(settingsDraft, null);
+        set(dirty, false);
+        set(view, "overview");
+      }
+      set(userId, data.user_id, true);
+      set(username, data.username, true);
       set(userRole, data.role, true);
+      set(authError, "");
       set(loggedIn, true);
-      set(view, "overview");
+      set(sessionSeen, true);
+      if (get2(userRole) !== "admin" && (get2(view) === "settings" || get2(view) === "assistant")) set(view, "overview");
+      void brand();
     }
-    function handleSelect(studentId, username) {
-      set(selectedStudent, { id: studentId, username }, true);
+    async function restoreSession() {
+      try {
+        if (getToken()) accept(await me());
+      } catch {
+        setToken(null);
+      } finally {
+        set(checking, false);
+      }
     }
-    function handleBack() {
-      set(selectedStudent, null);
-    }
-    function handleSelectTask(task) {
-      set(selectedTask, task, true);
-    }
-    function handleBackToCatalog() {
-      set(selectedTask, null);
+    function handleLogin(data) {
+      if (data.role !== "student") setToken(data.access_token);
+      accept(data);
     }
     function navTo(next2) {
+      if (get2(workBusy)) return false;
+      if (get2(dirty) && !confirm("\u0415\u0441\u0442\u044C \u043D\u0435\u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0435 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F. \u041F\u0435\u0440\u0435\u0439\u0442\u0438 \u0438 \u043E\u0442\u0431\u0440\u043E\u0441\u0438\u0442\u044C \u0438\u0445?")) return false;
+      set(dirty, false);
       set(view, next2, true);
       set(selectedStudent, null);
       set(selectedTask, null);
+      set(settingsDraft, null);
+      set(taskDraft, null);
+      history.replaceState(null, "", "#" + next2);
+      return true;
     }
     function logout() {
+      if (!navTo("overview")) return;
       setToken(null);
       set(loggedIn, false);
+      set(sessionSeen, false);
       set(userRole, "");
-      set(selectedStudent, null);
-      set(selectedTask, null);
+      set(username, "");
+      set(userId, "");
     }
-    var fragment = comment();
+    function reviewSettings(draft) {
+      if (navTo("settings")) set(settingsDraft, draft, true);
+    }
+    function reviewTask(draft) {
+      if (navTo("catalog")) {
+        set(selectedTask, { id: draft.task_id, task_id: draft.task_id }, true);
+        set(taskDraft, draft, true);
+      }
+    }
+    function sessionExpired() {
+      if (get2(loggedIn)) {
+        set(loggedIn, false);
+        set(authError, "\u0421\u0435\u0441\u0441\u0438\u044F \u0438\u0441\u0442\u0435\u043A\u043B\u0430. \u0412\u043E\u0439\u0434\u0438 \u0441\u043D\u043E\u0432\u0430 \u2014 \u043E\u0442\u043A\u0440\u044B\u0442\u044B\u0439 \u0447\u0435\u0440\u043D\u043E\u0432\u0438\u043A \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D \u0432 \u044D\u0442\u043E\u0439 \u0432\u043A\u043B\u0430\u0434\u043A\u0435.");
+      }
+    }
+    onMount(() => {
+      void restoreSession();
+      const beforeUnload = (e) => {
+        if (get2(dirty)) {
+          e.preventDefault();
+          e.returnValue = "";
+        }
+      };
+      const hashChange = () => {
+        const next2 = location.hash.slice(1);
+        if (next2 in titles && !navTo(next2)) history.replaceState(null, "", "#" + get2(view));
+      };
+      window.addEventListener("ego:session-expired", sessionExpired);
+      window.addEventListener("beforeunload", beforeUnload);
+      window.addEventListener("hashchange", hashChange);
+      return () => {
+        window.removeEventListener("ego:session-expired", sessionExpired);
+        window.removeEventListener("beforeunload", beforeUnload);
+        window.removeEventListener("hashchange", hashChange);
+      };
+    });
+    var fragment = root_76();
     var node = first_child(fragment);
     {
-      var consequent_1 = ($$anchor2) => {
-        var fragment_1 = root_17();
+      var consequent = ($$anchor2) => {
+        var div = root10();
+        append($$anchor2, div);
+      };
+      var consequent_2 = ($$anchor2) => {
+        var fragment_1 = root_212();
         var node_1 = first_child(fragment_1);
         {
-          var consequent = ($$anchor3) => {
-            var p = root7();
+          var consequent_1 = ($$anchor3) => {
+            var p = root_116();
             var text2 = only_child(p, true);
             template_effect(() => set_text(text2, get2(authError)));
             append($$anchor3, p);
           };
           if_block(node_1, ($$render) => {
-            if (get2(authError)) $$render(consequent);
+            if (get2(authError)) $$render(consequent_1);
           });
         }
-        var node_2 = sibling(node_1, 2);
+        var node_2 = sibling(node_1);
         Login(node_2, { onLogin: handleLogin });
         append($$anchor2, fragment_1);
       };
-      var alternate_2 = ($$anchor2) => {
-        var main = root_26();
-        var header = child(main);
-        var nav = sibling(child(header), 2);
+      if_block(node, ($$render) => {
+        if (get2(checking)) $$render(consequent);
+        else if (!get2(loggedIn)) $$render(consequent_2, 1);
+      });
+    }
+    var node_3 = sibling(node, 2);
+    {
+      var consequent_12 = ($$anchor2) => {
+        var main = root_66();
+        var aside = child(main);
+        var div_1 = child(aside);
+        var div_2 = sibling(child(div_1));
+        var strong = child(div_2);
+        var text_1 = only_child(strong, true);
+        next();
+        reset(div_2);
+        reset(div_1);
+        var nav = sibling(div_1, 3);
         var button = child(nav);
         let classes;
         var button_1 = sibling(button, 2);
         let classes_1;
         var button_2 = sibling(button_1, 2);
         let classes_2;
-        reset(nav);
-        var div = sibling(nav, 2);
-        var span = child(div);
-        var text_1 = only_child(span, true);
-        var button_3 = sibling(span, 2);
-        reset(div);
-        reset(header);
-        var node_3 = sibling(header, 2);
+        var node_4 = sibling(button_2, 2);
         {
-          var consequent_2 = ($$anchor3) => {
+          var consequent_3 = ($$anchor3) => {
+            var fragment_2 = root_39();
+            var button_3 = sibling(first_child(fragment_2));
+            let classes_3;
+            var button_4 = sibling(button_3);
+            let classes_4;
+            template_effect(() => {
+              button_3.disabled = get2(workBusy);
+              set_attribute2(button_3, "aria-current", get2(view) === "assistant" ? "page" : void 0);
+              classes_3 = set_class(button_3, 1, "svelte-1n46o8q", null, classes_3, { active: get2(view) === "assistant" });
+              button_4.disabled = get2(workBusy);
+              set_attribute2(button_4, "aria-current", get2(view) === "settings" ? "page" : void 0);
+              classes_4 = set_class(button_4, 1, "svelte-1n46o8q", null, classes_4, { active: get2(view) === "settings" });
+            });
+            delegated("click", button_3, () => navTo("assistant"));
+            delegated("click", button_4, () => navTo("settings"));
+            append($$anchor3, fragment_2);
+          };
+          if_block(node_4, ($$render) => {
+            if (get2(isAdmin)) $$render(consequent_3);
+          });
+        }
+        reset(nav);
+        var div_3 = sibling(nav, 2);
+        var strong_1 = child(div_3);
+        var text_2 = only_child(strong_1, true);
+        var small = sibling(strong_1);
+        var text_3 = only_child(small);
+        var button_5 = sibling(small);
+        reset(div_3);
+        reset(aside);
+        var section = sibling(aside, 2);
+        var header = child(section);
+        var div_4 = child(header);
+        var p_1 = child(div_4);
+        var text_4 = only_child(p_1, true);
+        var h1 = sibling(p_1);
+        var text_5 = only_child(h1, true);
+        reset(div_4);
+        var div_5 = sibling(div_4);
+        var node_5 = child(div_5);
+        {
+          var consequent_4 = ($$anchor3) => {
+            var span = root_48();
+            append($$anchor3, span);
+          };
+          var alternate = ($$anchor3) => {
+            var fragment_3 = root_57();
+            next();
+            append($$anchor3, fragment_3);
+          };
+          if_block(node_5, ($$render) => {
+            if (get2(dirty)) $$render(consequent_4);
+            else $$render(alternate, -1);
+          });
+        }
+        reset(div_5);
+        reset(header);
+        var div_6 = sibling(header, 2);
+        var node_6 = child(div_6);
+        {
+          var consequent_5 = ($$anchor3) => {
             Overview($$anchor3, {});
           };
-          var consequent_4 = ($$anchor3) => {
-            var fragment_3 = comment();
-            var node_4 = first_child(fragment_3);
+          var consequent_7 = ($$anchor3) => {
+            var fragment_5 = comment();
+            var node_7 = first_child(fragment_5);
             {
-              var consequent_3 = ($$anchor4) => {
+              var consequent_6 = ($$anchor4) => {
                 StudentDetail($$anchor4, {
                   get studentId() {
                     return get2(selectedStudent).id;
@@ -7481,29 +9964,33 @@ ${component_stack}
                   get username() {
                     return get2(selectedStudent).username;
                   },
-                  onBack: handleBack
+                  onBack: () => {
+                    set(selectedStudent, null);
+                  }
                 });
               };
-              var alternate = ($$anchor4) => {
+              var alternate_1 = ($$anchor4) => {
                 StudentList($$anchor4, {
                   get userRole() {
                     return get2(userRole);
                   },
-                  onSelect: handleSelect
+                  onSelect: (id, name) => {
+                    set(selectedStudent, { id, username: name }, true);
+                  }
                 });
               };
-              if_block(node_4, ($$render) => {
-                if (get2(selectedStudent)) $$render(consequent_3);
-                else $$render(alternate, -1);
+              if_block(node_7, ($$render) => {
+                if (get2(selectedStudent)) $$render(consequent_6);
+                else $$render(alternate_1, -1);
               });
             }
-            append($$anchor3, fragment_3);
+            append($$anchor3, fragment_5);
           };
-          var consequent_6 = ($$anchor3) => {
-            var fragment_6 = comment();
-            var node_5 = first_child(fragment_6);
+          var consequent_9 = ($$anchor3) => {
+            var fragment_8 = comment();
+            var node_8 = first_child(fragment_8);
             {
-              var consequent_5 = ($$anchor4) => {
+              var consequent_8 = ($$anchor4) => {
                 TaskStudio($$anchor4, {
                   get taskId() {
                     return get2(selectedTask).id;
@@ -7514,44 +10001,94 @@ ${component_stack}
                   get role() {
                     return get2(userRole);
                   },
-                  onBack: handleBackToCatalog
+                  get draft() {
+                    return get2(taskDraft);
+                  },
+                  onBusyChange: (value) => {
+                    set(workBusy, value, true);
+                  },
+                  onDirtyChange: (value) => {
+                    set(dirty, value, true);
+                  },
+                  onBack: () => {
+                    set(dirty, false);
+                    set(selectedTask, null);
+                    set(taskDraft, null);
+                  }
                 });
               };
-              var alternate_1 = ($$anchor4) => {
-                Catalog($$anchor4, { onSelectTask: handleSelectTask });
+              var alternate_2 = ($$anchor4) => {
+                Catalog($$anchor4, {
+                  onSelectTask: (task) => {
+                    set(selectedTask, task, true);
+                  }
+                });
               };
-              if_block(node_5, ($$render) => {
-                if (get2(selectedTask)) $$render(consequent_5);
-                else $$render(alternate_1, -1);
+              if_block(node_8, ($$render) => {
+                if (get2(selectedTask)) $$render(consequent_8);
+                else $$render(alternate_2, -1);
               });
             }
-            append($$anchor3, fragment_6);
+            append($$anchor3, fragment_8);
           };
-          if_block(node_3, ($$render) => {
-            if (get2(view) === "overview") $$render(consequent_2);
-            else if (get2(view) === "students") $$render(consequent_4, 1);
-            else if (get2(view) === "catalog") $$render(consequent_6, 2);
+          var consequent_10 = ($$anchor3) => {
+            Settings($$anchor3, {
+              get draft() {
+                return get2(settingsDraft);
+              },
+              onBusyChange: (value) => {
+                set(workBusy, value, true);
+              },
+              onDirtyChange: (value) => {
+                set(dirty, value, true);
+              },
+              onSaved: saved
+            });
+          };
+          var consequent_11 = ($$anchor3) => {
+            Assistant($$anchor3, {
+              onSettings: () => navTo("settings"),
+              onReviewSettings: reviewSettings,
+              onReviewTask: reviewTask
+            });
+          };
+          if_block(node_6, ($$render) => {
+            if (get2(view) === "overview") $$render(consequent_5);
+            else if (get2(view) === "students") $$render(consequent_7, 1);
+            else if (get2(view) === "catalog") $$render(consequent_9, 2);
+            else if (get2(view) === "settings" && get2(isAdmin)) $$render(consequent_10, 3);
+            else if (get2(view) === "assistant" && get2(isAdmin)) $$render(consequent_11, 4);
           });
         }
+        reset(div_6);
+        reset(section);
         reset(main);
         template_effect(() => {
-          classes = set_class(button, 1, "nav-btn svelte-1n46o8q", null, classes, { active: get2(view) === "overview" });
+          set_attribute2(main, "hidden", !get2(loggedIn));
+          set_text(text_1, get2(serviceName));
+          button.disabled = get2(workBusy);
           set_attribute2(button, "aria-current", get2(view) === "overview" ? "page" : void 0);
-          classes_1 = set_class(button_1, 1, "nav-btn svelte-1n46o8q", null, classes_1, { active: get2(view) === "students" });
+          classes = set_class(button, 1, "svelte-1n46o8q", null, classes, { active: get2(view) === "overview" });
+          button_1.disabled = get2(workBusy);
           set_attribute2(button_1, "aria-current", get2(view) === "students" ? "page" : void 0);
-          classes_2 = set_class(button_2, 1, "nav-btn svelte-1n46o8q", null, classes_2, { active: get2(view) === "catalog" });
+          classes_1 = set_class(button_1, 1, "svelte-1n46o8q", null, classes_1, { active: get2(view) === "students" });
+          button_2.disabled = get2(workBusy);
           set_attribute2(button_2, "aria-current", get2(view) === "catalog" ? "page" : void 0);
-          set_text(text_1, get2(userRole));
+          classes_2 = set_class(button_2, 1, "svelte-1n46o8q", null, classes_2, { active: get2(view) === "catalog" });
+          set_text(text_2, get2(username));
+          set_text(text_3, `${get2(isAdmin) ? "\u0410\u0434\u043C\u0438\u043D\u0438\u0441\u0442\u0440\u0430\u0442\u043E\u0440" : "\u041D\u0430\u0441\u0442\u0430\u0432\u043D\u0438\u043A"}${get2(version) ? ` \xB7 v${get2(version)}` : ""}`);
+          button_5.disabled = get2(workBusy);
+          set_text(text_4, get2(serviceName));
+          set_text(text_5, get2(selectedTask) ? "\u0420\u0435\u0434\u0430\u043A\u0442\u043E\u0440 \u0437\u0430\u0434\u0430\u0447\u0438" : get2(selectedStudent) ? `\u041F\u0440\u043E\u0433\u0440\u0435\u0441\u0441: ${get2(selectedStudent).username}` : titles[get2(view)]);
         });
         delegated("click", button, () => navTo("overview"));
         delegated("click", button_1, () => navTo("students"));
         delegated("click", button_2, () => navTo("catalog"));
-        delegated("click", button_3, logout);
+        delegated("click", button_5, logout);
         append($$anchor2, main);
       };
-      if_block(node, ($$render) => {
-        if (!get2(loggedIn)) $$render(consequent_1);
-        else $$render(alternate_2, -1);
+      if_block(node_3, ($$render) => {
+        if (get2(sessionSeen)) $$render(consequent_12);
       });
     }
     append($$anchor, fragment);

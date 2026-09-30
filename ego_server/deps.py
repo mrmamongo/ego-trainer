@@ -33,6 +33,7 @@ DbDep = Annotated[sqlite3.Connection, Depends(get_db)]
 
 def get_current_user(
     creds: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
+    db: DbDep,
 ) -> dict:
     """Verify JWT from ``Authorization: Bearer <token>`` and return claims.
 
@@ -52,7 +53,14 @@ def get_current_user(
             detail=f"Invalid token: {e}",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    return claims
+    row = db.execute(
+        "SELECT id,username,role FROM students WHERE id=?", (claims.get("sub"),)
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=401, detail="This account no longer exists")
+    # Privileges are current DB state, so a deleted/demoted account cannot keep
+    # administering the service with a previously issued JWT.
+    return {**claims, "username": row["username"], "role": row["role"]}
 
 
 CurrentUser = Annotated[dict, Depends(get_current_user)]
@@ -72,6 +80,7 @@ def require_role(*roles: str):
         )
         async def handler(...): ...
     """
+
     def _check(user: CurrentUser) -> dict:
         if user["role"] not in roles:
             raise HTTPException(

@@ -134,9 +134,14 @@ def safe_config() -> TasksRepoConfig:
     (e.g. a non-local URL in PR 1), so the caller can surface a read-only
     reason via :func:`resolve_root` instead of crashing.
     """
-    from ego_server.content_config import content_settings
+    from ego_server.db import get_connection
+    from ego_server.service_settings import effective_content_config
 
     try:
-        return content_settings.to_config()
+        conn = get_connection()
+        try:
+            return effective_content_config(conn)
+        finally:
+            conn.close()
     except ValidationError:
         return TasksRepoConfig(url="")

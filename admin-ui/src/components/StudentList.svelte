@@ -12,16 +12,32 @@
 	let students = $state<StudentSummary[]>([]);
 	let loading = $state(true);
 	let error = $state('');
+	let actionError = $state('');
 	let showForm = $state(false);
+	let search = $state('');
+	let page = $state(1);
+	const pageSize = 25;
 
 	let { onSelect, userRole }: { onSelect: (studentId: string, username: string) => void; userRole: string } = $props();
 	let isAdmin = $derived(userRole === 'admin');
+	let filteredStudents = $derived.by(() => {
+		const needle = search.trim().toLocaleLowerCase();
+		if (!needle) return students;
+		return students.filter((student) =>
+			student.username.toLocaleLowerCase().includes(needle)
+			|| student.student_id.toLocaleLowerCase().includes(needle),
+		);
+	});
+	let pageCount = $derived(Math.max(1, Math.ceil(filteredStudents.length / pageSize)));
+	let visibleStudents = $derived(filteredStudents.slice((page - 1) * pageSize, page * pageSize));
 
 	async function load() {
 		loading = true;
 		error = '';
+		actionError = '';
 		try {
 			students = await listStudents();
+			page = 1;
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
@@ -35,7 +51,7 @@
 			await deleteUser(student.student_id);
 			await load();
 		} catch (e) {
-			alert((e as Error).message);
+			actionError = `Could not delete ${student.username}: ${(e as Error).message}`;
 		}
 	}
 
@@ -45,7 +61,7 @@
 			await updateRole(student.student_id, newRole);
 			await load();
 		} catch (e) {
-			alert((e as Error).message);
+			actionError = `Could not update role: ${(e as Error).message}`;
 		}
 	}
 
@@ -56,7 +72,7 @@
 			await resetPassword(student.student_id, pw);
 			alert('Password updated.');
 		} catch (e) {
-			alert((e as Error).message);
+			actionError = `Could not reset password: ${(e as Error).message}`;
 		}
 	}
 
@@ -74,7 +90,7 @@
 			showForm = false;
 			await load();
 		} catch (err) {
-			alert((err as Error).message);
+			actionError = `Could not create user: ${(err as Error).message}`;
 		}
 	}
 
@@ -101,12 +117,17 @@
 <div class="section">
 	<div class="section-header">
 		<h2>Students</h2>
-		{#if isAdmin}
-			<button class="btn" onclick={() => { showForm = !showForm; }}>
-				{showForm ? 'Cancel' : '+ Add user'}
-			</button>
-		{/if}
+		<div class="header-actions">
+			<button class="btn" type="button" onclick={load} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh'}</button>
+			{#if isAdmin}
+				<button class="btn" type="button" onclick={() => { showForm = !showForm; }}>
+					{showForm ? 'Cancel' : '+ Add user'}
+				</button>
+			{/if}
+		</div>
 	</div>
+
+	{#if actionError}<p class="error" role="alert">{actionError}</p>{/if}
 
 	{#if isAdmin && showForm}
 		<form class="create-form" onsubmit={handleCreate}>
@@ -124,10 +145,19 @@
 	{#if loading}
 		<div class="loading">Loading students…</div>
 	{:else if error}
-		<div class="error">{error}</div>
+		<div class="error" role="alert">{error}</div>
+		<button class="btn" type="button" onclick={load}>Retry</button>
 	{:else if students.length === 0}
 		<div class="empty">No students yet</div>
 	{:else}
+		<div class="list-toolbar">
+			<label for="student-search">Search students</label>
+			<input id="student-search" type="search" bind:value={search} oninput={() => { page = 1; }} placeholder="Username or ID" />
+			<span>{filteredStudents.length} of {students.length}</span>
+		</div>
+		{#if filteredStudents.length === 0}
+			<div class="empty">No students match “{search}”.</div>
+		{:else}
 		<table>
 			<thead>
 				<tr>
@@ -142,7 +172,7 @@
 				</tr>
 			</thead>
 			<tbody>
-				{#each students as s (s.student_id)}
+				{#each visibleStudents as s (s.student_id)}
 					<tr class="student-row" onclick={() => onSelect(s.student_id, s.username)}>
 						<td>{s.username}</td>
 						<td>
@@ -176,11 +206,20 @@
 				{/each}
 			</tbody>
 		</table>
+			{#if pageCount > 1}
+				<div class="pagination" aria-label="Student list pages">
+					<button class="btn" type="button" onclick={() => page = Math.max(1, page - 1)} disabled={page === 1}>Previous</button>
+					<span>Page {page} of {pageCount}</span>
+					<button class="btn" type="button" onclick={() => page = Math.min(pageCount, page + 1)} disabled={page === pageCount}>Next</button>
+				</div>
+			{/if}
+		{/if}
 	{/if}
 </div>
 
 <style>
 	.section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+	.header-actions { display: flex; gap: 8px; }
 	h2 { font-size: 0.9rem; font-weight: 600; }
 	.btn {
 		padding: 4px 12px; background: transparent; border: 1px solid #3c3c3c; border-radius: 4px;
@@ -195,6 +234,9 @@
 		color: #d4d4d4; font-family: inherit; font-size: 0.8rem;
 	}
 	.create-form input { flex: 1; }
+	.list-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; color: #858585; font-size: 0.75rem; }
+	.list-toolbar input { flex: 1; min-width: 120px; padding: 6px 10px; background: #2d2d2d; border: 1px solid #3c3c3c; border-radius: 4px; color: #d4d4d4; font: inherit; }
+	.list-toolbar input:focus { outline: none; border-color: #007acc; }
 
 	table { width: 100%; border-collapse: collapse; }
 	th, td { text-align: left; padding: 6px 12px; border-bottom: 1px solid #3c3c3c; }
@@ -217,7 +259,13 @@
 	}
 	.actions button:hover { border-color: #007acc; color: #d4d4d4; }
 	.actions .danger:hover { border-color: #f87171; color: #f87171; }
+	.pagination { display: flex; justify-content: center; align-items: center; gap: 12px; margin-top: 12px; font-size: 0.75rem; color: #858585; }
 
 	.loading, .empty, .error { padding: 24px; text-align: center; color: #858585; }
 	.error { color: #f87171; }
+	@media (max-width: 600px) {
+		.list-toolbar { align-items: stretch; flex-direction: column; }
+		.create-form { flex-wrap: wrap; }
+		table { display: block; overflow-x: auto; white-space: nowrap; }
+	}
 </style>

@@ -70,7 +70,9 @@ class SyncResult:
 # === Public API ===
 
 
-def sync_from_config(conn: sqlite3.Connection, config: TasksRepoConfig, *, source: str = "manual") -> SyncResult:
+def sync_from_config(
+    conn: sqlite3.Connection, config: TasksRepoConfig, *, source: str = "manual"
+) -> SyncResult:
     """Sync content-repo into DB per ``config``.
 
     Args:
@@ -106,7 +108,11 @@ def sync_from_path(
         :class:`SyncResult`.
     """
     started = _now_iso()
-    result = SyncResult(started_at=started, repo_url=repo_url) if False else SyncResult(started_at=started)
+    result = (
+        SyncResult(started_at=started, repo_url=repo_url)
+        if False
+        else SyncResult(started_at=started)
+    )
     # Note: repo_url stored via sync_log row below.
     log_id = _start_sync_log(conn, started=started, source=source, repo_url=repo_url)
     result.log_id = log_id
@@ -125,9 +131,7 @@ def sync_from_path(
         for folder in proj.folders:
             _upsert_folder(conn, folder.folder, proj.project.id)
             for dtask in folder.tasks:
-                _upsert_discovered_task(
-                    conn, dtask, proj.project, folder.folder, result
-                )
+                _upsert_discovered_task(conn, dtask, proj.project, folder.folder, result)
 
     _finish_sync_log(conn, log_id, result, git_sha=None)
     return result
@@ -139,9 +143,7 @@ def sync_from_path(
 def _upsert_project(conn: sqlite3.Connection, project: Project) -> None:
     """Insert or update a row in ``projects`` (idempotent by id)."""
     now = _now_iso()
-    existing = conn.execute(
-        "SELECT id FROM projects WHERE id = ?", (project.id,)
-    ).fetchone()
+    existing = conn.execute("SELECT id FROM projects WHERE id = ?", (project.id,)).fetchone()
     if existing is None:
         conn.execute(
             """INSERT INTO projects
@@ -245,9 +247,7 @@ def _upsert_discovered_task(
         task = parse_task_file(dtask.md_path)
     except Exception as e:  # noqa: BLE001 — per-task errors don't abort sync
         result.errors += 1
-        result.error_details.append(
-            f"PARSE {dtask.md_path.name}: {e}"
-        )
+        result.error_details.append(f"PARSE {dtask.md_path.name}: {e}")
         return
 
     # Apply frontmatter overrides (D16.6: frontmatter is source of truth).
@@ -343,12 +343,21 @@ def _upsert_task_row(
             """INSERT INTO task_versions
             (task_id, version, content_hash, breaking, md_path, created_at)
             VALUES (?, ?, ?, ?, ?, ?)""",
-            (task.id, task.version, task.content_hash, 1 if declared_breaking else 0, str(task.md_path), now),
+            (
+                task.id,
+                task.version,
+                task.content_hash,
+                1 if declared_breaking else 0,
+                str(task.md_path),
+                now,
+            ),
         )
         return "imported"
 
     # Existing task — compare hash.
-    if existing["content_hash"] == task.content_hash:
+    if existing["content_hash"] == task.content_hash and (
+        version_policy == "auto_minor" or task.version == existing["version"]
+    ):
         return "skipped"
 
     # Content changed — resolve new version per policy.
@@ -403,9 +412,7 @@ def _upsert_task_row(
 # === sync_log ===
 
 
-def _start_sync_log(
-    conn: sqlite3.Connection, *, started: str, source: str, repo_url: str
-) -> int:
+def _start_sync_log(conn: sqlite3.Connection, *, started: str, source: str, repo_url: str) -> int:
     """Insert a ``running`` sync_log row and return its id."""
     cur = conn.execute(
         """INSERT INTO sync_log

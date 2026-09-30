@@ -19,11 +19,14 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "${EGO_PORT:-8000}:8000"
+      - "${EGO_BIND_ADDRESS:-127.0.0.1}:${EGO_PORT:-8000}:8000"
     volumes:
       # Persist SQLite database across container restarts.
       - ego-data:/var/lib/ego
       - ${EGO_CONTENT_PATH:-./docs/tasks}:/content
+    env_file:
+      - path: .env
+        required: false
     environment:
       EGO_ENVIRONMENT: production
       EGO_DB_PATH: /var/lib/ego/ego.db

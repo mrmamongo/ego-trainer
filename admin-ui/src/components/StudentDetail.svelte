@@ -49,13 +49,17 @@
 </script>
 
 <div class="detail">
-	<button class="back" type="button" onclick={onBack}>&larr; Back to students</button>
-	<h2>Progress: {username}</h2>
+	<div class="detail-header">
+		<button class="back" type="button" onclick={onBack}>&larr; Back to students</button>
+		<h2>Progress: {username}</h2>
+		<button class="refresh" type="button" onclick={load} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh'}</button>
+	</div>
 
 	{#if loading}
 		<div class="loading">Loading progress…</div>
 	{:else if error}
-		<div class="error">{error}</div>
+		<div class="error" role="alert">{error}</div>
+		<button class="refresh" type="button" onclick={load} disabled={loading}>Retry</button>
 	{:else if progress.length === 0}
 		<div class="empty">No progress yet</div>
 	{:else}
@@ -94,7 +98,11 @@
 		font-family: inherit; font-size: 0.8rem; text-decoration: none;
 	}
 	.back:hover { text-decoration: underline; }
-	h2 { font-size: 1rem; font-weight: 600; margin-bottom: 12px; }
+	.detail-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+	h2 { flex: 1; font-size: 1rem; font-weight: 600; margin: 0; }
+	.refresh { padding: 4px 10px; background: transparent; border: 1px solid #3c3c3c; border-radius: 4px; color: #d4d4d4; font-family: inherit; font-size: 0.75rem; cursor: pointer; }
+	.refresh:hover:not(:disabled) { border-color: #007acc; }
+	.refresh:disabled { opacity: 0.5; cursor: not-allowed; }
 
 	table { width: 100%; border-collapse: collapse; }
 	th, td { text-align: left; padding: 6px 12px; border-bottom: 1px solid #3c3c3c; }
@@ -108,4 +116,8 @@
 
 	.loading, .empty, .error { padding: 24px; text-align: center; color: #858585; }
 	.error { color: #f87171; }
+	@media (max-width: 600px) {
+		.detail-header { flex-wrap: wrap; }
+		h2 { order: 3; flex-basis: 100%; }
+	}
 </style>

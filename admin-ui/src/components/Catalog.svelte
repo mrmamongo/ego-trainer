@@ -12,29 +12,44 @@
 	let query = $state('');
 	let activeQuery = $state('');
 	let debounce: ReturnType<typeof setTimeout> | null = null;
+	let requestId = 0;
+
+	function cancelDebounce() {
+		if (debounce) clearTimeout(debounce);
+		debounce = null;
+	}
 
 	async function load(q: string) {
+		const currentRequest = ++requestId;
 		loading = true;
 		error = '';
 		try {
-			catalog = await getCatalog(q);
+			const result = await getCatalog(q);
+			if (currentRequest !== requestId) return;
+			catalog = result;
 			activeQuery = q;
 		} catch (e) {
-			error = (e as Error).message;
+			if (currentRequest === requestId) error = (e as Error).message;
 		} finally {
-			loading = false;
+			if (currentRequest === requestId) loading = false;
 		}
 	}
 
 	function onInput(e: Event) {
 		query = (e.target as HTMLInputElement).value;
-		if (debounce) clearTimeout(debounce);
-		debounce = setTimeout(() => load(query), 250);
+		requestId++;
+		error = '';
+		cancelDebounce();
+		debounce = setTimeout(() => {
+			debounce = null;
+			void load(query);
+		}, 250);
 	}
 
 	function clearSearch() {
+		cancelDebounce();
 		query = '';
-		load('');
+		void load('');
 	}
 
 	function taskCount(p: CatalogProjectDTO): number {
@@ -46,13 +61,19 @@
 		return catalog.projects.reduce((n, p) => n + taskCount(p), 0);
 	}
 
-	onMount(() => { load(''); });
+	onMount(() => {
+		void load('');
+		return () => {
+			cancelDebounce();
+			requestId++;
+		};
+	});
 </script>
 
 <div class="section">
 	<div class="section-header">
 		<h2>Catalog</h2>
-		<button class="btn" type="button" onclick={() => load(query)} disabled={loading} aria-label="Refresh catalog">
+		<button class="btn" type="button" onclick={() => { cancelDebounce(); void load(query); }} disabled={loading} aria-label="Refresh catalog">
 			{loading ? 'Refreshing…' : 'Refresh'}
 		</button>
 	</div>

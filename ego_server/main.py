@@ -6,7 +6,9 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.exceptions import RequestValidationError
+from fastapi.encoders import jsonable_encoder
 from fastapi.staticfiles import StaticFiles
 
 from ego_server import __version__
@@ -14,6 +16,7 @@ from ego_server.config import settings
 from ego_server.db import init_db
 from ego_server.routers import auth, check, progress, tasks
 from ego_server.routers import admin as admin_router
+from ego_server.routers import admin_assistant, admin_settings
 
 
 _STATIC_DIR = Path(__file__).parent / "static"
@@ -46,6 +49,17 @@ app.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
 app.include_router(progress.router, prefix="/progress", tags=["progress"])
 app.include_router(check.router, prefix="/check", tags=["check"])
 app.include_router(admin_router.router, prefix="/admin", tags=["admin"])
+app.include_router(admin_settings.router, prefix="/admin", tags=["admin-settings"])
+app.include_router(admin_assistant.router, prefix="/admin", tags=["admin-assistant"])
+
+
+@app.exception_handler(RequestValidationError)
+async def safe_validation_error(request, exc: RequestValidationError):
+    # Never echo passwords or provider keys in validation responses.
+    details = [
+        {k: v for k, v in error.items() if k not in {"input", "ctx"}} for error in exc.errors()
+    ]
+    return JSONResponse(status_code=422, content=jsonable_encoder({"detail": details}))
 
 
 @app.get("/health", tags=["meta"])

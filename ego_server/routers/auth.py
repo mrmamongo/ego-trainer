@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, status
 from ego_server.auth import create_token, generate_user_id, hash_password, verify_password
 from ego_server.deps import DbDep, TokenDep
 from ego_server.models import LoginRequest, MeResponse, RegisterRequest, TokenResponse
+from ego_server.service_settings import load_settings
 
 
 router = APIRouter()
@@ -30,7 +31,12 @@ async def login(body: LoginRequest, db: DbDep) -> TokenResponse:
             detail="Invalid username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    token = create_token(user_id=row["id"], username=row["username"], role=row["role"])
+    token = create_token(
+        user_id=row["id"],
+        username=row["username"],
+        role=row["role"],
+        expires_in_seconds=load_settings(db).session_minutes * 60,
+    )
     return TokenResponse(
         access_token=token,
         role=row["role"],
@@ -49,6 +55,11 @@ async def register(body: RegisterRequest, db: DbDep) -> TokenResponse:
     accounts must be provisioned through a privileged admin flow, not via the
     public API. This prevents privilege escalation through self-registration.
     """
+    config = load_settings(db)
+    if not config.registration_enabled:
+        raise HTTPException(
+            status_code=403, detail="Registration is disabled; contact an administrator"
+        )
     existing = db.execute("SELECT id FROM students WHERE username = ?", (body.username,)).fetchone()
     if existing:
         raise HTTPException(
@@ -64,7 +75,12 @@ async def register(body: RegisterRequest, db: DbDep) -> TokenResponse:
         (user_id, body.username, role, pwd_hash, _now_iso()),
     )
     db.commit()
-    token = create_token(user_id=user_id, username=body.username, role=role)
+    token = create_token(
+        user_id=user_id,
+        username=body.username,
+        role=role,
+        expires_in_seconds=config.session_minutes * 60,
+    )
     return TokenResponse(
         access_token=token,
         role=role,

@@ -14,21 +14,21 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, status
+from starlette.concurrency import run_in_threadpool
 
 from ego.checker import format_check_result, run_check
 from ego.parser import parse_task_file
 from ego_server.db_helpers import get_task_meta
 from ego_server.deps import CurrentUser, DbDep
 from ego_server.models import CheckRequest, CheckResponse, TestResultDTO
+from ego_server.service_settings import load_settings
 
 
 router = APIRouter()
 
 
 @router.post("", response_model=CheckResponse)
-async def check_solution(
-    body: CheckRequest, db: DbDep, user: CurrentUser
-) -> CheckResponse:
+async def check_solution(body: CheckRequest, db: DbDep, user: CurrentUser) -> CheckResponse:
     """Run checker server-side. Student sends code, server runs it.
 
     Flow:
@@ -39,6 +39,11 @@ async def check_solution(
         5. Return CheckResponse
     """
     student_id = user["sub"]
+    config = load_settings(db)
+    if len(body.student_code) > config.max_code_chars:
+        raise HTTPException(
+            status_code=413, detail="Student code exceeds the configured size limit"
+        )
 
     # 1. Validate task exists.
     meta = get_task_meta(db, body.task_id)
@@ -61,13 +66,13 @@ async def check_solution(
     task = parse_task_file(md_path)
 
     # 3. Run checker (sandbox: timeout 5s, no network, temp dir).
-    result = run_check(task, body.student_code, timeout=5.0)
+    result = await run_in_threadpool(
+        run_check, task, body.student_code, timeout=config.check_timeout_seconds
+    )
 
     # 4. Store progress + run log.
     now = datetime.now(timezone.utc).isoformat()
-    _store_progress(
-        db, student_id, body.task_id, meta["version"], result, now
-    )
+    _store_progress(db, student_id, body.task_id, meta["version"], result, now)
 
     # 5. Build response.
     log = format_check_result(result)
@@ -117,8 +122,16 @@ def _store_progress(db, student_id: str, task_id: str, version: str, result, now
             (student_id, task_id, version, status, attempts,
              passed_tests, total_tests, last_run_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (student_id, task_id, version, prog_status, attempts,
-             result.passed_tests, result.total_tests, now),
+            (
+                student_id,
+                task_id,
+                version,
+                prog_status,
+                attempts,
+                result.passed_tests,
+                result.total_tests,
+                now,
+            ),
         )
     else:
         attempts = existing["attempts"] + 1
@@ -127,8 +140,16 @@ def _store_progress(db, student_id: str, task_id: str, version: str, result, now
             status = ?, attempts = ?, passed_tests = ?,
             total_tests = ?, last_run_at = ?
             WHERE student_id = ? AND task_id = ? AND version = ?""",
-            (prog_status, attempts, result.passed_tests, result.total_tests,
-             now, student_id, task_id, version),
+            (
+                prog_status,
+                attempts,
+                result.passed_tests,
+                result.total_tests,
+                now,
+                student_id,
+                task_id,
+                version,
+            ),
         )
 
     # Insert run log.
@@ -138,7 +159,15 @@ def _store_progress(db, student_id: str, task_id: str, version: str, result, now
         """INSERT INTO runs
         (id, student_id, task_id, version, solution_hash, status, log, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-        (run_id, student_id, task_id, version, result.solution_hash,
-         prog_status, log_text[:8192], now),
+        (
+            run_id,
+            student_id,
+            task_id,
+            version,
+            result.solution_hash,
+            prog_status,
+            log_text[:8192],
+            now,
+        ),
     )
     db.commit()

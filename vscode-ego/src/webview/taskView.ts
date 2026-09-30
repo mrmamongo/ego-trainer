@@ -1,3 +1,4 @@
+import { get } from 'svelte/store';
 import { mount } from 'svelte';
 import TaskView from './taskView.svelte';
 import { taskViewData, checkResult } from './shared/store';
@@ -9,9 +10,10 @@ mount(TaskView, { target });
 
 onHostMessage((msg) => {
 	if (msg.type === 'taskView.setData') {
+		const previousId = get(taskViewData)?.id;
 		taskViewData.set(msg.payload);
-		// reset results when switching task
-		checkResult.set(null);
+		// Preserve the latest result when refreshing the same task.
+		if (previousId !== msg.payload.id) checkResult.set(null);
 	}
 	if (msg.type === 'taskView.setResult' || msg.type === 'setResult') {
 		checkResult.set(msg.payload);
