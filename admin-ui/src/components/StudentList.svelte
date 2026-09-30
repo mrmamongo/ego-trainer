@@ -6,6 +6,7 @@
 		updateRole,
 		resetPassword,
 		createUser,
+		authProviders,
 		type StudentSummary,
 	} from '../api';
 
@@ -14,6 +15,7 @@
 	let error = $state('');
 	let actionError = $state('');
 	let showForm = $state(false);
+	let localAuthEnabled = $state(false);
 	let search = $state('');
 	let page = $state(1);
 	const pageSize = 25;
@@ -57,6 +59,7 @@
 
 	async function handleRoleChange(student: StudentSummary, newRole: string) {
 		if (newRole === student.role) return;
+		if (newRole === 'mentor' && !confirm(`Назначить ${student.username} наставником? Он сможет назначать других наставников.`)) return;
 		try {
 			await updateRole(student.student_id, newRole);
 			await load();
@@ -111,7 +114,7 @@
 		return `${Math.round(s / 86400)}d ago`;
 	}
 
-	onMount(() => { load(); });
+	onMount(() => { void load(); void authProviders().then(value => localAuthEnabled = value.local).catch(() => {}); });
 </script>
 
 <div class="section">
@@ -119,7 +122,7 @@
 		<h2>Students</h2>
 		<div class="header-actions">
 			<button class="btn" type="button" onclick={load} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh'}</button>
-			{#if isAdmin}
+			{#if isAdmin && localAuthEnabled}
 				<button class="btn" type="button" onclick={() => { showForm = !showForm; }}>
 					{showForm ? 'Cancel' : '+ Add user'}
 				</button>
@@ -129,13 +132,12 @@
 
 	{#if actionError}<p class="error" role="alert">{actionError}</p>{/if}
 
-	{#if isAdmin && showForm}
+	{#if isAdmin && localAuthEnabled && showForm}
 		<form class="create-form" onsubmit={handleCreate}>
 			<input name="username" placeholder="Username" required />
 			<input name="password" type="password" placeholder="Password" required />
 			<select name="role">
 				<option value="student">student</option>
-				<option value="mentor">mentor</option>
 				<option value="admin">admin</option>
 			</select>
 			<button type="submit" class="btn primary">Create</button>
@@ -184,9 +186,10 @@
 									onclick={(e) => e.stopPropagation()}
 								>
 									<option value="student">student</option>
-									<option value="mentor">mentor</option>
 									<option value="admin">admin</option>
 								</select>
+							{:else if userRole === 'mentor'}
+								<button type="button" onclick={(e) => { e.stopPropagation(); handleRoleChange(s, 'mentor'); }}>Назначить наставником</button>
 							{:else}
 								{s.role}
 							{/if}
@@ -198,7 +201,7 @@
 						<td>{timeAgo(s.last_activity)}</td>
 						{#if isAdmin}
 							<td class="actions">
-								<button onclick={(e) => { e.stopPropagation(); handleResetPassword(s); }} title="Reset password">pw</button>
+								{#if localAuthEnabled}<button onclick={(e) => { e.stopPropagation(); handleResetPassword(s); }} title="Reset password">pw</button>{/if}
 								<button onclick={(e) => { e.stopPropagation(); handleDelete(s); }} title="Delete" class="danger">×</button>
 							</td>
 						{/if}

@@ -2,8 +2,8 @@
 
 from pathlib import Path
 from typing import Literal
-from pydantic import Field
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     log_truncated_to: int = 8 * 1024  # 8KB max log per run
     service_name: str = "Ego Trainer"
     registration_enabled: bool = True
+    local_auth_enabled: bool = True
+    forgejo_enabled: bool = False
+    forgejo_url: str = "https://git.born-in-july.ru"
+    forgejo_client_id: str = ""
+    forgejo_client_secret: str = Field(default="", repr=False)
+    public_url: str = ""
     check_timeout_seconds: float = 5
     max_code_chars: int = 100000
     ai_enabled: bool = False
@@ -41,6 +47,19 @@ _INSECURE_JWT_SECRETS = {
 
 def validate_runtime_settings(config: Settings) -> None:
     """Reject development-only settings when running in production mode."""
+    if not config.local_auth_enabled and not config.forgejo_enabled:
+        raise RuntimeError("Enable Forgejo before disabling local authentication")
+    if config.forgejo_enabled:
+        from ego_server.forgejo import _base_url
+
+        if not config.forgejo_client_id or not config.forgejo_client_secret:
+            raise RuntimeError("Forgejo login requires a client ID and client secret")
+        _base_url(config.forgejo_url)
+        _base_url(config.public_url)
+        if config.environment == "production" and not all(
+            url.startswith("https://") for url in (config.forgejo_url, config.public_url)
+        ):
+            raise RuntimeError("Forgejo and public URLs must use HTTPS in production")
     if config.environment != "production":
         return
     if config.jwt_secret in _INSECURE_JWT_SECRETS or len(config.jwt_secret) < 32:

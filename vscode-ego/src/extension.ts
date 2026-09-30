@@ -16,7 +16,8 @@ import { pullTasksToWorkspace } from './pullTasks';
 import { DashboardView } from './dashboardView';
 import { TaskViewPanel } from './taskViewPanel';
 import { openTaskPy, openTaskWithView } from './openTask';
-import { readEgoConfig, readManifest, type EgoMode } from './egoWorkspace';
+import { readEgoConfig, writeEgoConfig, readManifest, type EgoMode } from './egoWorkspace';
+import { forgejoLogin } from './forgejoLogin';
 import { decideSession } from './sessionDecision';
 import { EgoStatusBar } from './statusBar';
 import { runOfflineCheck } from './offlineCheck';
@@ -287,6 +288,24 @@ export function deactivate(): void {
 // === Command implementations ===
 
 async function cmdLogin(context: vscode.ExtensionContext): Promise<void> {
+    try {
+        const response = await forgejoLogin(api);
+        if (response !== null) {
+            if (!response) return;
+            await context.secrets.store(SECRET_KEY, response.access_token);
+            api.setToken(response.access_token);
+            const existing = await readEgoConfig();
+            if (existing) await writeEgoConfig({ ...existing, token: '', student_id: response.user_id, student_username: response.username, role: response.role });
+            await vscode.commands.executeCommand('setContext', 'ego.loggedIn', true);
+            statusBar.setMode('server');
+            treeProvider.refresh();
+            vscode.window.showInformationMessage(`Ego: Logged in as ${response.username} (${response.role})`);
+            return;
+        }
+    } catch (error) {
+        vscode.window.showErrorMessage(`Ego: Login failed — ${(error as Error).message}`);
+        return;
+    }
     const username = await vscode.window.showInputBox({
         prompt: 'Username',
         placeHolder: 'Enter your username',

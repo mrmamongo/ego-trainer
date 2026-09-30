@@ -15,14 +15,21 @@ import re
 import sqlite3
 import tempfile
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from ego.content_repo import DiscoveredTask, discover_repo
+from ego_server import config
 from ego_server.auth import generate_user_id, hash_password
-from ego_server.deps import DbDep, require_role
+from ego_server.authoring import (
+    contained_path,
+    is_writable,
+    resolve_root,
+    safe_config,
+)
+from ego_server.deps import CurrentUser, DbDep, require_role
 from ego_server.models import (
     CatalogDTO,
     CatalogFolderDTO,
@@ -32,22 +39,16 @@ from ego_server.models import (
     OverviewCounts,
     OverviewDTO,
     ResetPasswordRequest,
+    StudentSummaryDTO,
     StudioSaveRequest,
     StudioSaveResponse,
     StudioValidateRequest,
     StudioValidateResponse,
-    StudentSummaryDTO,
     SyncLogRow,
     SyncResultDTO,
     SyncTasksRequest,
     TaskStudioDTO,
     UpdateRoleRequest,
-)
-from ego_server.authoring import (
-    contained_path,
-    is_writable,
-    resolve_root,
-    safe_config,
 )
 from ego_server.sync import sync_from_path
 
@@ -99,6 +100,10 @@ async def list_students(db: DbDep) -> list[StudentSummaryDTO]:
 )
 async def create_user(body: CreateUserRequest, db: DbDep) -> dict:
     """Create a new user (student/mentor/admin)."""
+    if body.role == "mentor":
+        raise HTTPException(status_code=403, detail="Only a mentor can appoint a mentor")
+    if not config.settings.local_auth_enabled:
+        raise HTTPException(status_code=403, detail="Users must sign in through Forgejo")
     existing = db.execute("SELECT id FROM students WHERE username = ?", (body.username,)).fetchone()
     if existing:
         raise HTTPException(
@@ -111,7 +116,7 @@ async def create_user(body: CreateUserRequest, db: DbDep) -> dict:
     db.execute(
         "INSERT INTO students (id, username, role, password_hash, created_at) "
         "VALUES (?, ?, ?, ?, ?)",
-        (user_id, body.username, body.role, pwd_hash, datetime.now(timezone.utc).isoformat()),
+        (user_id, body.username, body.role, pwd_hash, datetime.now(UTC).isoformat()),
     )
     db.commit()
     return {"id": user_id, "username": body.username, "role": body.role}
@@ -119,14 +124,32 @@ async def create_user(body: CreateUserRequest, db: DbDep) -> dict:
 
 @router.put(
     "/users/{user_id}/role",
-    dependencies=[Depends(require_role("admin"))],
 )
-async def update_user_role(user_id: str, body: UpdateRoleRequest, db: DbDep) -> dict:
-    """Change a user's role."""
-    row = db.execute("SELECT id FROM students WHERE id = ?", (user_id,)).fetchone()
+async def update_user_role(
+    user_id: str, body: UpdateRoleRequest, db: DbDep, user: CurrentUser
+) -> dict:
+    """Mentors appoint students as mentors; admins manage other role changes."""
+    if body.role == "mentor":
+        if user["role"] != "mentor":
+            raise HTTPException(status_code=403, detail="Only a mentor can appoint a mentor")
+    elif user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Requires role: admin")
+    row = db.execute("SELECT id,role FROM students WHERE id = ?", (user_id,)).fetchone()
     if not row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    db.execute("UPDATE students SET role = ? WHERE id = ?", (body.role, user_id))
+    if body.role == "mentor":
+        changed = db.execute(
+            "UPDATE students SET role='mentor' WHERE id=? AND role='student'", (user_id,)
+        ).rowcount
+        if changed != 1:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Only a student can be appointed as mentor")
+        db.execute(
+            "INSERT INTO mentor_grants (actor_id,user_id,created_at) VALUES (?,?,?)",
+            (user["sub"], user_id, datetime.now(UTC).isoformat()),
+        )
+    else:
+        db.execute("UPDATE students SET role = ? WHERE id = ?", (body.role, user_id))
     db.commit()
     return {"id": user_id, "role": body.role}
 
@@ -137,6 +160,8 @@ async def update_user_role(user_id: str, body: UpdateRoleRequest, db: DbDep) -> 
 )
 async def reset_user_password(user_id: str, body: ResetPasswordRequest, db: DbDep) -> dict:
     """Reset a user's password."""
+    if not config.settings.local_auth_enabled:
+        raise HTTPException(status_code=403, detail="Passwords are managed by Forgejo")
     row = db.execute("SELECT id FROM students WHERE id = ?", (user_id,)).fetchone()
     if not row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -1461,8 +1486,8 @@ def _resolve_path(path_str: str) -> Path:
     ``file://C:/path`` (common but non-RFC) forms.
     """
     if path_str.startswith("file://"):
-        from urllib.parse import urlparse
         import sys
+        from urllib.parse import urlparse
 
         parsed = urlparse(path_str)
         # Reconstruct path: on Windows, urlparse may put 'C:' in netloc
