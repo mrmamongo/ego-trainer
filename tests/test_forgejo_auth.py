@@ -2,6 +2,7 @@
 
 import re
 import secrets
+from datetime import datetime
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
@@ -281,6 +282,240 @@ def test_schema_upgrade_idempotent_and_explicit_bootstrap_link(setup):
     result = finish(client, *begin(client))
     assert result["user_id"] == "old"
     assert result["role"] == "mentor"
+
+
+def test_approved_username_links_existing_admin_with_registration_closed(setup):
+    from ego_server.cli import main
+
+    client, settings, profile, _ = setup
+    settings.registration_enabled = False
+    execute(
+        lambda conn: conn.execute(
+            "INSERT INTO students VALUES ('admin-id','local-admin','admin','',datetime('now'),NULL)"
+        )
+    )
+    execute(
+        lambda conn: conn.execute(
+            "INSERT INTO progress (student_id,task_id,version,status,attempts,passed_tests,total_tests) "
+            "VALUES ('admin-id','F1','1.0.0','passed',2,3,3)"
+        )
+    )
+    assert (
+        main(
+            [
+                "admin",
+                "link-forgejo",
+                "--user-id",
+                "admin-id",
+                "--username",
+                "mrmamongo",
+            ]
+        )
+        == 0
+    )
+    approval = execute(
+        lambda conn: conn.execute(
+            "SELECT issuer,username,user_id,created_at,expires_at,status,consumed_at,subject "
+            "FROM forgejo_link_approvals"
+        ).fetchone()
+    )
+    assert approval["issuer"] == "https://git.born-in-july.ru"
+    assert approval["username"] == "mrmamongo"
+    assert approval["user_id"] == "admin-id"
+    assert approval["expires_at"] - int(datetime.fromisoformat(approval["created_at"]).timestamp()) == 900
+
+    profile["preferred_username"] = "mrmamongo"
+    result = finish(client, *begin(client))
+    assert result["user_id"] == "admin-id"
+    assert result["username"] == "local-admin"
+    assert result["role"] == "admin"
+    linked = execute(
+        lambda conn: conn.execute(
+            "SELECT subject,user_id,remote_username FROM external_identities WHERE issuer=?",
+            (approval["issuer"],),
+        ).fetchone()
+    )
+    assert tuple(linked) == ("42", "admin-id", "mrmamongo")
+    completed = execute(
+        lambda conn: conn.execute(
+            "SELECT status,consumed_at,subject FROM forgejo_link_approvals"
+        ).fetchone()
+    )
+    assert completed["status"] == "consumed"
+    assert completed["consumed_at"]
+    assert completed["subject"] == "42"
+    progress = execute(
+        lambda conn: conn.execute(
+            "SELECT student_id,attempts,passed_tests FROM progress"
+        ).fetchone()
+    )
+    assert tuple(progress) == ("admin-id", 2, 3)
+
+
+def test_closed_registration_never_links_same_username_without_approval(setup):
+    client, settings, profile, _ = setup
+    settings.registration_enabled = False
+    execute(
+        lambda conn: conn.execute(
+            "INSERT INTO students VALUES ('admin-id','mrmamongo','admin','',datetime('now'),NULL)"
+        )
+    )
+    state, _ = begin(client)
+    callback = client.get(
+        "/auth/forgejo/callback", params={"state": state, "code": "provider-code"}
+    )
+    assert callback.status_code == 400
+    assert execute(lambda conn: conn.execute("SELECT COUNT(*) FROM students").fetchone()[0]) == 1
+    assert execute(lambda conn: conn.execute("SELECT COUNT(*) FROM external_identities").fetchone()[0]) == 0
+    assert profile["preferred_username"] == "alice"
+
+
+def test_approved_username_mismatch_does_not_consume_or_link(setup):
+    from ego_server.cli import main
+
+    client, settings, _, _ = setup
+    settings.registration_enabled = False
+    execute(
+        lambda conn: conn.execute(
+            "INSERT INTO students VALUES ('admin-id','local-admin','admin','',datetime('now'),NULL)"
+        )
+    )
+    assert main(
+        ["admin", "link-forgejo", "--user-id", "admin-id", "--username", "mrmamongo"]
+    ) == 0
+    state, _ = begin(client)
+    callback = client.get(
+        "/auth/forgejo/callback", params={"state": state, "code": "provider-code"}
+    )
+    assert callback.status_code == 400
+    approval = execute(
+        lambda conn: conn.execute(
+            "SELECT status,subject,consumed_at FROM forgejo_link_approvals"
+        ).fetchone()
+    )
+    assert tuple(approval) == ("pending", None, None)
+    assert execute(lambda conn: conn.execute("SELECT COUNT(*) FROM external_identities").fetchone()[0]) == 0
+
+
+def test_expired_approval_cannot_link_username(setup):
+    from ego_server.cli import main
+
+    client, settings, profile, _ = setup
+    settings.registration_enabled = False
+    profile["preferred_username"] = "mrmamongo"
+    execute(
+        lambda conn: conn.execute(
+            "INSERT INTO students VALUES ('admin-id','local-admin','admin','',datetime('now'),NULL)"
+        )
+    )
+    assert main(
+        ["admin", "link-forgejo", "--user-id", "admin-id", "--username", "mrmamongo"]
+    ) == 0
+    execute(lambda conn: conn.execute("UPDATE forgejo_link_approvals SET expires_at=0"))
+    state, _ = begin(client)
+    callback = client.get(
+        "/auth/forgejo/callback", params={"state": state, "code": "provider-code"}
+    )
+    assert callback.status_code == 400
+    assert execute(lambda conn: conn.execute("SELECT COUNT(*) FROM external_identities").fetchone()[0]) == 0
+    assert execute(
+        lambda conn: conn.execute("SELECT status FROM forgejo_link_approvals").fetchone()[0]
+    ) == "pending"
+
+
+def test_consumed_approval_cannot_bind_a_second_subject(setup):
+    from ego_server.cli import main
+
+    client, settings, profile, _ = setup
+    settings.registration_enabled = False
+    profile["preferred_username"] = "mrmamongo"
+    execute(
+        lambda conn: conn.execute(
+            "INSERT INTO students VALUES ('admin-id','local-admin','admin','',datetime('now'),NULL)"
+        )
+    )
+    assert main(
+        ["admin", "link-forgejo", "--user-id", "admin-id", "--username", "mrmamongo"]
+    ) == 0
+    first = finish(client, *begin(client))
+    assert first["user_id"] == "admin-id"
+    profile["sub"] = "43"
+    state, _ = begin(client)
+    callback = client.get(
+        "/auth/forgejo/callback", params={"state": state, "code": "provider-code"}
+    )
+    assert callback.status_code == 400
+    rows = execute(
+        lambda conn: conn.execute(
+            "SELECT subject,user_id FROM external_identities ORDER BY subject"
+        ).fetchall()
+    )
+    assert [tuple(row) for row in rows] == [("42", "admin-id")]
+    assert execute(lambda conn: conn.execute("SELECT COUNT(*) FROM students").fetchone()[0]) == 1
+
+
+def test_existing_mapped_subject_precedes_username_approval(setup):
+    from ego_server.cli import main
+
+    client, settings, profile, _ = setup
+    first = finish(client, *begin(client))
+    settings.registration_enabled = False
+    execute(
+        lambda conn: conn.execute(
+            "INSERT INTO students VALUES ('admin-id','local-admin','admin','',datetime('now'),NULL)"
+        )
+    )
+    assert main(
+        ["admin", "link-forgejo", "--user-id", "admin-id", "--username", "alice"]
+    ) == 0
+    second = finish(client, *begin(client))
+    assert second["user_id"] == first["user_id"]
+    assert second["role"] == "student"
+    assert execute(
+        lambda conn: conn.execute(
+            "SELECT role FROM students WHERE id='admin-id'"
+        ).fetchone()[0]
+    ) == "admin"
+    assert execute(
+        lambda conn: conn.execute(
+            "SELECT status FROM forgejo_link_approvals"
+        ).fetchone()[0]
+    ) == "pending"
+
+
+def test_username_approval_cli_rejects_invalid_duplicate_and_linked_targets(setup):
+    from ego_server.cli import main
+
+    _, _, _, _ = setup
+    execute(
+        lambda conn: conn.executemany(
+            "INSERT INTO students VALUES (?,?,?,'',datetime('now'),NULL)",
+            [
+                ("admin-id", "local-admin", "admin"),
+                ("other-id", "other", "student"),
+            ],
+        )
+    )
+    def approve(user_id: str, username: str) -> int:
+        return main(
+            ["admin", "link-forgejo", "--user-id", user_id, "--username", username]
+        )
+
+    assert approve("admin-id", "") == 1
+    assert approve("admin-id", "mrmämongo") == 1
+    assert approve("admin-id", "two words") == 1
+    assert approve("admin-id", "mrmamongo") == 0
+    assert approve("admin-id", "mrmamongo") == 1
+    assert approve("other-id", "mrmamongo") == 1
+    assert approve("admin-id", "different") == 1
+    assert approve("missing", "unknown") == 1
+    execute(
+        lambda conn: conn.execute(
+            "INSERT INTO external_identities VALUES (?,?,?,?,datetime('now'))",
+            ("https://git.born-in-july.ru", "already", "other-id", "other"),
+        )
+    )
+    assert approve("other-id", "new-name") == 1
 
 
 @pytest.mark.parametrize(

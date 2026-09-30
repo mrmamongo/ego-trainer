@@ -95,9 +95,14 @@ def main(argv=None) -> int:
     p_role = admin_sub.add_parser("set-role", help="Trusted bootstrap/recovery of a local role")
     p_role.add_argument("--user-id", required=True)
     p_role.add_argument("--role", required=True, choices=["student", "mentor", "admin"])
-    p_link = admin_sub.add_parser("link-forgejo", help="Explicitly link an existing local account")
+    p_link = admin_sub.add_parser("link-forgejo", help="Explicitly link or approve an existing local account")
     p_link.add_argument("--user-id", required=True)
-    p_link.add_argument("--subject", required=True, help="Verified Forgejo UserInfo sub (user ID)")
+    link_by = p_link.add_mutually_exclusive_group(required=True)
+    link_by.add_argument("--subject", help="Verified Forgejo UserInfo sub (user ID)")
+    link_by.add_argument(
+        "--username",
+        help="Temporarily approve the exact ASCII Forgejo preferred_username (15 minutes)",
+    )
 
     args = parser.parse_args(argv)
     if args.command is None:
@@ -137,6 +142,8 @@ def _cmd_external_account(args) -> int:
 
     conn = get_connection()
     try:
+        if args.admin_command == "link-forgejo" and args.username is not None:
+            return _cmd_approve_forgejo_username(conn, args, config, _base_url)
         row = conn.execute("SELECT id,username FROM students WHERE id=?", (args.user_id,)).fetchone()
         if row is None:
             print("User not found", file=sys.stderr)
@@ -165,6 +172,88 @@ def _cmd_external_account(args) -> int:
         return 1
     finally:
         conn.close()
+
+
+def _cmd_approve_forgejo_username(conn, args, config, base_url) -> int:
+    """Approve one exact provider username to link to one existing local user."""
+    import sqlite3
+    from urllib.parse import urlsplit
+
+    username = args.username
+    if (
+        not isinstance(username, str)
+        or not username
+        or len(username) > 255
+        or not username.isascii()
+        or any(ord(char) < 33 or ord(char) > 126 for char in username)
+    ):
+        print("Invalid Forgejo username: expected 1-255 visible ASCII characters", file=sys.stderr)
+        return 1
+    try:
+        issuer = base_url(config.settings.forgejo_url)
+    except ValueError:
+        print("Invalid configured Forgejo URL", file=sys.stderr)
+        return 1
+    if urlsplit(issuer).scheme != "https":
+        print("Username approval requires a configured HTTPS Forgejo issuer", file=sys.stderr)
+        return 1
+
+    created = datetime.now(UTC)
+    created_at = created.isoformat()
+    now = int(created.timestamp())
+    expires_at = now + 15 * 60
+    expires_at_iso = datetime.fromtimestamp(expires_at, UTC).isoformat()
+    try:
+        # Retire old approvals before checking uniqueness so expired rows never
+        # block a new, explicitly authorized request.
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute(
+            "UPDATE forgejo_link_approvals SET status='expired' "
+            "WHERE status='pending' AND expires_at<=?",
+            (now,),
+        )
+        conn.commit()
+
+        conn.execute("BEGIN IMMEDIATE")
+        target = conn.execute(
+            "SELECT id,username FROM students WHERE id=?", (args.user_id,)
+        ).fetchone()
+        if target is None:
+            conn.rollback()
+            print("User not found", file=sys.stderr)
+            return 1
+        linked = conn.execute(
+            "SELECT 1 FROM external_identities WHERE issuer=? AND user_id=?",
+            (issuer, target["id"]),
+        ).fetchone()
+        if linked:
+            conn.rollback()
+            print("Local account already has a Forgejo identity for this issuer", file=sys.stderr)
+            return 1
+        conflict = conn.execute(
+            "SELECT 1 FROM forgejo_link_approvals "
+            "WHERE issuer=? AND status='pending' AND (username=? OR user_id=?)",
+            (issuer, username, target["id"]),
+        ).fetchone()
+        if conflict:
+            conn.rollback()
+            print("A conflicting active Forgejo username approval already exists", file=sys.stderr)
+            return 1
+        conn.execute(
+            "INSERT INTO forgejo_link_approvals "
+            "(issuer,username,user_id,created_at,expires_at) VALUES (?,?,?,?,?)",
+            (issuer, username, target["id"], created_at, expires_at),
+        )
+        conn.commit()
+        print(
+            f"Approved Forgejo username '{username}' for local account "
+            f"'{target['username']}' until {expires_at_iso}"
+        )
+        return 0
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        print("A conflicting active Forgejo username approval already exists", file=sys.stderr)
+        return 1
 
 
 def _cmd_run(args) -> int:

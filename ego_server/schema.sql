@@ -85,6 +85,30 @@ CREATE TABLE IF NOT EXISTS external_identities (
   UNIQUE (issuer, user_id)
 );
 
+-- Operator-approved, one-time username link. This table stores no provider tokens.
+-- Completed rows remain as an audit record, including the verified subject.
+CREATE TABLE IF NOT EXISTS forgejo_link_approvals (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  issuer         TEXT NOT NULL,
+  username       TEXT NOT NULL,
+  user_id        TEXT NOT NULL,
+  created_at     TEXT NOT NULL,
+  expires_at     INTEGER NOT NULL,
+  status         TEXT NOT NULL DEFAULT 'pending'
+                 CHECK (status IN ('pending', 'consumed', 'expired')),
+  consumed_at    TEXT,
+  subject        TEXT,
+  CHECK (
+    (status = 'pending' AND consumed_at IS NULL AND subject IS NULL)
+    OR (status = 'consumed' AND consumed_at IS NOT NULL AND subject IS NOT NULL)
+    OR (status = 'expired' AND consumed_at IS NULL AND subject IS NULL)
+  )
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_forgejo_link_pending_username
+  ON forgejo_link_approvals(issuer, username) WHERE status = 'pending';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_forgejo_link_pending_user
+  ON forgejo_link_approvals(issuer, user_id) WHERE status = 'pending';
+
 -- Five-minute OAuth handoff. Provider tokens are never stored here.
 CREATE TABLE IF NOT EXISTS oauth_flows (
   state_hash    TEXT PRIMARY KEY,

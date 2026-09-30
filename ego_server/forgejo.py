@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import sqlite3
+import time
 from datetime import UTC, datetime
 from urllib.parse import urlsplit
 
@@ -132,20 +133,48 @@ def resolve_user(db: sqlite3.Connection, issuer: str, subject: str, name: str) -
             (name, issuer, subject),
         )
     else:
-        if not load_settings(db).registration_enabled:
-            raise HTTPException(status_code=403, detail="Registration is disabled")
-        user_id = generate_user_id()
-        username = name
-        if db.execute("SELECT 1 FROM students WHERE username=?", (username,)).fetchone():
-            username = "forgejo-" + user_id
-        db.execute(
-            "INSERT INTO students (id,username,role,password_hash,created_at) VALUES (?,?,?,?,?)",
-            (user_id, username, "student", "", now),
-        )
-        db.execute(
-            "INSERT INTO external_identities (issuer,subject,user_id,remote_username,created_at) "
-            "VALUES (?,?,?,?,?)",
-            (issuer, subject, user_id, name, now),
-        )
+        approval = db.execute(
+            "SELECT id,user_id FROM forgejo_link_approvals "
+            "WHERE issuer=? AND username=? AND status='pending' AND expires_at>? "
+            "ORDER BY id LIMIT 1",
+            (issuer, name, int(time.time())),
+        ).fetchone()
+        if approval:
+            user_id = approval["user_id"]
+            if db.execute("SELECT 1 FROM students WHERE id=?", (user_id,)).fetchone() is None:
+                raise HTTPException(status_code=409, detail="Approved local account no longer exists")
+            if db.execute(
+                "SELECT 1 FROM external_identities WHERE issuer=? AND user_id=?",
+                (issuer, user_id),
+            ).fetchone():
+                raise HTTPException(status_code=409, detail="Local account already has a Forgejo identity")
+            changed = db.execute(
+                "UPDATE forgejo_link_approvals SET status='consumed',consumed_at=?,subject=? "
+                "WHERE id=? AND status='pending' AND expires_at>?",
+                (now, subject, approval["id"], int(time.time())),
+            ).rowcount
+            if changed != 1:
+                raise HTTPException(status_code=409, detail="Forgejo link approval expired or was consumed")
+            db.execute(
+                "INSERT INTO external_identities (issuer,subject,user_id,remote_username,created_at) "
+                "VALUES (?,?,?,?,?)",
+                (issuer, subject, user_id, name, now),
+            )
+        else:
+            if not load_settings(db).registration_enabled:
+                raise HTTPException(status_code=403, detail="Registration is disabled")
+            user_id = generate_user_id()
+            username = name
+            if db.execute("SELECT 1 FROM students WHERE username=?", (username,)).fetchone():
+                username = "forgejo-" + user_id
+            db.execute(
+                "INSERT INTO students (id,username,role,password_hash,created_at) VALUES (?,?,?,?,?)",
+                (user_id, username, "student", "", now),
+            )
+            db.execute(
+                "INSERT INTO external_identities (issuer,subject,user_id,remote_username,created_at) "
+                "VALUES (?,?,?,?,?)",
+                (issuer, subject, user_id, name, now),
+            )
     db.execute("UPDATE students SET last_login_at=? WHERE id=?", (now, user_id))
     return user_id
