@@ -1,0 +1,64 @@
+name: cogito
+
+services:
+  cogito-server:
+    image: ${COGITO_IMAGE:?Set COGITO_IMAGE to the immutable release image}
+    env_file:
+      - .env
+    environment:
+      EGO_ENVIRONMENT: production
+      EGO_DB_PATH: /var/lib/ego/ego.db
+      EGO_TASKS_REPO_URL: /content
+      EGO_BIND_HOST: 0.0.0.0
+      EGO_BIND_PORT: "8000"
+      EGO_UVICORN_WORKERS: "1"
+      EGO_ALLOWED_HOSTS: '["cogito.born-in-july.ru","cogito-server","localhost","127.0.0.1"]'
+      EGO_CORS_ORIGINS: '[]'
+      EGO_PUBLIC_URL: https://cogito.born-in-july.ru
+      EGO_REGISTRATION_ENABLED: "${EGO_REGISTRATION_ENABLED:-false}"
+      EGO_LOCAL_AUTH_ENABLED: "${EGO_LOCAL_AUTH_ENABLED:-true}"
+      EGO_FORGEJO_ENABLED: "${EGO_FORGEJO_ENABLED:-false}"
+      EGO_FORGEJO_URL: "${EGO_FORGEJO_URL:-https://git.born-in-july.ru}"
+      EGO_FORGEJO_CLIENT_ID: "${EGO_FORGEJO_CLIENT_ID:-}"
+      EGO_FORGEJO_CLIENT_SECRET: "${EGO_FORGEJO_CLIENT_SECRET:-}"
+      EGO_JWT_SECRET: ${EGO_JWT_SECRET:?Set EGO_JWT_SECRET in the private .env file}
+    ports:
+      - "127.0.0.1:18081:8000"
+    volumes:
+      - type: bind
+        source: ./data
+        target: /var/lib/ego
+      - type: bind
+        source: ./content
+        target: /content
+    networks:
+      - cogito_proxy
+    restart: unless-stopped
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 512m
+    cpus: 0.75
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()"
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+networks:
+  cogito_proxy:
+    name: cogito_proxy
+    driver: bridge
