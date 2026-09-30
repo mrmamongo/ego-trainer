@@ -2,12 +2,16 @@
 
 import asyncio
 import importlib
+import time
 from urllib.parse import urlencode
 
 import httpx
+import jwt
 import pytest
 from fastmcp import Client
 from fastmcp.server.auth import AccessToken
+from fastmcp.server.auth.oauth_proxy.models import JTIMapping, UpstreamTokenSet
+from fastmcp.server.dependencies import get_access_token
 from starlette.testclient import TestClient
 
 from ego_server import auth, config, content_config, db, task_mcp
@@ -244,3 +248,79 @@ def test_oauth_mcp_keys_must_be_separate():
     settings.jwt_secret = settings.mcp_signing_key
     with pytest.raises(RuntimeError, match="separate"):
         config.validate_runtime_settings(settings)
+
+
+def test_http_bearer_is_bound_to_mcp_and_upstream_identity(env, monkeypatch):
+    server, client, settings, _, _ = env
+    proxy = server.auth
+    monkeypatch.setattr(task_mcp, "get_access_token", get_access_token)
+    proxy._token_validator.transport = httpx.MockTransport(
+        lambda request: httpx.Response(200, json={"sub": "42"})
+    )
+
+    async def store_tokens():
+        now = time.time()
+        await proxy._upstream_token_store.put(
+            key="test-upstream",
+            value=UpstreamTokenSet(
+                upstream_token_id="test-upstream",
+                access_token="opaque-upstream-secret",
+                refresh_token=None,
+                refresh_token_expires_at=None,
+                expires_at=now + 3600,
+                token_type="Bearer",
+                scope="openid profile",
+                client_id="test-client",
+                created_at=now,
+            ),
+            ttl=3600,
+        )
+        await proxy._jti_mapping_store.put(
+            key="test-jti",
+            value=JTIMapping(
+                jti="test-jti",
+                upstream_token_id="test-upstream",
+                created_at=now,
+            ),
+            ttl=3600,
+        )
+
+    asyncio.run(store_tokens())
+    bearer = proxy.jwt_issuer.issue_access_token(
+        client_id="test-client",
+        scopes=["openid", "profile"],
+        jti="test-jti",
+    )
+    body = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {"name": "whoami", "arguments": {}},
+    }
+
+    def post(token):
+        return client.post(
+            "/mcp",
+            json=body,
+            headers={
+                "Authorization": "Bearer " + token,
+                "Accept": "application/json, text/event-stream",
+            },
+        )
+
+    response = post(bearer)
+    assert response.status_code == 200
+    assert '"can_save_tasks":true' in response.text
+    claims = jwt.decode(bearer, options={"verify_signature": False})
+    claims["aud"] = "https://another-service.example/mcp"
+    other_audience = jwt.encode(claims, proxy.jwt_issuer._signing_key, algorithm="HS256")
+    assert post(other_audience).status_code == 401
+    assert post("opaque-upstream-secret").status_code == 401
+    for path in settings.mcp_storage_path.rglob("*"):
+        if path.is_file():
+            assert b"opaque-upstream-secret" not in path.read_bytes()
+    conn = db.get_connection()
+    conn.execute("DELETE FROM external_identities WHERE subject='42'")
+    conn.commit()
+    conn.close()
+    assert post(bearer).status_code == 401
