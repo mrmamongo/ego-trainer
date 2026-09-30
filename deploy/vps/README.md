@@ -10,7 +10,6 @@ The content checkout at `/opt/cogito/content` is writable because Task Studio ed
 sudo install -d -m 0750 -o 10001 -g 10001 /opt/cogito/data /opt/cogito/content
 sudo install -d -m 0700 -o root -g root /opt/cogito/backups
 sudo install -m 0600 -o root -g root /dev/null /opt/cogito/.env
-sudo install -m 0600 -o root -g root /dev/null /opt/cogito/gateway.htpasswd
 sudoedit /opt/cogito/.env
 ```
 
@@ -25,13 +24,13 @@ EGO_FORGEJO_ENABLED=false
 EGO_REGISTRATION_ENABLED=false
 ```
 
-Generate a JWT secret on the VPS with `openssl rand -hex 32`. At initial setup, also generate a separate Fernet key for `EGO_SETTINGS_ENCRYPTION_KEY` with `python3 -c 'import base64,secrets; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())'`. Put both in `.env` using a private editor. Do not reuse or copy the pilot JWT secret or settings-encryption key. Keep this VPS-only Fernet key stable for the life of the VPS data; changing it later makes previously encrypted service settings unreadable. Keep `.env` mode `0600` and owned by root. Keep `/opt/cogito/gateway.htpasswd` owned by root with mode `0600` as the private record of the gateway user and hashed password.
+Generate a JWT secret on the VPS with `openssl rand -hex 32`. At initial setup, also generate a separate Fernet key for `EGO_SETTINGS_ENCRYPTION_KEY` with `python3 -c 'import base64,secrets; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())'`. Put both in `.env` using a private editor. Do not reuse or copy the pilot JWT secret or settings-encryption key. Keep this VPS-only Fernet key stable for the life of the VPS data; changing it later makes previously encrypted service settings unreadable. Keep `.env` mode `0600` and owned by root.
 
 The Compose file fixes these production values: database `/var/lib/ego/ego.db`, task content `/content`, public URL `https://cogito.born-in-july.ru`, allowed hosts including the internal `cogito-server` host used by Traefik ForwardAuth, and an empty CORS origin list. Registration is environment-locked off by default, including when the database contains a previously saved `registration_enabled=true` value. Local password login remains enabled while Forgejo is disabled.
 
 ## Fresh VPS state and initial content
 
-This deployment intentionally starts with an independent, empty VPS database. Do not transfer the local pilot SQLite database, users, progress, admin chats, service settings, external identity links, JWT secret, settings-encryption key, or gateway password. Keep the local pilot unchanged. The first administrator and all later VPS accounts are created independently on the VPS.
+This deployment intentionally starts with an independent, empty VPS database. Do not transfer the local pilot SQLite database, users, progress, admin chats, service settings, external identity links, JWT secret, and settings-encryption key. Keep the local pilot unchanged. The first administrator and all later VPS accounts are created independently on the VPS.
 
 Before the first start, ensure `/opt/cogito/data/ego.db` does not exist and populate `/opt/cogito/content` only from the deployment-authorized task source supplied for this server. The container syncs that mounted local catalog during startup. Remote Git clone/update automation is not included yet; that remains tracked by `ego-trainer-8di.2`.
 
@@ -102,7 +101,6 @@ http:
     cogito-browser:
       rule: Host(`cogito.born-in-july.ru`)
       entryPoints: [websecure]
-      middlewares: [cogito-browser-auth]
       service: cogito
       priority: 1
       tls:
@@ -114,11 +112,6 @@ http:
         trustForwardHeader: false
         authRequestHeaders:
           - Authorization
-    cogito-browser-auth:
-      basicAuth:
-        users:
-          - "<gateway-user>:<bcrypt-hash>"
-        removeHeader: false
   services:
     cogito:
       loadBalancer:
@@ -126,19 +119,9 @@ http:
           - url: http://cogito-server:8000
 ```
 
-`cogito-jwt` sends only the Bearer `Authorization` header to `/auth/me`. Ego's `/auth/me` checks the currently stored account and role, and Traefik forwards the original request to the application only after that check succeeds. `StudentList` also requests `/auth/providers` after login with its stored Bearer token, so the API router matches that exact path only when the header is Bearer; the first no-token login-provider request falls through to browser BasicAuth. Do not add BasicAuth to this API router: the application also uses `Authorization` for its Bearer JWT. `removeHeader: false` is appropriate on the separate browser router, but it does not make BasicAuth and Bearer credentials interchangeable.
-
-The browser router uses BasicAuth for the HTML shell, static assets, and unauthenticated browser login/provider/OAuth routes. Authenticated browser API routes use the higher-priority JWT router. Clients that cannot answer the browser BasicAuth challenge, including the current VSCode extension and CLI, should use an SSH tunnel to the loopback port during this pilot:
-
-```sh
-ssh -N -L 18081:127.0.0.1:18081 <vps-user>@<vps-host>
-```
-
-Point the client at `http://127.0.0.1:18081` while the tunnel is open. Do not expose port `18081` on a public interface. Verify the complete browser flow and API calls through the actual Traefik router before opening the hostname to users.
+The browser router has no authentication middleware: HTTPS exposes the login page, static files, health endpoint, and login/OAuth entry points. Keep new account registration disabled. Every protected application API route uses the higher-priority `cogito-jwt` ForwardAuth router, which sends only the Bearer `Authorization` header to `/auth/me` and forwards the request only after Ego verifies the current account and role. The unauthenticated `/auth/providers` lookup falls through to the browser router so the login page can show configured providers. The app port remains bound to `127.0.0.1:18081`; browser and API clients use the public HTTPS hostname rather than exposing that port.
 
 The existing Traefik `dynamic.yml` is mounted as one file with watching enabled. Update that file **in place** so the container's bind mount keeps the same inode; replacing it atomically with a rename can leave the container watching the old file. Check Traefik logs for the loaded `cogito` router, ForwardAuth middleware, service, and TLS configuration. If `kad-traefik` is recreated, reconnect it to `cogito_proxy`; network attachments do not survive container recreation.
-
-Traefik does not mount `/opt/cogito/gateway.htpasswd`; use it as the root-owned `0600` source record, then copy only its `<gateway-user>:<bcrypt-hash>` line into the `users` array in the private runtime `dynamic.yml`. Keep the password record, `dynamic.yml`, and backups outside the repository. Generate a new VPS gateway password; do not reuse the pilot password. Do not put the password or hash in Compose.
 
 ## Forgejo later
 
@@ -152,4 +135,4 @@ Keep new account registration closed unless an operator intentionally opens it. 
 
 ## Backups and recovery
 
-Back up the new VPS SQLite database with SQLite's backup API and back up its content checkout from the same recovery point. Store those backups, the VPS `.env`, `/opt/cogito/gateway.htpasswd`, and the private Traefik `dynamic.yml` in a private backup location with restrictive access; encrypt off-host copies. Test restore into separate directories before replacing live VPS data. Do not mix these backups with the local pilot snapshot.
+Back up the new VPS SQLite database with SQLite's backup API and back up its content checkout from the same recovery point. Store those backups, the VPS `.env`, and the private Traefik `dynamic.yml` in a private backup location with restrictive access; encrypt off-host copies. Test restore into separate directories before replacing live VPS data. Do not mix these backups with the local pilot snapshot.
