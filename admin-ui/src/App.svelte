@@ -11,7 +11,7 @@
   let view = $state<View>((Object.keys(titles).includes(location.hash.slice(1)) ? location.hash.slice(1) : 'overview') as View);
   let loggedIn = $state(false); let sessionSeen = $state(false); let checking = $state(true);
   let userRole = $state(''); let username = $state(''); let userId = $state(''); let authError = $state('');
-  let serviceName = $state('Ego Trainer'); let version = $state(''); let dirty = $state(false); let workBusy = $state(false);
+  let serviceName = $state('Cogito'); let version = $state(''); let dirty = $state(false); let workBusy = $state(false);
   let selectedStudent = $state<{ id: string; username: string } | null>(null);
   let selectedTask = $state<Pick<CatalogTaskDTO, 'id' | 'task_id'> | null>(null);
   let settingsDraft = $state<SettingsDraft | null>(null); let taskDraft = $state<TaskDraft | null>(null);
@@ -50,7 +50,7 @@
 {#if checking}<div class="boot">Проверяю сессию…</div>{:else if !loggedIn}{#if authError}<p class="auth-error" role="alert">{authError}</p>{/if}<Login onLogin={handleLogin} />{/if}
 {#if sessionSeen}
   <main class="shell" class:editor-mode={view === 'catalog'} hidden={!loggedIn}>
-    <aside class="sidebar"><div class="brand"><span class="logo">e</span><div><strong>{serviceName}</strong><small>Панель управления</small></div></div>
+    <aside class="sidebar"><div class="brand"><img class="logo" src="/static/branding/cogito-mark.svg" alt="" width="36" height="36"><div><strong>{serviceName}</strong><small>Панель управления</small></div></div>
       <p class="nav-caption">Рабочее пространство</p><nav aria-label="Навигация админки">
         <button class:active={view === 'overview'} disabled={workBusy} onclick={() => navTo('overview')} aria-current={view === 'overview' ? 'page' : undefined}><span>◫</span> Обзор</button>
         <button class:active={view === 'students'} disabled={workBusy} onclick={() => navTo('students')} aria-current={view === 'students' ? 'page' : undefined}><span>♙</span> Пользователи</button>
@@ -82,7 +82,7 @@
   .shell { display: grid; grid-template-columns: 224px minmax(0, 1fr); min-height: 100vh; } .shell[hidden] { display: none; }
   .sidebar { position: sticky; top: 0; height: 100vh; background: #191e26; border-right: 1px solid #303946; display: flex; flex-direction: column; padding: 26px 16px 18px; }
   .brand { display: flex; gap: 10px; align-items: center; padding: 0 8px 30px; } .brand strong { font-size: 15px; letter-spacing: -.02em; display: block; } .brand small { color: #8e9aaa; font-size: 11px; }
-  .logo { font-size: 24px; line-height: 36px; width: 36px; text-align: center; color: #18283f; background: #aac9fb; font-weight: 700; border-radius: 10px; }
+  .logo { display: block; width: 36px; height: 36px; flex-shrink: 0; }
   .nav-caption { font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: #7f8a9c; padding: 0 10px; margin: 8px 0 12px; }
   nav { display: grid; gap: 5px; } nav button { display: flex; gap: 11px; align-items: center; background: transparent; border-color: transparent; text-align: left; padding: 11px 12px; color: #a6b3c7; }
   nav button span { width: 18px; font-size: 17px; } nav button.active { background: #2c3b52; color: #d4e5ff; border-color: #405677; } nav .nav-caption { margin-top: 25px; }

@@ -72,6 +72,7 @@
 </script>
 
 <div class="login">
+	<img class="logo" src="/static/branding/cogito-mark.svg" alt="Cogito" width="48" height="48">
 	<h1>Панель управления</h1>
 	<p class="sub">Вход для администратора или наставника</p>
 	{#if providers?.forgejo}
@@ -93,6 +94,7 @@
 
 <style>
 	.login { max-width: 320px; margin: 80px auto; }
+	.logo { display: block; margin-bottom: 16px; }
 	h1 { font-size: 1.2rem; font-weight: 700; margin-bottom: 4px; }
 	.sub { color: #858585; font-size: 0.8rem; margin-bottom: 24px; }
 	input {
