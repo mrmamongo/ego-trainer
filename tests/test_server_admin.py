@@ -157,7 +157,7 @@ def test_create_user_duplicate_409(client: TestClient) -> None:
     assert r.status_code == 409
 
 
-def test_update_role_admin_only(client: TestClient) -> None:
+def test_only_mentor_can_appoint_mentor(client: TestClient) -> None:
     a_token, _ = _create_user(client, "admin1", "pw", "admin")
     m_token, _ = _create_user(client, "mentor1", "pw", "mentor")
     s_token, sid = _make_student(client, "student1")
@@ -165,6 +165,10 @@ def test_update_role_admin_only(client: TestClient) -> None:
         f"/admin/users/{sid}/role",
         json={"role": "mentor"},
         headers=_auth_headers(a_token),
+    )
+    assert r.status_code == 403
+    r = client.put(
+        f"/admin/users/{sid}/role", json={"role": "mentor"}, headers=_auth_headers(m_token)
     )
     assert r.status_code == 200
     assert r.json()["role"] == "mentor"
@@ -202,20 +206,69 @@ def test_reset_password_admin_only(client: TestClient) -> None:
 
     assert (
         client.put(
-            f"/admin/users/{sid}/password",
-            json={"password": "x"},
-            headers=_auth_headers(m_token),
+            f"/admin/users/{sid}/password", json={"password": "x"}, headers=_auth_headers(m_token)
         ).status_code
         == 403
     )
     assert (
         client.put(
-            "/admin/users/nobody/password",
-            json={"password": "x"},
-            headers=_auth_headers(a_token),
+            "/admin/users/nobody/password", json={"password": "x"}, headers=_auth_headers(a_token)
         ).status_code
         == 404
     )
+
+
+def test_mentor_promotion_rejects_other_privileges_and_stale_roles(client: TestClient):
+    mentor, mentor_id = _create_user(client, "mentor", "pw", "mentor")
+    admin, admin_id = _create_user(client, "admin", "pw", "admin")
+    student, student_id = _make_student(client, "learner")
+    endpoint = f"/admin/users/{student_id}/role"
+    assert (
+        client.put(endpoint, json={"role": "mentor"}, headers=_auth_headers(student)).status_code
+        == 403
+    )
+    assert (
+        client.put(endpoint, json={"role": "admin"}, headers=_auth_headers(mentor)).status_code
+        == 403
+    )
+    assert (
+        client.put(
+            f"/admin/users/{admin_id}/role", json={"role": "mentor"}, headers=_auth_headers(mentor)
+        ).status_code
+        == 409
+    )
+    assert (
+        client.post(
+            "/admin/users",
+            json={"username": "bypass", "password": "p", "role": "mentor"},
+            headers=_auth_headers(admin),
+        ).status_code
+        == 403
+    )
+    from ego_server.db import get_connection
+
+    conn = get_connection()
+    try:
+        conn.execute("UPDATE students SET role='student' WHERE id=?", (mentor_id,))
+        conn.commit()
+        assert (
+            client.put(endpoint, json={"role": "mentor"}, headers=_auth_headers(mentor)).status_code
+            == 403
+        )
+        conn.execute("UPDATE students SET role='mentor' WHERE id=?", (mentor_id,))
+        conn.commit()
+        assert (
+            client.put(endpoint, json={"role": "mentor"}, headers=_auth_headers(mentor)).status_code
+            == 200
+        )
+        grant = conn.execute("SELECT actor_id,user_id FROM mentor_grants").fetchone()
+        assert tuple(grant) == (mentor_id, student_id)
+        assert (
+            client.put(endpoint, json={"role": "mentor"}, headers=_auth_headers(mentor)).status_code
+            == 409
+        )
+    finally:
+        conn.close()
 
 
 def test_delete_user_admin_only(client: TestClient) -> None:
@@ -2164,7 +2217,6 @@ def test_studio_save_content_hash_matches_candidate(studio_env: TestClient) -> N
     parsing the saved canonical file yields the same hash.
     """
     from ego.parser import parse_task_file
-
     from ego_server.content_config import content_settings
 
     a_token, _ = _create_user(studio_env, "admin1", "pw", "admin")

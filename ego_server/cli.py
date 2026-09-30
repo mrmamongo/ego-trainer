@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from ego_server import __version__
@@ -92,6 +92,13 @@ def main(argv=None) -> int:
 
     admin_sub.add_parser("list-users", help="List all users")
 
+    p_role = admin_sub.add_parser("set-role", help="Trusted bootstrap/recovery of a local role")
+    p_role.add_argument("--user-id", required=True)
+    p_role.add_argument("--role", required=True, choices=["student", "mentor", "admin"])
+    p_link = admin_sub.add_parser("link-forgejo", help="Explicitly link an existing local account")
+    p_link.add_argument("--user-id", required=True)
+    p_link.add_argument("--subject", required=True, help="Verified Forgejo UserInfo sub (user ID)")
+
     args = parser.parse_args(argv)
     if args.command is None:
         parser.print_help()
@@ -113,9 +120,51 @@ def main(argv=None) -> int:
             return _cmd_sync_tasks(args)
         if args.admin_command == "list-users":
             return _cmd_list_users(args)
+        if args.admin_command in {"set-role", "link-forgejo"}:
+            return _cmd_external_account(args)
 
     parser.print_help()
     return 0
+
+
+def _cmd_external_account(args) -> int:
+    """OS-level administrator bootstrap; never an unauthenticated HTTP operation."""
+    import sqlite3
+
+    from ego_server import config
+    from ego_server.db import get_connection
+    from ego_server.forgejo import _base_url
+
+    conn = get_connection()
+    try:
+        row = conn.execute("SELECT id,username FROM students WHERE id=?", (args.user_id,)).fetchone()
+        if row is None:
+            print("User not found", file=sys.stderr)
+            return 1
+        if args.admin_command == "set-role":
+            conn.execute("UPDATE students SET role=? WHERE id=?", (args.role, args.user_id))
+        else:
+            subject = args.subject
+            if not subject or len(subject) > 255 or not subject.isascii() or any(
+                ord(char) < 33 for char in subject
+            ):
+                print("Invalid Forgejo subject", file=sys.stderr)
+                return 1
+            issuer = _base_url(config.settings.forgejo_url)
+            conn.execute(
+                "INSERT INTO external_identities (issuer,subject,user_id,remote_username,created_at) "
+                "VALUES (?,?,?,?,?)",
+                (issuer, subject, row["id"], row["username"], _now_iso()),
+            )
+        conn.commit()
+        print(f"Updated account {row['id']} ({row['username']})")
+        return 0
+    except (sqlite3.IntegrityError, ValueError):
+        conn.rollback()
+        print("Identity is already linked or the Forgejo URL is invalid", file=sys.stderr)
+        return 1
+    finally:
+        conn.close()
 
 
 def _cmd_run(args) -> int:
@@ -328,7 +377,7 @@ def _load_auth():
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 if __name__ == "__main__":

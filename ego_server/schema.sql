@@ -74,6 +74,40 @@ CREATE TABLE IF NOT EXISTS students (
   last_login_at TEXT
 );
 
+-- Stable external identity; names/emails never implicitly link local accounts.
+CREATE TABLE IF NOT EXISTS external_identities (
+  issuer        TEXT NOT NULL,
+  subject       TEXT NOT NULL,
+  user_id       TEXT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+  remote_username TEXT NOT NULL,
+  created_at    TEXT NOT NULL,
+  PRIMARY KEY (issuer, subject),
+  UNIQUE (issuer, user_id)
+);
+
+-- Five-minute OAuth handoff. Provider tokens are never stored here.
+CREATE TABLE IF NOT EXISTS oauth_flows (
+  state_hash    TEXT PRIMARY KEY,
+  issuer        TEXT NOT NULL,
+  client_id     TEXT NOT NULL,
+  redirect_uri  TEXT NOT NULL,
+  verifier      TEXT NOT NULL,
+  challenge     TEXT NOT NULL,
+  browser_hash  TEXT,
+  callback_port INTEGER,
+  ticket_hash   TEXT,
+  phase         TEXT NOT NULL DEFAULT 'pending',
+  user_id       TEXT REFERENCES students(id) ON DELETE CASCADE,
+  expires_at    INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS mentor_grants (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  actor_id      TEXT NOT NULL,
+  user_id       TEXT NOT NULL,
+  created_at    TEXT NOT NULL
+);
+
 -- Прогресс (per-version — решено для конкретной версии задачи)
 CREATE TABLE IF NOT EXISTS progress (
   student_id   TEXT NOT NULL,

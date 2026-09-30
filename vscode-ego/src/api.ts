@@ -89,6 +89,9 @@ export interface AuthResponse {
     user_id: string;
 }
 
+export interface AuthProviders { forgejo: boolean; local: boolean }
+export interface ForgejoFlow { state: string; authorization_url: string; expires_in: number }
+
 export class EgoApi {
     private serverUrl: string;
     private token: string | undefined;
@@ -120,6 +123,7 @@ export class EgoApi {
             method,
             headers: this.headers(),
             body: body ? JSON.stringify(body) : undefined,
+            signal: path.startsWith('/auth/') ? AbortSignal.timeout(15000) : undefined,
         });
 
         if (!resp.ok) {
@@ -135,6 +139,28 @@ export class EgoApi {
     }
 
     // === Auth ===
+
+    async authProviders(): Promise<AuthProviders> {
+        try {
+            return await this.request<AuthProviders>('GET', '/auth/providers');
+        } catch (error) {
+            // Older ego-server releases only support username/password.
+            if (error instanceof EgoApiError && error.status === 404) return { forgejo: false, local: true };
+            throw error;
+        }
+    }
+
+    async startForgejo(code_challenge: string, callback_port: number): Promise<ForgejoFlow> {
+        const flow = await this.request<ForgejoFlow>('POST', '/auth/forgejo/start', { code_challenge, client: 'vscode', callback_port });
+        if (new URL(flow.authorization_url).origin !== new URL(this.serverUrl).origin) {
+            throw new Error('Login URL does not match the Ego server. Check EGO_PUBLIC_URL.');
+        }
+        return flow;
+    }
+
+    async exchangeForgejo(state: string, code_verifier: string, ticket: string): Promise<AuthResponse | { pending: true }> {
+        return this.request('POST', '/auth/forgejo/exchange', { state, code_verifier, ticket });
+    }
 
     async register(username: string, password: string, role: string = 'student'): Promise<AuthResponse> {
         return this.request<AuthResponse>('POST', '/auth/register', { username, password, role });

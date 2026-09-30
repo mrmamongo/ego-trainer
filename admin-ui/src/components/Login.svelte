@@ -1,12 +1,57 @@
 <script lang="ts">
-	import { login, type AuthResponse } from '../api';
+	import { onMount, onDestroy } from 'svelte';
+	import { login, authProviders, startForgejo, exchangeForgejo, type AuthResponse, type AuthProviders } from '../api';
 
 	let username = $state('');
 	let password = $state('');
 	let error = $state('');
 	let loading = $state(false);
+	let providers = $state<AuthProviders | null>(null);
+	let attempt = 0;
+	let popup: Window | null = null;
+	let channel: BroadcastChannel | null = null;
 
 	let { onLogin }: { onLogin: (data: AuthResponse) => void } = $props();
+	onMount(() => { void authProviders().then(value => providers = value).catch(() => error = 'Не удалось получить способы входа. Обнови страницу.'); });
+	onDestroy(() => { attempt++; popup?.close(); channel?.close(); });
+	function cancel() { attempt++; popup?.close(); channel?.close(); popup = null; loading = false; }
+	async function forgejoLogin() {
+		const current = ++attempt;
+		error = ''; loading = true;
+		popup = window.open('about:blank', '_blank');
+		if (!popup) { loading = false; error = 'Разреши открытие новой вкладки для входа через Forgejo.'; return; }
+		popup.opener = null;
+		try {
+			const bytes = crypto.getRandomValues(new Uint8Array(32));
+			const encode = (data: Uint8Array) => btoa(String.fromCharCode(...data)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+			const verifier = encode(bytes);
+			const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+			const flow = await startForgejo(encode(new Uint8Array(digest)));
+			if (current !== attempt) return;
+			if (new URL(flow.authorization_url).origin !== location.origin) throw new Error('Адрес входа не совпадает с адресом сервиса. Проверь EGO_PUBLIC_URL.');
+			let ticket = '';
+			let failed = false;
+			channel = new BroadcastChannel('ego-forgejo-' + flow.state);
+			channel.onmessage = (event: MessageEvent) => {
+				if (event.data?.error === 'login_failed') failed = true;
+				if (typeof event.data?.ticket === 'string' && /^[A-Za-z0-9_-]{43}$/.test(event.data.ticket)) ticket = event.data.ticket;
+			};
+			popup!.location.href = flow.authorization_url;
+			const deadline = Date.now() + flow.expires_in * 1000;
+			while (current === attempt && Date.now() < deadline) {
+				await new Promise(resolve => setTimeout(resolve, 1500));
+				if (current !== attempt) return;
+				if (failed) throw new Error('Вход не завершён или регистрация закрыта. Попробуй снова или обратись к наставнику.');
+				if (!ticket) continue;
+				const result = await exchangeForgejo(flow.state, verifier, ticket);
+				if (current !== attempt) return;
+				if (!('pending' in result)) { popup?.close(); popup = null; onLogin(result); return; }
+			}
+			if (current === attempt) throw new Error('Время входа истекло. Попробуй ещё раз.');
+		} catch (e) {
+			if (current === attempt) { error = (e as Error).message; popup?.close(); popup = null; }
+		} finally { if (current === attempt) { loading = false; channel?.close(); channel = null; } }
+	}
 
 	async function submit() {
 		if (!username.trim() || !password) {
@@ -29,14 +74,21 @@
 <div class="login">
 	<h1>Панель управления</h1>
 	<p class="sub">Вход для администратора или наставника</p>
+	{#if providers?.forgejo}
+		<button type="button" disabled={loading} onclick={forgejoLogin}>{loading ? 'Ожидаю вход в Forgejo…' : 'Войти через Forgejo'}</button>
+		{#if loading}<button type="button" onclick={cancel}>Отменить вход</button>{/if}
+	{/if}
+	{#if providers?.local}
 	<form onsubmit={(e) => { e.preventDefault(); submit(); }}>
 		<input type="text" bind:value={username} placeholder="Имя пользователя" autocomplete="username" />
 		<input type="password" bind:value={password} placeholder="Пароль" autocomplete="current-password" />
 		<button type="submit" disabled={loading}>
 			{loading ? 'Вхожу…' : 'Войти'}
 		</button>
-		{#if error}<div class="error">{error}</div>{/if}
 	</form>
+	{/if}
+	{#if providers && !providers.forgejo && !providers.local}<p>Вход пока не настроен. Обратись к администратору.</p>{/if}
+	{#if error}<div class="error" role="alert">{error}</div>{/if}
 </div>
 
 <style>

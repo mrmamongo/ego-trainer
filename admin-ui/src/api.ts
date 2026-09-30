@@ -150,6 +150,21 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 // === Auth ===
 
+export interface AuthProviders { forgejo: boolean; local: boolean }
+export interface ForgejoFlow { state: string; authorization_url: string; expires_in: number }
+
+export async function authProviders(): Promise<AuthProviders> {
+	return request<AuthProviders>('GET', '/auth/providers');
+}
+
+export async function startForgejo(code_challenge: string): Promise<ForgejoFlow> {
+	return request<ForgejoFlow>('POST', '/auth/forgejo/start', { code_challenge });
+}
+
+export async function exchangeForgejo(state: string, code_verifier: string, ticket: string): Promise<AuthResponse | { pending: true }> {
+	return request('POST', '/auth/forgejo/exchange', { state, code_verifier, ticket });
+}
+
 export async function me(): Promise<MeResponse> {
 	return request<MeResponse>('GET', '/auth/me');
 }

@@ -4,26 +4,33 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse, JSONResponse
-from fastapi.exceptions import RequestValidationError
-from fastapi.encoders import jsonable_encoder
 from fastapi.staticfiles import StaticFiles
 
 from ego_server import __version__
-from ego_server.config import settings
+from ego_server.config import settings, validate_runtime_settings
 from ego_server.db import init_db
-from ego_server.routers import auth, check, progress, tasks
 from ego_server.routers import admin as admin_router
-from ego_server.routers import admin_assistant, admin_settings
-
+from ego_server.routers import (
+    admin_assistant,
+    admin_settings,
+    auth,
+    check,
+    forgejo_auth,
+    progress,
+    tasks,
+)
 
 _STATIC_DIR = Path(__file__).parent / "static"
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    validate_runtime_settings(settings)
     init_db()
     yield
 
@@ -45,6 +52,7 @@ app.add_middleware(
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
 
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
+app.include_router(forgejo_auth.router, prefix="/auth", tags=["auth"])
 app.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
 app.include_router(progress.router, prefix="/progress", tags=["progress"])
 app.include_router(check.router, prefix="/check", tags=["check"])

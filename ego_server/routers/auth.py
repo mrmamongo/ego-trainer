@@ -5,15 +5,15 @@ Per ADR-0001 D8: JWT + roles (student/mentor/admin).
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, status
 
+from ego_server import config
 from ego_server.auth import create_token, generate_user_id, hash_password, verify_password
 from ego_server.deps import DbDep, TokenDep
 from ego_server.models import LoginRequest, MeResponse, RegisterRequest, TokenResponse
 from ego_server.service_settings import load_settings
-
 
 router = APIRouter()
 
@@ -21,11 +21,13 @@ router = APIRouter()
 @router.post("/login", response_model=TokenResponse)
 async def login(body: LoginRequest, db: DbDep) -> TokenResponse:
     """Login with username/password, receive a JWT."""
+    if not config.settings.local_auth_enabled:
+        raise HTTPException(status_code=403, detail="Use Forgejo to sign in")
     row = db.execute(
         "SELECT id, username, role, password_hash FROM students WHERE username = ?",
         (body.username,),
     ).fetchone()
-    if not row or not verify_password(body.password, row["password_hash"]):
+    if not row or not row["password_hash"] or not verify_password(body.password, row["password_hash"]):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid username or password",
@@ -55,8 +57,10 @@ async def register(body: RegisterRequest, db: DbDep) -> TokenResponse:
     accounts must be provisioned through a privileged admin flow, not via the
     public API. This prevents privilege escalation through self-registration.
     """
-    config = load_settings(db)
-    if not config.registration_enabled:
+    if not config.settings.local_auth_enabled:
+        raise HTTPException(status_code=403, detail="Use Forgejo to sign in")
+    service_config = load_settings(db)
+    if not service_config.registration_enabled:
         raise HTTPException(
             status_code=403, detail="Registration is disabled; contact an administrator"
         )
@@ -79,7 +83,7 @@ async def register(body: RegisterRequest, db: DbDep) -> TokenResponse:
         user_id=user_id,
         username=body.username,
         role=role,
-        expires_in_seconds=config.session_minutes * 60,
+        expires_in_seconds=service_config.session_minutes * 60,
     )
     return TokenResponse(
         access_token=token,
@@ -100,4 +104,4 @@ async def me(token: TokenDep) -> MeResponse:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()

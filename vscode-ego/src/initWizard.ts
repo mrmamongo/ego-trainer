@@ -1,7 +1,8 @@
 /** Ego: Init wizard — server + offline modes (8bv.9.2 / 8bv.9.3). */
 
 import * as vscode from 'vscode';
-import { EgoApi, TaskMeta } from './api';
+import { EgoApi, TaskMeta, type AuthResponse } from './api';
+import { forgejoLogin } from './forgejoLogin';
 import {
     createEgoSkeleton,
     generateStudentStubs,
@@ -57,27 +58,40 @@ export async function runServerInit(
         .getConfiguration('ego')
         .update('serverUrl', url, vscode.ConfigurationTarget.Global);
 
-    const authMode = await vscode.window.showQuickPick(
-        [
-            { label: 'Existing user', description: 'Login', mode: 'login' as const },
-            { label: 'New user', description: 'Register', mode: 'register' as const },
-        ],
-        { placeHolder: 'Login or register?', ignoreFocusOut: true }
-    );
-    if (!authMode) return false;
+    let forgejoAuth: AuthResponse | null | undefined;
+    try {
+        forgejoAuth = await forgejoLogin(probe);
+    } catch (error) {
+        vscode.window.showErrorMessage(`Ego: Login failed — ${(error as Error).message}`);
+        return false;
+    }
+    if (forgejoAuth === undefined) return false;
+    let authMode: { mode: 'login' | 'register' } | undefined;
+    let username = '';
+    let password = '';
+    if (forgejoAuth === null) {
+        authMode = await vscode.window.showQuickPick(
+            [
+                { label: 'Existing user', description: 'Login', mode: 'login' as const },
+                { label: 'New user', description: 'Register', mode: 'register' as const },
+            ],
+            { placeHolder: 'Login or register?', ignoreFocusOut: true }
+        );
+        if (!authMode) return false;
 
-    const username = await vscode.window.showInputBox({
-        prompt: 'Username',
-        ignoreFocusOut: true,
-    });
-    if (!username) return false;
+        username = await vscode.window.showInputBox({
+            prompt: 'Username',
+            ignoreFocusOut: true,
+        }) ?? '';
+        if (!username) return false;
 
-    const password = await vscode.window.showInputBox({
-        prompt: 'Password',
-        password: true,
-        ignoreFocusOut: true,
-    });
-    if (!password) return false;
+        password = await vscode.window.showInputBox({
+            prompt: 'Password',
+            password: true,
+            ignoreFocusOut: true,
+        }) ?? '';
+        if (!password) return false;
+    }
 
     // Self-registration always creates a student; the server ignores any
     // client-supplied role. No role picker is offered.
@@ -91,15 +105,15 @@ export async function runServerInit(
         },
         async (progress) => {
             progress.report({ message: 'Authenticating…' });
-            let auth;
+            let auth = forgejoAuth;
             try {
-                if (authMode.mode === 'register') {
+                if (!auth && authMode?.mode === 'register') {
                     auth = await probe.register(username, password, role);
-                } else {
+                } else if (!auth) {
                     auth = await probe.login(username, password);
                 }
             } catch (e) {
-                if (authMode.mode === 'register') {
+                if (authMode?.mode === 'register') {
                     // Maybe already exists — try login.
                     try {
                         auth = await probe.login(username, password);

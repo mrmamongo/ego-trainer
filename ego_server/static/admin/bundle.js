@@ -6296,6 +6296,15 @@ ${component_stack}
     const data = await resp.json().catch(() => ({}));
     return data;
   }
+  async function authProviders() {
+    return request("GET", "/auth/providers");
+  }
+  async function startForgejo(code_challenge) {
+    return request("POST", "/auth/forgejo/start", { code_challenge });
+  }
+  async function exchangeForgejo(state2, code_verifier, ticket) {
+    return request("POST", "/auth/forgejo/exchange", { state: state2, code_verifier, ticket });
+  }
   async function me() {
     return request("GET", "/auth/me");
   }
@@ -6408,8 +6417,12 @@ ${component_stack}
   }
 
   // src/components/Login.svelte
-  var root = from_html(`<div class="error svelte-h34f85"> </div>`);
-  var root_1 = from_html(`<div class="login svelte-h34f85"><h1 class="svelte-h34f85">\u041F\u0430\u043D\u0435\u043B\u044C \u0443\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u0438\u044F</h1> <p class="sub svelte-h34f85">\u0412\u0445\u043E\u0434 \u0434\u043B\u044F \u0430\u0434\u043C\u0438\u043D\u0438\u0441\u0442\u0440\u0430\u0442\u043E\u0440\u0430 \u0438\u043B\u0438 \u043D\u0430\u0441\u0442\u0430\u0432\u043D\u0438\u043A\u0430</p> <form><input type="text" placeholder="\u0418\u043C\u044F \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F" autocomplete="username" class="svelte-h34f85"/> <input type="password" placeholder="\u041F\u0430\u0440\u043E\u043B\u044C" autocomplete="current-password" class="svelte-h34f85"/> <button type="submit" class="svelte-h34f85"> </button> <!></form></div>`);
+  var root = from_html(`<button type="button" class="svelte-h34f85">\u041E\u0442\u043C\u0435\u043D\u0438\u0442\u044C \u0432\u0445\u043E\u0434</button>`);
+  var root_1 = from_html(`<button type="button" class="svelte-h34f85"> </button> <!>`, 1);
+  var root_2 = from_html(`<form><input type="text" placeholder="\u0418\u043C\u044F \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F" autocomplete="username" class="svelte-h34f85"/> <input type="password" placeholder="\u041F\u0430\u0440\u043E\u043B\u044C" autocomplete="current-password" class="svelte-h34f85"/> <button type="submit" class="svelte-h34f85"> </button></form>`);
+  var root_3 = from_html(`<p>\u0412\u0445\u043E\u0434 \u043F\u043E\u043A\u0430 \u043D\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0435\u043D. \u041E\u0431\u0440\u0430\u0442\u0438\u0441\u044C \u043A \u0430\u0434\u043C\u0438\u043D\u0438\u0441\u0442\u0440\u0430\u0442\u043E\u0440\u0443.</p>`);
+  var root_4 = from_html(`<div class="error svelte-h34f85" role="alert"> </div>`);
+  var root_5 = from_html(`<div class="login svelte-h34f85"><h1 class="svelte-h34f85">\u041F\u0430\u043D\u0435\u043B\u044C \u0443\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u0438\u044F</h1> <p class="sub svelte-h34f85">\u0412\u0445\u043E\u0434 \u0434\u043B\u044F \u0430\u0434\u043C\u0438\u043D\u0438\u0441\u0442\u0440\u0430\u0442\u043E\u0440\u0430 \u0438\u043B\u0438 \u043D\u0430\u0441\u0442\u0430\u0432\u043D\u0438\u043A\u0430</p> <!> <!> <!> <!></div>`);
   var $$css = {
     hash: "svelte-h34f85",
     code: ".login.svelte-h34f85 {max-width:320px;margin:80px auto;}h1.svelte-h34f85 {font-size:1.2rem;font-weight:700;margin-bottom:4px;}.sub.svelte-h34f85 {color:#858585;font-size:0.8rem;margin-bottom:24px;}input.svelte-h34f85 {width:100%;padding:8px 12px;margin-bottom:12px;background:#2d2d2d;border:1px solid #3c3c3c;border-radius:4px;color:#d4d4d4;font-family:inherit;font-size:14px;}input.svelte-h34f85:focus {outline:none;border-color:#007acc;}button.svelte-h34f85 {width:100%;padding:8px;background:#007acc;color:#fff;border:none;border-radius:4px;font-family:inherit;font-size:14px;cursor:pointer;}button.svelte-h34f85:hover:not(:disabled) {opacity:0.9;}button.svelte-h34f85:disabled {opacity:0.5;cursor:not-allowed;}.error.svelte-h34f85 {color:#f87171;font-size:0.8rem;margin-top:8px;}"
@@ -6421,6 +6434,82 @@ ${component_stack}
     let password = state("");
     let error = state("");
     let loading = state(false);
+    let providers = state(null);
+    let attempt = 0;
+    let popup = null;
+    let channel = null;
+    onMount(() => {
+      void authProviders().then((value) => set(providers, value, true)).catch(() => set(error, "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u043E\u043B\u0443\u0447\u0438\u0442\u044C \u0441\u043F\u043E\u0441\u043E\u0431\u044B \u0432\u0445\u043E\u0434\u0430. \u041E\u0431\u043D\u043E\u0432\u0438 \u0441\u0442\u0440\u0430\u043D\u0438\u0446\u0443."));
+    });
+    onDestroy(() => {
+      attempt++;
+      popup?.close();
+      channel?.close();
+    });
+    function cancel() {
+      attempt++;
+      popup?.close();
+      channel?.close();
+      popup = null;
+      set(loading, false);
+    }
+    async function forgejoLogin() {
+      const current = ++attempt;
+      set(error, "");
+      set(loading, true);
+      popup = window.open("about:blank", "_blank");
+      if (!popup) {
+        set(loading, false);
+        set(error, "\u0420\u0430\u0437\u0440\u0435\u0448\u0438 \u043E\u0442\u043A\u0440\u044B\u0442\u0438\u0435 \u043D\u043E\u0432\u043E\u0439 \u0432\u043A\u043B\u0430\u0434\u043A\u0438 \u0434\u043B\u044F \u0432\u0445\u043E\u0434\u0430 \u0447\u0435\u0440\u0435\u0437 Forgejo.");
+        return;
+      }
+      popup.opener = null;
+      try {
+        const bytes = crypto.getRandomValues(new Uint8Array(32));
+        const encode = (data) => btoa(String.fromCharCode(...data)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+        const verifier = encode(bytes);
+        const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+        const flow = await startForgejo(encode(new Uint8Array(digest)));
+        if (current !== attempt) return;
+        if (new URL(flow.authorization_url).origin !== location.origin) throw new Error("\u0410\u0434\u0440\u0435\u0441 \u0432\u0445\u043E\u0434\u0430 \u043D\u0435 \u0441\u043E\u0432\u043F\u0430\u0434\u0430\u0435\u0442 \u0441 \u0430\u0434\u0440\u0435\u0441\u043E\u043C \u0441\u0435\u0440\u0432\u0438\u0441\u0430. \u041F\u0440\u043E\u0432\u0435\u0440\u044C EGO_PUBLIC_URL.");
+        let ticket = "";
+        let failed = false;
+        channel = new BroadcastChannel("ego-forgejo-" + flow.state);
+        channel.onmessage = (event2) => {
+          if (event2.data?.error === "login_failed") failed = true;
+          if (typeof event2.data?.ticket === "string" && /^[A-Za-z0-9_-]{43}$/.test(event2.data.ticket)) ticket = event2.data.ticket;
+        };
+        popup.location.href = flow.authorization_url;
+        const deadline = Date.now() + flow.expires_in * 1e3;
+        while (current === attempt && Date.now() < deadline) {
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          if (current !== attempt) return;
+          if (failed) throw new Error("\u0412\u0445\u043E\u0434 \u043D\u0435 \u0437\u0430\u0432\u0435\u0440\u0448\u0451\u043D \u0438\u043B\u0438 \u0440\u0435\u0433\u0438\u0441\u0442\u0440\u0430\u0446\u0438\u044F \u0437\u0430\u043A\u0440\u044B\u0442\u0430. \u041F\u043E\u043F\u0440\u043E\u0431\u0443\u0439 \u0441\u043D\u043E\u0432\u0430 \u0438\u043B\u0438 \u043E\u0431\u0440\u0430\u0442\u0438\u0441\u044C \u043A \u043D\u0430\u0441\u0442\u0430\u0432\u043D\u0438\u043A\u0443.");
+          if (!ticket) continue;
+          const result = await exchangeForgejo(flow.state, verifier, ticket);
+          if (current !== attempt) return;
+          if (!("pending" in result)) {
+            popup?.close();
+            popup = null;
+            $$props.onLogin(result);
+            return;
+          }
+        }
+        if (current === attempt) throw new Error("\u0412\u0440\u0435\u043C\u044F \u0432\u0445\u043E\u0434\u0430 \u0438\u0441\u0442\u0435\u043A\u043B\u043E. \u041F\u043E\u043F\u0440\u043E\u0431\u0443\u0439 \u0435\u0449\u0451 \u0440\u0430\u0437.");
+      } catch (e) {
+        if (current === attempt) {
+          set(error, e.message, true);
+          popup?.close();
+          popup = null;
+        }
+      } finally {
+        if (current === attempt) {
+          set(loading, false);
+          channel?.close();
+          channel = null;
+        }
+      }
+    }
     async function submit() {
       if (!get2(username).trim() || !get2(password)) {
         set(error, "\u0412\u0432\u0435\u0434\u0438 \u0438\u043C\u044F \u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044F \u0438 \u043F\u0430\u0440\u043E\u043B\u044C");
@@ -6437,47 +6526,95 @@ ${component_stack}
         set(loading, false);
       }
     }
-    var div = root_1();
-    var form = sibling(child(div), 4);
-    var input = child(form);
-    remove_input_defaults(input);
-    var input_1 = sibling(input, 2);
-    remove_input_defaults(input_1);
-    var button = sibling(input_1, 2);
-    var text2 = only_child(button, true);
-    var node = sibling(button, 2);
+    var div = root_5();
+    var node = sibling(child(div), 4);
     {
-      var consequent = ($$anchor2) => {
-        var div_1 = root();
-        var text_1 = only_child(div_1, true);
-        template_effect(() => set_text(text_1, get2(error)));
-        append($$anchor2, div_1);
+      var consequent_1 = ($$anchor2) => {
+        var fragment = root_1();
+        var button = first_child(fragment);
+        var text2 = only_child(button, true);
+        var node_1 = sibling(button, 2);
+        {
+          var consequent = ($$anchor3) => {
+            var button_1 = root();
+            delegated("click", button_1, cancel);
+            append($$anchor3, button_1);
+          };
+          if_block(node_1, ($$render) => {
+            if (get2(loading)) $$render(consequent);
+          });
+        }
+        template_effect(() => {
+          button.disabled = get2(loading);
+          set_text(text2, get2(loading) ? "\u041E\u0436\u0438\u0434\u0430\u044E \u0432\u0445\u043E\u0434 \u0432 Forgejo\u2026" : "\u0412\u043E\u0439\u0442\u0438 \u0447\u0435\u0440\u0435\u0437 Forgejo");
+        });
+        delegated("click", button, forgejoLogin);
+        append($$anchor2, fragment);
       };
       if_block(node, ($$render) => {
-        if (get2(error)) $$render(consequent);
+        if (get2(providers)?.forgejo) $$render(consequent_1);
       });
     }
-    reset(form);
+    var node_2 = sibling(node, 2);
+    {
+      var consequent_2 = ($$anchor2) => {
+        var form = root_2();
+        var input = child(form);
+        remove_input_defaults(input);
+        var input_1 = sibling(input, 2);
+        remove_input_defaults(input_1);
+        var button_2 = sibling(input_1, 2);
+        var text_1 = only_child(button_2, true);
+        reset(form);
+        template_effect(() => {
+          button_2.disabled = get2(loading);
+          set_text(text_1, get2(loading) ? "\u0412\u0445\u043E\u0436\u0443\u2026" : "\u0412\u043E\u0439\u0442\u0438");
+        });
+        event("submit", form, (e) => {
+          e.preventDefault();
+          submit();
+        });
+        bind_value(input, () => get2(username), ($$value) => set(username, $$value));
+        bind_value(input_1, () => get2(password), ($$value) => set(password, $$value));
+        append($$anchor2, form);
+      };
+      if_block(node_2, ($$render) => {
+        if (get2(providers)?.local) $$render(consequent_2);
+      });
+    }
+    var node_3 = sibling(node_2, 2);
+    {
+      var consequent_3 = ($$anchor2) => {
+        var p = root_3();
+        append($$anchor2, p);
+      };
+      if_block(node_3, ($$render) => {
+        if (get2(providers) && !get2(providers).forgejo && !get2(providers).local) $$render(consequent_3);
+      });
+    }
+    var node_4 = sibling(node_3, 2);
+    {
+      var consequent_4 = ($$anchor2) => {
+        var div_1 = root_4();
+        var text_2 = only_child(div_1, true);
+        template_effect(() => set_text(text_2, get2(error)));
+        append($$anchor2, div_1);
+      };
+      if_block(node_4, ($$render) => {
+        if (get2(error)) $$render(consequent_4);
+      });
+    }
     reset(div);
-    template_effect(() => {
-      button.disabled = get2(loading);
-      set_text(text2, get2(loading) ? "\u0412\u0445\u043E\u0436\u0443\u2026" : "\u0412\u043E\u0439\u0442\u0438");
-    });
-    event("submit", form, (e) => {
-      e.preventDefault();
-      submit();
-    });
-    bind_value(input, () => get2(username), ($$value) => set(username, $$value));
-    bind_value(input_1, () => get2(password), ($$value) => set(password, $$value));
     append($$anchor, div);
     pop();
   }
+  delegate(["click"]);
 
   // src/components/Overview.svelte
   var root2 = from_html(`<div class="loading svelte-op2jfd">Loading overview\u2026</div>`);
   var root_12 = from_html(`<div class="error svelte-op2jfd"> </div>`);
-  var root_2 = from_html(`<div class="grid svelte-op2jfd"><div class="card svelte-op2jfd"><span class="card-label svelte-op2jfd">Server</span> <span> </span></div> <div class="card svelte-op2jfd"><span class="card-label svelte-op2jfd">Projects</span> <span class="card-value svelte-op2jfd"> </span></div> <div class="card svelte-op2jfd"><span class="card-label svelte-op2jfd">Folders</span> <span class="card-value svelte-op2jfd"> </span></div> <div class="card svelte-op2jfd"><span class="card-label svelte-op2jfd">Tasks</span> <span class="card-value svelte-op2jfd"> </span></div> <div class="card svelte-op2jfd"><span class="card-label svelte-op2jfd">Students</span> <span class="card-value svelte-op2jfd"> </span></div></div> <div class="sync-block svelte-op2jfd"><h3 class="svelte-op2jfd">Latest sync</h3> <dl class="svelte-op2jfd"><div class="svelte-op2jfd"><dt class="svelte-op2jfd">Status</dt><dd class="svelte-op2jfd"><span> </span></dd></div> <div class="svelte-op2jfd"><dt class="svelte-op2jfd">Source</dt><dd class="svelte-op2jfd"> </dd></div> <div class="svelte-op2jfd"><dt class="svelte-op2jfd">Repo</dt><dd class="svelte-op2jfd"> </dd></div> <div class="svelte-op2jfd"><dt class="svelte-op2jfd">Git SHA</dt><dd class="svelte-op2jfd"> </dd></div> <div class="svelte-op2jfd"><dt class="svelte-op2jfd">Started</dt><dd class="svelte-op2jfd"> </dd></div> <div class="svelte-op2jfd"><dt class="svelte-op2jfd">Finished</dt><dd class="svelte-op2jfd"> </dd></div> <div class="svelte-op2jfd"><dt class="svelte-op2jfd">Added</dt><dd class="svelte-op2jfd"> </dd></div> <div class="svelte-op2jfd"><dt class="svelte-op2jfd">Updated</dt><dd class="svelte-op2jfd"> </dd></div> <div class="svelte-op2jfd"><dt class="svelte-op2jfd">Skipped</dt><dd class="svelte-op2jfd"> </dd></div> <div class="svelte-op2jfd"><dt class="svelte-op2jfd">Errors</dt><dd class="svelte-op2jfd"> </dd></div> <div class="full svelte-op2jfd"><dt class="svelte-op2jfd">Error summary</dt><dd class="svelte-op2jfd"> </dd></div></dl></div>`, 1);
-  var root_3 = from_html(`<div class="section"><div class="section-header svelte-op2jfd"><h2 class="svelte-op2jfd">Overview</h2> <button class="btn svelte-op2jfd" type="button" aria-label="Refresh overview"> </button></div> <!></div>`);
+  var root_22 = from_html(`<div class="grid svelte-op2jfd"><div class="card svelte-op2jfd"><span class="card-label svelte-op2jfd">Server</span> <span> </span></div> <div class="card svelte-op2jfd"><span class="card-label svelte-op2jfd">Projects</span> <span class="card-value svelte-op2jfd"> </span></div> <div class="card svelte-op2jfd"><span class="card-label svelte-op2jfd">Folders</span> <span class="card-value svelte-op2jfd"> </span></div> <div class="card svelte-op2jfd"><span class="card-label svelte-op2jfd">Tasks</span> <span class="card-value svelte-op2jfd"> </span></div> <div class="card svelte-op2jfd"><span class="card-label svelte-op2jfd">Students</span> <span class="card-value svelte-op2jfd"> </span></div></div> <div class="sync-block svelte-op2jfd"><h3 class="svelte-op2jfd">Latest sync</h3> <dl class="svelte-op2jfd"><div class="svelte-op2jfd"><dt class="svelte-op2jfd">Status</dt><dd class="svelte-op2jfd"><span> </span></dd></div> <div class="svelte-op2jfd"><dt class="svelte-op2jfd">Source</dt><dd class="svelte-op2jfd"> </dd></div> <div class="svelte-op2jfd"><dt class="svelte-op2jfd">Repo</dt><dd class="svelte-op2jfd"> </dd></div> <div class="svelte-op2jfd"><dt class="svelte-op2jfd">Git SHA</dt><dd class="svelte-op2jfd"> </dd></div> <div class="svelte-op2jfd"><dt class="svelte-op2jfd">Started</dt><dd class="svelte-op2jfd"> </dd></div> <div class="svelte-op2jfd"><dt class="svelte-op2jfd">Finished</dt><dd class="svelte-op2jfd"> </dd></div> <div class="svelte-op2jfd"><dt class="svelte-op2jfd">Added</dt><dd class="svelte-op2jfd"> </dd></div> <div class="svelte-op2jfd"><dt class="svelte-op2jfd">Updated</dt><dd class="svelte-op2jfd"> </dd></div> <div class="svelte-op2jfd"><dt class="svelte-op2jfd">Skipped</dt><dd class="svelte-op2jfd"> </dd></div> <div class="svelte-op2jfd"><dt class="svelte-op2jfd">Errors</dt><dd class="svelte-op2jfd"> </dd></div> <div class="full svelte-op2jfd"><dt class="svelte-op2jfd">Error summary</dt><dd class="svelte-op2jfd"> </dd></div></dl></div>`, 1);
+  var root_32 = from_html(`<div class="section"><div class="section-header svelte-op2jfd"><h2 class="svelte-op2jfd">Overview</h2> <button class="btn svelte-op2jfd" type="button" aria-label="Refresh overview"> </button></div> <!></div>`);
   var $$css2 = {
     hash: "svelte-op2jfd",
     code: ".section-header.svelte-op2jfd {display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}h2.svelte-op2jfd {font-size:0.9rem;font-weight:600;}h3.svelte-op2jfd {font-size:0.8rem;font-weight:600;margin:20px 0 10px;color:#858585;text-transform:uppercase;letter-spacing:0.05em;}.btn.svelte-op2jfd {padding:4px 12px;background:transparent;border:1px solid #3c3c3c;border-radius:4px;color:#d4d4d4;font-family:inherit;font-size:0.8rem;cursor:pointer;}.btn.svelte-op2jfd:hover:not(:disabled) {border-color:#007acc;}.btn.svelte-op2jfd:disabled {opacity:0.5;cursor:not-allowed;}.grid.svelte-op2jfd {display:grid;grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));gap:12px;}.card.svelte-op2jfd {display:flex;flex-direction:column;gap:4px;padding:14px 16px;background:#2d2d2d;border:1px solid #3c3c3c;border-radius:6px;}.card-label.svelte-op2jfd {font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:#858585;}.card-value.svelte-op2jfd {font-size:1.4rem;font-weight:700;font-variant-numeric:tabular-nums;}.status-ok.svelte-op2jfd {color:#22c55e;}.status-err.svelte-op2jfd {color:#f87171;}.sync-block.svelte-op2jfd {margin-top:8px;}dl.svelte-op2jfd {display:grid;grid-template-columns:max-content 1fr;gap:6px 16px;margin:0;}dl.svelte-op2jfd div:where(.svelte-op2jfd) {display:contents;}dl.svelte-op2jfd .full:where(.svelte-op2jfd) {grid-column:1 / -1;}dt.svelte-op2jfd {color:#858585;font-size:0.75rem;}dd.svelte-op2jfd {margin:0;font-size:0.85rem;word-break:break-word;}.sync-pill.svelte-op2jfd {display:inline-block;padding:1px 8px;border-radius:10px;font-size:0.7rem;border:1px solid #3c3c3c;text-transform:capitalize;}.sync-pill.ok.svelte-op2jfd {color:#22c55e;border-color:#22c55e;}.sync-pill.running.svelte-op2jfd {color:#eab308;border-color:#eab308;}.sync-pill.err.svelte-op2jfd {color:#f87171;border-color:#f87171;}.sync-pill.none.svelte-op2jfd {color:#858585;}.loading.svelte-op2jfd, .error.svelte-op2jfd {padding:24px;text-align:center;color:#858585;}.error.svelte-op2jfd {color:#f87171;}\r\n\r\n	@media (max-width: 600px) {dl.svelte-op2jfd {grid-template-columns:1fr;}\r\n	}"
@@ -6532,7 +6669,7 @@ ${component_stack}
     onMount(() => {
       load();
     });
-    var div = root_3();
+    var div = root_32();
     var div_1 = child(div);
     var button = sibling(child(div_1), 2);
     var text2 = only_child(button, true);
@@ -6550,7 +6687,7 @@ ${component_stack}
         append($$anchor2, div_3);
       };
       var consequent_2 = ($$anchor2) => {
-        var fragment = root_2();
+        var fragment = root_22();
         var div_4 = first_child(fragment);
         var div_5 = child(div_4);
         var span = sibling(child(div_5), 2);
@@ -6674,22 +6811,24 @@ ${component_stack}
   // src/components/StudentList.svelte
   var root3 = from_html(`<button class="btn svelte-18vtxcr" type="button"> </button>`);
   var root_13 = from_html(`<p class="error svelte-18vtxcr" role="alert"> </p>`);
-  var root_22 = from_html(`<form class="create-form svelte-18vtxcr"><input name="username" placeholder="Username" required="" class="svelte-18vtxcr"/> <input name="password" type="password" placeholder="Password" required="" class="svelte-18vtxcr"/> <select name="role" class="svelte-18vtxcr"><option>student</option><option>mentor</option><option>admin</option></select> <button type="submit" class="btn primary svelte-18vtxcr">Create</button></form>`);
-  var root_32 = from_html(`<div class="loading svelte-18vtxcr">Loading students\u2026</div>`);
-  var root_4 = from_html(`<div class="error svelte-18vtxcr" role="alert"> </div> <button class="btn svelte-18vtxcr" type="button">Retry</button>`, 1);
-  var root_5 = from_html(`<div class="empty svelte-18vtxcr">No students yet</div>`);
+  var root_23 = from_html(`<form class="create-form svelte-18vtxcr"><input name="username" placeholder="Username" required="" class="svelte-18vtxcr"/> <input name="password" type="password" placeholder="Password" required="" class="svelte-18vtxcr"/> <select name="role" class="svelte-18vtxcr"><option>student</option><option>admin</option></select> <button type="submit" class="btn primary svelte-18vtxcr">Create</button></form>`);
+  var root_33 = from_html(`<div class="loading svelte-18vtxcr">Loading students\u2026</div>`);
+  var root_42 = from_html(`<div class="error svelte-18vtxcr" role="alert"> </div> <button class="btn svelte-18vtxcr" type="button">Retry</button>`, 1);
+  var root_52 = from_html(`<div class="empty svelte-18vtxcr">No students yet</div>`);
   var root_6 = from_html(`<div class="empty svelte-18vtxcr"> </div>`);
   var root_7 = from_html(`<th class="svelte-18vtxcr"></th>`);
-  var root_8 = from_html(`<select class="role-select svelte-18vtxcr"><option>student</option><option>mentor</option><option>admin</option></select>`);
-  var root_9 = from_html(`<td class="actions svelte-18vtxcr"><button title="Reset password" class="svelte-18vtxcr">pw</button> <button title="Delete" class="danger svelte-18vtxcr">\xD7</button></td>`);
-  var root_10 = from_html(`<tr class="student-row svelte-18vtxcr"><td class="svelte-18vtxcr"> </td><td class="svelte-18vtxcr"><!></td><td class="num svelte-18vtxcr"> </td><td class="num svelte-18vtxcr" style="color:#22c55e"> </td><td class="num svelte-18vtxcr" style="color:#eab308"> </td><td class="num svelte-18vtxcr" style="color:#f87171"> </td><td class="svelte-18vtxcr"> </td><!></tr>`);
-  var root_11 = from_html(`<div class="pagination svelte-18vtxcr" aria-label="Student list pages"><button class="btn svelte-18vtxcr" type="button">Previous</button> <span> </span> <button class="btn svelte-18vtxcr" type="button">Next</button></div>`);
-  var root_122 = from_html(`<table class="svelte-18vtxcr"><thead><tr><th class="svelte-18vtxcr">Student</th><th class="svelte-18vtxcr">Role</th><th class="num svelte-18vtxcr">Total</th><th class="num svelte-18vtxcr">Passed</th><th class="num svelte-18vtxcr">Partial</th><th class="num svelte-18vtxcr">Failed</th><th class="svelte-18vtxcr">Last activity</th><!></tr></thead><tbody></tbody></table> <!>`, 1);
-  var root_132 = from_html(`<div class="list-toolbar svelte-18vtxcr"><label for="student-search">Search students</label> <input id="student-search" type="search" placeholder="Username or ID" class="svelte-18vtxcr"/> <span> </span></div> <!>`, 1);
-  var root_14 = from_html(`<div class="section"><div class="section-header svelte-18vtxcr"><h2 class="svelte-18vtxcr">Students</h2> <div class="header-actions svelte-18vtxcr"><button class="btn svelte-18vtxcr" type="button"> </button> <!></div></div> <!> <!> <!></div>`);
+  var root_8 = from_html(`<select class="role-select svelte-18vtxcr"><option>student</option><option>admin</option></select>`);
+  var root_9 = from_html(`<button type="button">\u041D\u0430\u0437\u043D\u0430\u0447\u0438\u0442\u044C \u043D\u0430\u0441\u0442\u0430\u0432\u043D\u0438\u043A\u043E\u043C</button>`);
+  var root_10 = from_html(`<button title="Reset password" class="svelte-18vtxcr">pw</button>`);
+  var root_11 = from_html(`<td class="actions svelte-18vtxcr"><!> <button title="Delete" class="danger svelte-18vtxcr">\xD7</button></td>`);
+  var root_122 = from_html(`<tr class="student-row svelte-18vtxcr"><td class="svelte-18vtxcr"> </td><td class="svelte-18vtxcr"><!></td><td class="num svelte-18vtxcr"> </td><td class="num svelte-18vtxcr" style="color:#22c55e"> </td><td class="num svelte-18vtxcr" style="color:#eab308"> </td><td class="num svelte-18vtxcr" style="color:#f87171"> </td><td class="svelte-18vtxcr"> </td><!></tr>`);
+  var root_132 = from_html(`<div class="pagination svelte-18vtxcr" aria-label="Student list pages"><button class="btn svelte-18vtxcr" type="button">Previous</button> <span> </span> <button class="btn svelte-18vtxcr" type="button">Next</button></div>`);
+  var root_14 = from_html(`<table class="svelte-18vtxcr"><thead><tr><th class="svelte-18vtxcr">Student</th><th class="svelte-18vtxcr">Role</th><th class="num svelte-18vtxcr">Total</th><th class="num svelte-18vtxcr">Passed</th><th class="num svelte-18vtxcr">Partial</th><th class="num svelte-18vtxcr">Failed</th><th class="svelte-18vtxcr">Last activity</th><!></tr></thead><tbody></tbody></table> <!>`, 1);
+  var root_15 = from_html(`<div class="list-toolbar svelte-18vtxcr"><label for="student-search">Search students</label> <input id="student-search" type="search" placeholder="Username or ID" class="svelte-18vtxcr"/> <span> </span></div> <!>`, 1);
+  var root_16 = from_html(`<div class="section"><div class="section-header svelte-18vtxcr"><h2 class="svelte-18vtxcr">Students</h2> <div class="header-actions svelte-18vtxcr"><button class="btn svelte-18vtxcr" type="button"> </button> <!></div></div> <!> <!> <!></div>`);
   var $$css3 = {
     hash: "svelte-18vtxcr",
-    code: ".section-header.svelte-18vtxcr {display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}.header-actions.svelte-18vtxcr {display:flex;gap:8px;}h2.svelte-18vtxcr {font-size:0.9rem;font-weight:600;}.btn.svelte-18vtxcr {padding:4px 12px;background:transparent;border:1px solid #3c3c3c;border-radius:4px;color:#d4d4d4;font-family:inherit;font-size:0.8rem;cursor:pointer;}.btn.svelte-18vtxcr:hover {border-color:#007acc;}.btn.primary.svelte-18vtxcr {background:#007acc;color:#fff;border-color:transparent;}.btn.primary.svelte-18vtxcr:hover {opacity:0.9;}.create-form.svelte-18vtxcr {display:flex;gap:8px;margin-bottom:16px;}.create-form.svelte-18vtxcr input:where(.svelte-18vtxcr), .create-form.svelte-18vtxcr select:where(.svelte-18vtxcr) {padding:6px 10px;background:#2d2d2d;border:1px solid #3c3c3c;border-radius:4px;color:#d4d4d4;font-family:inherit;font-size:0.8rem;}.create-form.svelte-18vtxcr input:where(.svelte-18vtxcr) {flex:1;}.list-toolbar.svelte-18vtxcr {display:flex;align-items:center;gap:8px;margin-bottom:12px;color:#858585;font-size:0.75rem;}.list-toolbar.svelte-18vtxcr input:where(.svelte-18vtxcr) {flex:1;min-width:120px;padding:6px 10px;background:#2d2d2d;border:1px solid #3c3c3c;border-radius:4px;color:#d4d4d4;font:inherit;}.list-toolbar.svelte-18vtxcr input:where(.svelte-18vtxcr):focus {outline:none;border-color:#007acc;}table.svelte-18vtxcr {width:100%;border-collapse:collapse;}th.svelte-18vtxcr, td.svelte-18vtxcr {text-align:left;padding:6px 12px;border-bottom:1px solid #3c3c3c;}th.svelte-18vtxcr {font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:#858585;}tr.svelte-18vtxcr:hover td:where(.svelte-18vtxcr) {background:rgba(255,255,255,0.03);}.num.svelte-18vtxcr {text-align:right;font-variant-numeric:tabular-nums;}.student-row.svelte-18vtxcr {cursor:pointer;}.student-row.svelte-18vtxcr:hover td:where(.svelte-18vtxcr) {background:rgba(0,122,204,0.08);}.role-select.svelte-18vtxcr {background:#2d2d2d;border:1px solid #3c3c3c;border-radius:3px;color:#d4d4d4;font-family:inherit;font-size:0.75rem;padding:2px 6px;}.actions.svelte-18vtxcr {white-space:nowrap;}.actions.svelte-18vtxcr button:where(.svelte-18vtxcr) {padding:2px 8px;background:transparent;border:1px solid #3c3c3c;border-radius:3px;color:#858585;font-family:inherit;font-size:0.7rem;cursor:pointer;margin-left:4px;}.actions.svelte-18vtxcr button:where(.svelte-18vtxcr):hover {border-color:#007acc;color:#d4d4d4;}.actions.svelte-18vtxcr .danger:where(.svelte-18vtxcr):hover {border-color:#f87171;color:#f87171;}.pagination.svelte-18vtxcr {display:flex;justify-content:center;align-items:center;gap:12px;margin-top:12px;font-size:0.75rem;color:#858585;}.loading.svelte-18vtxcr, .empty.svelte-18vtxcr, .error.svelte-18vtxcr {padding:24px;text-align:center;color:#858585;}.error.svelte-18vtxcr {color:#f87171;}\n	@media (max-width: 600px) {.list-toolbar.svelte-18vtxcr {align-items:stretch;flex-direction:column;}.create-form.svelte-18vtxcr {flex-wrap:wrap;}table.svelte-18vtxcr {display:block;overflow-x:auto;white-space:nowrap;}\n	}"
+    code: ".section-header.svelte-18vtxcr {display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}.header-actions.svelte-18vtxcr {display:flex;gap:8px;}h2.svelte-18vtxcr {font-size:0.9rem;font-weight:600;}.btn.svelte-18vtxcr {padding:4px 12px;background:transparent;border:1px solid #3c3c3c;border-radius:4px;color:#d4d4d4;font-family:inherit;font-size:0.8rem;cursor:pointer;}.btn.svelte-18vtxcr:hover {border-color:#007acc;}.btn.primary.svelte-18vtxcr {background:#007acc;color:#fff;border-color:transparent;}.btn.primary.svelte-18vtxcr:hover {opacity:0.9;}.create-form.svelte-18vtxcr {display:flex;gap:8px;margin-bottom:16px;}.create-form.svelte-18vtxcr input:where(.svelte-18vtxcr), .create-form.svelte-18vtxcr select:where(.svelte-18vtxcr) {padding:6px 10px;background:#2d2d2d;border:1px solid #3c3c3c;border-radius:4px;color:#d4d4d4;font-family:inherit;font-size:0.8rem;}.create-form.svelte-18vtxcr input:where(.svelte-18vtxcr) {flex:1;}.list-toolbar.svelte-18vtxcr {display:flex;align-items:center;gap:8px;margin-bottom:12px;color:#858585;font-size:0.75rem;}.list-toolbar.svelte-18vtxcr input:where(.svelte-18vtxcr) {flex:1;min-width:120px;padding:6px 10px;background:#2d2d2d;border:1px solid #3c3c3c;border-radius:4px;color:#d4d4d4;font:inherit;}.list-toolbar.svelte-18vtxcr input:where(.svelte-18vtxcr):focus {outline:none;border-color:#007acc;}table.svelte-18vtxcr {width:100%;border-collapse:collapse;}th.svelte-18vtxcr, td.svelte-18vtxcr {text-align:left;padding:6px 12px;border-bottom:1px solid #3c3c3c;}th.svelte-18vtxcr {font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:#858585;}tr.svelte-18vtxcr:hover td:where(.svelte-18vtxcr) {background:rgba(255,255,255,0.03);}.num.svelte-18vtxcr {text-align:right;font-variant-numeric:tabular-nums;}.student-row.svelte-18vtxcr {cursor:pointer;}.student-row.svelte-18vtxcr:hover td:where(.svelte-18vtxcr) {background:rgba(0,122,204,0.08);}.role-select.svelte-18vtxcr {background:#2d2d2d;border:1px solid #3c3c3c;border-radius:3px;color:#d4d4d4;font-family:inherit;font-size:0.75rem;padding:2px 6px;}.actions.svelte-18vtxcr {white-space:nowrap;}.actions.svelte-18vtxcr button:where(.svelte-18vtxcr) {padding:2px 8px;background:transparent;border:1px solid #3c3c3c;border-radius:3px;color:#858585;font-family:inherit;font-size:0.7rem;cursor:pointer;margin-left:4px;}.actions.svelte-18vtxcr button:where(.svelte-18vtxcr):hover {border-color:#007acc;color:#d4d4d4;}.actions.svelte-18vtxcr .danger:where(.svelte-18vtxcr):hover {border-color:#f87171;color:#f87171;}.pagination.svelte-18vtxcr {display:flex;justify-content:center;align-items:center;gap:12px;margin-top:12px;font-size:0.75rem;color:#858585;}.loading.svelte-18vtxcr, .empty.svelte-18vtxcr, .error.svelte-18vtxcr {padding:24px;text-align:center;color:#858585;}.error.svelte-18vtxcr {color:#f87171;}\r\n	@media (max-width: 600px) {.list-toolbar.svelte-18vtxcr {align-items:stretch;flex-direction:column;}.create-form.svelte-18vtxcr {flex-wrap:wrap;}table.svelte-18vtxcr {display:block;overflow-x:auto;white-space:nowrap;}\r\n	}"
   };
   function StudentList($$anchor, $$props) {
     push($$props, true);
@@ -6699,6 +6838,7 @@ ${component_stack}
     let error = state("");
     let actionError = state("");
     let showForm = state(false);
+    let localAuthEnabled = state(false);
     let search = state("");
     let page = state(1);
     const pageSize = 25;
@@ -6734,6 +6874,7 @@ ${component_stack}
     }
     async function handleRoleChange(student, newRole) {
       if (newRole === student.role) return;
+      if (newRole === "mentor" && !confirm(`\u041D\u0430\u0437\u043D\u0430\u0447\u0438\u0442\u044C ${student.username} \u043D\u0430\u0441\u0442\u0430\u0432\u043D\u0438\u043A\u043E\u043C? \u041E\u043D \u0441\u043C\u043E\u0436\u0435\u0442 \u043D\u0430\u0437\u043D\u0430\u0447\u0430\u0442\u044C \u0434\u0440\u0443\u0433\u0438\u0445 \u043D\u0430\u0441\u0442\u0430\u0432\u043D\u0438\u043A\u043E\u0432.`)) return;
       try {
         await updateRole(student.student_id, newRole);
         await load();
@@ -6784,9 +6925,11 @@ ${component_stack}
       return `${Math.round(s / 86400)}d ago`;
     }
     onMount(() => {
-      load();
+      void load();
+      void authProviders().then((value) => set(localAuthEnabled, value.local, true)).catch(() => {
+      });
     });
-    var div = root_14();
+    var div = root_16();
     var div_1 = child(div);
     var div_2 = sibling(child(div_1), 2);
     var button = child(div_2);
@@ -6803,7 +6946,7 @@ ${component_stack}
         append($$anchor2, button_1);
       };
       if_block(node, ($$render) => {
-        if (get2(isAdmin)) $$render(consequent);
+        if (get2(isAdmin) && get2(localAuthEnabled)) $$render(consequent);
       });
     }
     reset(div_2);
@@ -6823,14 +6966,12 @@ ${component_stack}
     var node_2 = sibling(node_1, 2);
     {
       var consequent_2 = ($$anchor2) => {
-        var form_1 = root_22();
+        var form_1 = root_23();
         var select = sibling(child(form_1), 4);
         var option = child(select);
         option.value = option.__value = "student";
         var option_1 = sibling(option);
-        option_1.value = option_1.__value = "mentor";
-        var option_2 = sibling(option_1);
-        option_2.value = option_2.__value = "admin";
+        option_1.value = option_1.__value = "admin";
         reset(select);
         next(2);
         reset(form_1);
@@ -6838,17 +6979,17 @@ ${component_stack}
         append($$anchor2, form_1);
       };
       if_block(node_2, ($$render) => {
-        if (get2(isAdmin) && get2(showForm)) $$render(consequent_2);
+        if (get2(isAdmin) && get2(localAuthEnabled) && get2(showForm)) $$render(consequent_2);
       });
     }
     var node_3 = sibling(node_2, 2);
     {
       var consequent_3 = ($$anchor2) => {
-        var div_3 = root_32();
+        var div_3 = root_33();
         append($$anchor2, div_3);
       };
       var consequent_4 = ($$anchor2) => {
-        var fragment = root_4();
+        var fragment = root_42();
         var div_4 = first_child(fragment);
         var text_3 = only_child(div_4, true);
         var button_2 = sibling(div_4, 2);
@@ -6857,11 +6998,11 @@ ${component_stack}
         append($$anchor2, fragment);
       };
       var consequent_5 = ($$anchor2) => {
-        var div_5 = root_5();
+        var div_5 = root_52();
         append($$anchor2, div_5);
       };
       var alternate_2 = ($$anchor2) => {
-        var fragment_1 = root_132();
+        var fragment_1 = root_15();
         var div_6 = first_child(fragment_1);
         var input = sibling(child(div_6), 2);
         remove_input_defaults(input);
@@ -6877,7 +7018,7 @@ ${component_stack}
             append($$anchor3, div_7);
           };
           var alternate_1 = ($$anchor3) => {
-            var fragment_2 = root_122();
+            var fragment_2 = root_14();
             var table = first_child(fragment_2);
             var thead = child(table);
             var tr = child(thead);
@@ -6895,7 +7036,7 @@ ${component_stack}
             reset(thead);
             var tbody = sibling(thead);
             each(tbody, 21, () => get2(visibleStudents), (s) => s.student_id, ($$anchor4, s) => {
-              var tr_1 = root_10();
+              var tr_1 = root_122();
               var td = child(tr_1);
               var text_6 = only_child(td, true);
               var td_1 = sibling(td);
@@ -6903,12 +7044,10 @@ ${component_stack}
               {
                 var consequent_8 = ($$anchor5) => {
                   var select_1 = root_8();
-                  var option_3 = child(select_1);
-                  option_3.value = option_3.__value = "student";
-                  var option_4 = sibling(option_3);
-                  option_4.value = option_4.__value = "mentor";
-                  var option_5 = sibling(option_4);
-                  option_5.value = option_5.__value = "admin";
+                  var option_2 = child(select_1);
+                  option_2.value = option_2.__value = "student";
+                  var option_3 = sibling(option_2);
+                  option_3.value = option_3.__value = "admin";
                   reset(select_1);
                   var select_1_value;
                   init_select(select_1);
@@ -6921,6 +7060,14 @@ ${component_stack}
                   delegated("click", select_1, (e) => e.stopPropagation());
                   append($$anchor5, select_1);
                 };
+                var consequent_9 = ($$anchor5) => {
+                  var button_3 = root_9();
+                  delegated("click", button_3, (e) => {
+                    e.stopPropagation();
+                    handleRoleChange(get2(s), "mentor");
+                  });
+                  append($$anchor5, button_3);
+                };
                 var alternate = ($$anchor5) => {
                   var text_7 = text();
                   template_effect(() => set_text(text_7, get2(s).role));
@@ -6928,6 +7075,7 @@ ${component_stack}
                 };
                 if_block(node_6, ($$render) => {
                   if (get2(isAdmin)) $$render(consequent_8);
+                  else if ($$props.userRole === "mentor") $$render(consequent_9, 1);
                   else $$render(alternate, -1);
                 });
               }
@@ -6944,23 +7092,32 @@ ${component_stack}
               var text_12 = only_child(td_6, true);
               var node_7 = sibling(td_6);
               {
-                var consequent_9 = ($$anchor5) => {
-                  var td_7 = root_9();
-                  var button_3 = child(td_7);
-                  var button_4 = sibling(button_3, 2);
+                var consequent_11 = ($$anchor5) => {
+                  var td_7 = root_11();
+                  var node_8 = child(td_7);
+                  {
+                    var consequent_10 = ($$anchor6) => {
+                      var button_4 = root_10();
+                      delegated("click", button_4, (e) => {
+                        e.stopPropagation();
+                        handleResetPassword(get2(s));
+                      });
+                      append($$anchor6, button_4);
+                    };
+                    if_block(node_8, ($$render) => {
+                      if (get2(localAuthEnabled)) $$render(consequent_10);
+                    });
+                  }
+                  var button_5 = sibling(node_8, 2);
                   reset(td_7);
-                  delegated("click", button_3, (e) => {
-                    e.stopPropagation();
-                    handleResetPassword(get2(s));
-                  });
-                  delegated("click", button_4, (e) => {
+                  delegated("click", button_5, (e) => {
                     e.stopPropagation();
                     handleDelete(get2(s));
                   });
                   append($$anchor5, td_7);
                 };
                 if_block(node_7, ($$render) => {
-                  if (get2(isAdmin)) $$render(consequent_9);
+                  if (get2(isAdmin)) $$render(consequent_11);
                 });
               }
               reset(tr_1);
@@ -6980,26 +7137,26 @@ ${component_stack}
             });
             reset(tbody);
             reset(table);
-            var node_8 = sibling(table, 2);
+            var node_9 = sibling(table, 2);
             {
-              var consequent_10 = ($$anchor4) => {
-                var div_8 = root_11();
-                var button_5 = child(div_8);
-                var span_1 = sibling(button_5, 2);
+              var consequent_12 = ($$anchor4) => {
+                var div_8 = root_132();
+                var button_6 = child(div_8);
+                var span_1 = sibling(button_6, 2);
                 var text_13 = only_child(span_1);
-                var button_6 = sibling(span_1, 2);
+                var button_7 = sibling(span_1, 2);
                 reset(div_8);
                 template_effect(() => {
-                  button_5.disabled = get2(page) === 1;
+                  button_6.disabled = get2(page) === 1;
                   set_text(text_13, `Page ${get2(page) ?? ""} of ${get2(pageCount) ?? ""}`);
-                  button_6.disabled = get2(page) === get2(pageCount);
+                  button_7.disabled = get2(page) === get2(pageCount);
                 });
-                delegated("click", button_5, () => set(page, Math.max(1, get2(page) - 1), true));
-                delegated("click", button_6, () => set(page, Math.min(get2(pageCount), get2(page) + 1), true));
+                delegated("click", button_6, () => set(page, Math.max(1, get2(page) - 1), true));
+                delegated("click", button_7, () => set(page, Math.min(get2(pageCount), get2(page) + 1), true));
                 append($$anchor4, div_8);
               };
-              if_block(node_8, ($$render) => {
-                if (get2(pageCount) > 1) $$render(consequent_10);
+              if_block(node_9, ($$render) => {
+                if (get2(pageCount) > 1) $$render(consequent_12);
               });
             }
             append($$anchor3, fragment_2);
@@ -7036,14 +7193,14 @@ ${component_stack}
 
   // src/components/StudentDetail.svelte
   var root4 = from_html(`<div class="loading svelte-15k1m16">Loading progress\u2026</div>`);
-  var root_15 = from_html(`<div class="error svelte-15k1m16" role="alert"> </div> <button class="refresh svelte-15k1m16" type="button">Retry</button>`, 1);
-  var root_23 = from_html(`<div class="empty svelte-15k1m16">No progress yet</div>`);
-  var root_33 = from_html(`<tr><td class="svelte-15k1m16"> </td><td class="svelte-15k1m16"><span></span> </td><td class="num svelte-15k1m16"> </td><td class="num svelte-15k1m16"> </td><td class="svelte-15k1m16"> </td></tr>`);
-  var root_42 = from_html(`<table class="svelte-15k1m16"><thead><tr><th class="svelte-15k1m16">Task</th><th class="svelte-15k1m16">Status</th><th class="num svelte-15k1m16">Score</th><th class="num svelte-15k1m16">Attempts</th><th class="svelte-15k1m16">Last run</th></tr></thead><tbody></tbody></table>`);
-  var root_52 = from_html(`<div class="detail"><div class="detail-header svelte-15k1m16"><button class="back svelte-15k1m16" type="button">&larr; Back to students</button> <h2 class="svelte-15k1m16"> </h2> <button class="refresh svelte-15k1m16" type="button"> </button></div> <!></div>`);
+  var root_17 = from_html(`<div class="error svelte-15k1m16" role="alert"> </div> <button class="refresh svelte-15k1m16" type="button">Retry</button>`, 1);
+  var root_24 = from_html(`<div class="empty svelte-15k1m16">No progress yet</div>`);
+  var root_34 = from_html(`<tr><td class="svelte-15k1m16"> </td><td class="svelte-15k1m16"><span></span> </td><td class="num svelte-15k1m16"> </td><td class="num svelte-15k1m16"> </td><td class="svelte-15k1m16"> </td></tr>`);
+  var root_43 = from_html(`<table class="svelte-15k1m16"><thead><tr><th class="svelte-15k1m16">Task</th><th class="svelte-15k1m16">Status</th><th class="num svelte-15k1m16">Score</th><th class="num svelte-15k1m16">Attempts</th><th class="svelte-15k1m16">Last run</th></tr></thead><tbody></tbody></table>`);
+  var root_53 = from_html(`<div class="detail"><div class="detail-header svelte-15k1m16"><button class="back svelte-15k1m16" type="button">&larr; Back to students</button> <h2 class="svelte-15k1m16"> </h2> <button class="refresh svelte-15k1m16" type="button"> </button></div> <!></div>`);
   var $$css4 = {
     hash: "svelte-15k1m16",
-    code: ".back.svelte-15k1m16 {display:inline-block;margin-bottom:16px;color:#007acc;padding:0;border:0;background:transparent;cursor:pointer;font-family:inherit;font-size:0.8rem;text-decoration:none;}.back.svelte-15k1m16:hover {text-decoration:underline;}.detail-header.svelte-15k1m16 {display:flex;align-items:center;gap:12px;margin-bottom:12px;}h2.svelte-15k1m16 {flex:1;font-size:1rem;font-weight:600;margin:0;}.refresh.svelte-15k1m16 {padding:4px 10px;background:transparent;border:1px solid #3c3c3c;border-radius:4px;color:#d4d4d4;font-family:inherit;font-size:0.75rem;cursor:pointer;}.refresh.svelte-15k1m16:hover:not(:disabled) {border-color:#007acc;}.refresh.svelte-15k1m16:disabled {opacity:0.5;cursor:not-allowed;}table.svelte-15k1m16 {width:100%;border-collapse:collapse;}th.svelte-15k1m16, td.svelte-15k1m16 {text-align:left;padding:6px 12px;border-bottom:1px solid #3c3c3c;}th.svelte-15k1m16 {font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:#858585;}.num.svelte-15k1m16 {text-align:right;font-variant-numeric:tabular-nums;}.dot.svelte-15k1m16 {display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;}.dot.green.svelte-15k1m16 {background:#22c55e;}.dot.yellow.svelte-15k1m16 {background:#eab308;}.dot.red.svelte-15k1m16 {background:#f87171;}.loading.svelte-15k1m16, .empty.svelte-15k1m16, .error.svelte-15k1m16 {padding:24px;text-align:center;color:#858585;}.error.svelte-15k1m16 {color:#f87171;}\n	@media (max-width: 600px) {.detail-header.svelte-15k1m16 {flex-wrap:wrap;}h2.svelte-15k1m16 {order:3;flex-basis:100%;}\n	}"
+    code: ".back.svelte-15k1m16 {display:inline-block;margin-bottom:16px;color:#007acc;padding:0;border:0;background:transparent;cursor:pointer;font-family:inherit;font-size:0.8rem;text-decoration:none;}.back.svelte-15k1m16:hover {text-decoration:underline;}.detail-header.svelte-15k1m16 {display:flex;align-items:center;gap:12px;margin-bottom:12px;}h2.svelte-15k1m16 {flex:1;font-size:1rem;font-weight:600;margin:0;}.refresh.svelte-15k1m16 {padding:4px 10px;background:transparent;border:1px solid #3c3c3c;border-radius:4px;color:#d4d4d4;font-family:inherit;font-size:0.75rem;cursor:pointer;}.refresh.svelte-15k1m16:hover:not(:disabled) {border-color:#007acc;}.refresh.svelte-15k1m16:disabled {opacity:0.5;cursor:not-allowed;}table.svelte-15k1m16 {width:100%;border-collapse:collapse;}th.svelte-15k1m16, td.svelte-15k1m16 {text-align:left;padding:6px 12px;border-bottom:1px solid #3c3c3c;}th.svelte-15k1m16 {font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:#858585;}.num.svelte-15k1m16 {text-align:right;font-variant-numeric:tabular-nums;}.dot.svelte-15k1m16 {display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;}.dot.green.svelte-15k1m16 {background:#22c55e;}.dot.yellow.svelte-15k1m16 {background:#eab308;}.dot.red.svelte-15k1m16 {background:#f87171;}.loading.svelte-15k1m16, .empty.svelte-15k1m16, .error.svelte-15k1m16 {padding:24px;text-align:center;color:#858585;}.error.svelte-15k1m16 {color:#f87171;}\r\n	@media (max-width: 600px) {.detail-header.svelte-15k1m16 {flex-wrap:wrap;}h2.svelte-15k1m16 {order:3;flex-basis:100%;}\r\n	}"
   };
   function StudentDetail($$anchor, $$props) {
     push($$props, true);
@@ -7087,7 +7244,7 @@ ${component_stack}
     onMount(() => {
       load();
     });
-    var div = root_52();
+    var div = root_53();
     var div_1 = child(div);
     var button = child(div_1);
     var h2 = sibling(button, 2);
@@ -7102,7 +7259,7 @@ ${component_stack}
         append($$anchor2, div_2);
       };
       var consequent_1 = ($$anchor2) => {
-        var fragment = root_15();
+        var fragment = root_17();
         var div_3 = first_child(fragment);
         var text_2 = only_child(div_3, true);
         var button_2 = sibling(div_3, 2);
@@ -7114,14 +7271,14 @@ ${component_stack}
         append($$anchor2, fragment);
       };
       var consequent_2 = ($$anchor2) => {
-        var div_4 = root_23();
+        var div_4 = root_24();
         append($$anchor2, div_4);
       };
       var alternate = ($$anchor2) => {
-        var table = root_42();
+        var table = root_43();
         var tbody = sibling(child(table));
         each(tbody, 21, () => get2(progress), (r) => r.task_id + r.version, ($$anchor3, r) => {
-          var tr = root_33();
+          var tr = root_34();
           var td = child(tr);
           var text_3 = only_child(td, true);
           var td_1 = sibling(td);
@@ -7180,11 +7337,11 @@ ${component_stack}
 
   // src/components/Catalog.svelte
   var root5 = from_html(`<button class="btn svelte-qickb7" type="button" aria-label="Clear search">Clear</button>`);
-  var root_16 = from_html(`<div class="loading svelte-qickb7">Loading catalog\u2026</div>`);
-  var root_24 = from_html(`<div class="error svelte-qickb7"> </div>`);
-  var root_34 = from_html(`<div class="empty svelte-qickb7"> </div>`);
-  var root_43 = from_html(`<span class="filtered svelte-qickb7"> </span>`);
-  var root_53 = from_html(`<span class="tag svelte-qickb7"> </span>`);
+  var root_18 = from_html(`<div class="loading svelte-qickb7">Loading catalog\u2026</div>`);
+  var root_25 = from_html(`<div class="error svelte-qickb7"> </div>`);
+  var root_35 = from_html(`<div class="empty svelte-qickb7"> </div>`);
+  var root_44 = from_html(`<span class="filtered svelte-qickb7"> </span>`);
+  var root_54 = from_html(`<span class="tag svelte-qickb7"> </span>`);
   var root_62 = from_html(`<span class="tag warn svelte-qickb7">breaking</span>`);
   var root_72 = from_html(`<li class="task"><button class="node task-node svelte-qickb7" type="button"><span class="task-id svelte-qickb7"> </span> <span class="task-title svelte-qickb7"> </span> <span class="task-tags svelte-qickb7"><!> <!> <!> <span class="tag svelte-qickb7"> </span></span></button></li>`);
   var root_82 = from_html(`<li class="folder svelte-qickb7"><div class="node folder-node svelte-qickb7"><span class="caret svelte-qickb7">\u25BE</span> <span class="name svelte-qickb7"> </span> <span class="meta svelte-qickb7"> </span> <span class="badge svelte-qickb7"> </span></div> <ul class="sub svelte-qickb7"></ul></li>`);
@@ -7279,17 +7436,17 @@ ${component_stack}
     var node_1 = sibling(div_2, 2);
     {
       var consequent_1 = ($$anchor2) => {
-        var div_3 = root_16();
+        var div_3 = root_18();
         append($$anchor2, div_3);
       };
       var consequent_2 = ($$anchor2) => {
-        var div_4 = root_24();
+        var div_4 = root_25();
         var text_1 = only_child(div_4, true);
         template_effect(() => set_text(text_1, get2(error)));
         append($$anchor2, div_4);
       };
       var consequent_3 = ($$anchor2) => {
-        var div_5 = root_34();
+        var div_5 = root_35();
         var text_2 = only_child(div_5, true);
         template_effect(() => set_text(text_2, get2(activeQuery) ? `No matches for "${get2(activeQuery)}"` : "Catalog is empty \u2014 run a sync to populate."));
         append($$anchor2, div_5);
@@ -7301,7 +7458,7 @@ ${component_stack}
         var node_2 = sibling(text_3);
         {
           var consequent_4 = ($$anchor3) => {
-            var span = root_43();
+            var span = root_44();
             var text_4 = only_child(span);
             template_effect(() => set_text(text_4, `\xB7 filtered by "${get2(activeQuery) ?? ""}"`));
             append($$anchor3, span);
@@ -7345,7 +7502,7 @@ ${component_stack}
               var node_3 = child(span_9);
               {
                 var consequent_5 = ($$anchor6) => {
-                  var span_10 = root_53();
+                  var span_10 = root_54();
                   var text_13 = only_child(span_10, true);
                   template_effect(() => set_text(text_13, get2(t).block));
                   append($$anchor6, span_10);
@@ -7357,7 +7514,7 @@ ${component_stack}
               var node_4 = sibling(node_3, 2);
               {
                 var consequent_6 = ($$anchor6) => {
-                  var span_11 = root_53();
+                  var span_11 = root_54();
                   var text_14 = only_child(span_11, true);
                   template_effect(() => set_text(text_14, get2(t).level));
                   append($$anchor6, span_11);
@@ -7447,11 +7604,11 @@ ${component_stack}
 
   // src/components/TaskStudio.svelte
   var root6 = from_html(`<div class="loading svelte-1ci3929">Loading task studio\u2026</div>`);
-  var root_17 = from_html(`<div class="error svelte-1ci3929"> </div> <button class="btn svelte-1ci3929" type="button" aria-label="Retry loading">Retry</button>`, 1);
-  var root_25 = from_html(`<div class="error svelte-1ci3929" role="alert"> </div> <button class="btn svelte-1ci3929" type="button">Retry reload</button>`, 1);
-  var root_35 = from_html(`<span class="dirty svelte-1ci3929" title="Unsaved changes">\u25CF dirty</span>`);
-  var root_44 = from_html(`<div class="readonly-banner svelte-1ci3929" role="alert"> </div>`);
-  var root_54 = from_html(`<div class="readonly-banner svelte-1ci3929" role="alert">Browse-only: mentors may view but not edit task content.</div>`);
+  var root_19 = from_html(`<div class="error svelte-1ci3929"> </div> <button class="btn svelte-1ci3929" type="button" aria-label="Retry loading">Retry</button>`, 1);
+  var root_26 = from_html(`<div class="error svelte-1ci3929" role="alert"> </div> <button class="btn svelte-1ci3929" type="button">Retry reload</button>`, 1);
+  var root_36 = from_html(`<span class="dirty svelte-1ci3929" title="Unsaved changes">\u25CF dirty</span>`);
+  var root_45 = from_html(`<div class="readonly-banner svelte-1ci3929" role="alert"> </div>`);
+  var root_55 = from_html(`<div class="readonly-banner svelte-1ci3929" role="alert">Browse-only: mentors may view but not edit task content.</div>`);
   var root_63 = from_html(`<div class="readonly-banner svelte-1ci3929" role="alert"> <button class="btn svelte-1ci3929" type="button">Discard draft and use server version</button></div>`);
   var root_73 = from_html(`<p class="notice svelte-1ci3929" role="status" aria-live="polite"> </p>`);
   var root_83 = from_html(`<p class="error svelte-1ci3929" role="alert"> </p>`);
@@ -7651,7 +7808,7 @@ ${component_stack}
         append($$anchor2, div_2);
       };
       var consequent_1 = ($$anchor2) => {
-        var fragment = root_17();
+        var fragment = root_19();
         var div_3 = first_child(fragment);
         var text_1 = only_child(div_3, true);
         var button_2 = sibling(div_3, 2);
@@ -7667,7 +7824,7 @@ ${component_stack}
         var node_1 = first_child(fragment_1);
         {
           var consequent_2 = ($$anchor3) => {
-            var fragment_2 = root_25();
+            var fragment_2 = root_26();
             var div_4 = first_child(fragment_2);
             var text_2 = only_child(div_4);
             var button_3 = sibling(div_4, 2);
@@ -7702,7 +7859,7 @@ ${component_stack}
         var node_2 = sibling(code_1);
         {
           var consequent_3 = ($$anchor3) => {
-            var span = root_35();
+            var span = root_36();
             append($$anchor3, span);
           };
           var d = user_derived(() => isDirty());
@@ -7728,13 +7885,13 @@ ${component_stack}
         var node_3 = sibling(dl, 2);
         {
           var consequent_4 = ($$anchor3) => {
-            var div_10 = root_44();
+            var div_10 = root_45();
             var text_8 = only_child(div_10);
             template_effect(() => set_text(text_8, `Read-only: ${(get2(studio).read_only_reason || "content repo is not writable") ?? ""}. Editing is disabled; ask an admin to make the content repo writable (configure a local repo path with write access).`));
             append($$anchor3, div_10);
           };
           var consequent_5 = ($$anchor3) => {
-            var div_11 = root_54();
+            var div_11 = root_55();
             append($$anchor3, div_11);
           };
           if_block(node_3, ($$render) => {
@@ -7937,11 +8094,11 @@ ${component_stack}
 
   // src/components/Settings.svelte
   var root7 = from_html(`<span class="revision svelte-1u3w06f"> </span>`);
-  var root_18 = from_html(`<div class="state-card svelte-1u3w06f" role="status">\u0417\u0430\u0433\u0440\u0443\u0436\u0430\u044E \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u0441\u0435\u0440\u0432\u0438\u0441\u0430\u2026</div>`);
-  var root_26 = from_html(`<div class="state-card error svelte-1u3w06f" role="alert"><p class="svelte-1u3w06f"> </p> <button type="button">\u041F\u043E\u0432\u0442\u043E\u0440\u0438\u0442\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u043A\u0443</button></div>`);
-  var root_36 = from_html(`<details class="svelte-1u3w06f"><summary class="svelte-1u3w06f">\u041F\u043E\u0441\u043C\u043E\u0442\u0440\u0435\u0442\u044C \u043F\u0440\u0435\u0434\u043B\u043E\u0436\u0435\u043D\u043D\u044B\u0435 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F</summary><pre class="svelte-1u3w06f"> </pre></details>`);
-  var root_45 = from_html(`<details class="svelte-1u3w06f"><summary class="svelte-1u3w06f">\u041F\u043E\u0441\u043C\u043E\u0442\u0440\u0435\u0442\u044C \u043A\u043E\u043D\u0444\u0438\u0433\u0443\u0440\u0430\u0446\u0438\u044E \u0447\u0435\u0440\u043D\u043E\u0432\u0438\u043A\u0430</summary><pre class="svelte-1u3w06f"> </pre></details>`);
-  var root_55 = from_html(`<div class="notice conflict svelte-1u3w06f" role="alert"><div><strong>\u0427\u0435\u0440\u043D\u043E\u0432\u0438\u043A \u043F\u043E\u043C\u043E\u0449\u043D\u0438\u043A\u0430 \u0442\u0440\u0435\u0431\u0443\u0435\u0442 \u0441\u0432\u0435\u0440\u043A\u0438</strong> <p class="svelte-1u3w06f"><!> \u041F\u0440\u0435\u0434\u043B\u043E\u0436\u0435\u043D\u0438\u0435 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u043E; \u0442\u0435\u043A\u0443\u0449\u0438\u0435 \u043F\u043E\u043B\u044F \u0444\u043E\u0440\u043C\u044B \u043D\u0435 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u044B.</p> <!></div> <div class="actions svelte-1u3w06f"><button type="button">\u041F\u0440\u0438\u043C\u0435\u043D\u0438\u0442\u044C \u0447\u0435\u0440\u043D\u043E\u0432\u0438\u043A</button> <button type="button">\u041E\u0442\u043A\u043B\u043E\u043D\u0438\u0442\u044C</button></div></div>`);
+  var root_110 = from_html(`<div class="state-card svelte-1u3w06f" role="status">\u0417\u0430\u0433\u0440\u0443\u0436\u0430\u044E \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u0441\u0435\u0440\u0432\u0438\u0441\u0430\u2026</div>`);
+  var root_27 = from_html(`<div class="state-card error svelte-1u3w06f" role="alert"><p class="svelte-1u3w06f"> </p> <button type="button">\u041F\u043E\u0432\u0442\u043E\u0440\u0438\u0442\u044C \u0437\u0430\u0433\u0440\u0443\u0437\u043A\u0443</button></div>`);
+  var root_37 = from_html(`<details class="svelte-1u3w06f"><summary class="svelte-1u3w06f">\u041F\u043E\u0441\u043C\u043E\u0442\u0440\u0435\u0442\u044C \u043F\u0440\u0435\u0434\u043B\u043E\u0436\u0435\u043D\u043D\u044B\u0435 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F</summary><pre class="svelte-1u3w06f"> </pre></details>`);
+  var root_46 = from_html(`<details class="svelte-1u3w06f"><summary class="svelte-1u3w06f">\u041F\u043E\u0441\u043C\u043E\u0442\u0440\u0435\u0442\u044C \u043A\u043E\u043D\u0444\u0438\u0433\u0443\u0440\u0430\u0446\u0438\u044E \u0447\u0435\u0440\u043D\u043E\u0432\u0438\u043A\u0430</summary><pre class="svelte-1u3w06f"> </pre></details>`);
+  var root_56 = from_html(`<div class="notice conflict svelte-1u3w06f" role="alert"><div><strong>\u0427\u0435\u0440\u043D\u043E\u0432\u0438\u043A \u043F\u043E\u043C\u043E\u0449\u043D\u0438\u043A\u0430 \u0442\u0440\u0435\u0431\u0443\u0435\u0442 \u0441\u0432\u0435\u0440\u043A\u0438</strong> <p class="svelte-1u3w06f"><!> \u041F\u0440\u0435\u0434\u043B\u043E\u0436\u0435\u043D\u0438\u0435 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u043E; \u0442\u0435\u043A\u0443\u0449\u0438\u0435 \u043F\u043E\u043B\u044F \u0444\u043E\u0440\u043C\u044B \u043D\u0435 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u044B.</p> <!></div> <div class="actions svelte-1u3w06f"><button type="button">\u041F\u0440\u0438\u043C\u0435\u043D\u0438\u0442\u044C \u0447\u0435\u0440\u043D\u043E\u0432\u0438\u043A</button> <button type="button">\u041E\u0442\u043A\u043B\u043E\u043D\u0438\u0442\u044C</button></div></div>`);
   var root_64 = from_html(`<div class="notice conflict svelte-1u3w06f" role="alert"><div><strong>\u041A\u043E\u043D\u0444\u043B\u0438\u043A\u0442 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u0438\u044F</strong><p class="svelte-1u3w06f"> </p></div> <button type="button">\u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C \u0430\u043A\u0442\u0443\u0430\u043B\u044C\u043D\u044B\u0435 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438</button></div>`);
   var root_74 = from_html(`<div class="notice error svelte-1u3w06f" role="alert"> </div>`);
   var root_84 = from_html(`<div class="dirty-bar svelte-1u3w06f"><span class="svelte-1u3w06f">\u0415\u0441\u0442\u044C \u043D\u0435\u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0435 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F</span> <div class="actions svelte-1u3w06f"><button type="button">\u041E\u0442\u043C\u0435\u043D\u0438\u0442\u044C</button> <button type="button">\u041F\u0435\u0440\u0435\u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044C</button> <button class="primary svelte-1u3w06f" type="button"> </button></div></div>`);
@@ -7955,7 +8112,7 @@ ${component_stack}
   var root_162 = from_html(`<p class="muted svelte-1u3w06f">\u0417\u0430\u0433\u0440\u0443\u0436\u0430\u044E \u0436\u0443\u0440\u043D\u0430\u043B\u2026</p>`);
   var root_172 = from_html(`<p class="muted svelte-1u3w06f">\u0417\u0430\u043F\u0438\u0441\u0435\u0439 \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u0438 \u043F\u043E\u043A\u0430 \u043D\u0435\u0442.</p>`);
   var root_182 = from_html(`<li class="svelte-1u3w06f"><strong> </strong><span class="svelte-1u3w06f"> </span><span class="svelte-1u3w06f"> </span><!></li>`);
-  var root_19 = from_html(`<ul class="svelte-1u3w06f"></ul>`);
+  var root_192 = from_html(`<ul class="svelte-1u3w06f"></ul>`);
   var root_20 = from_html(`<div class="log-box svelte-1u3w06f"><!></div>`);
   var root_21 = from_html(`<div class="panel svelte-1u3w06f"><div class="section-title svelte-1u3w06f"><h3 class="svelte-1u3w06f">\u041A\u043E\u043D\u0442\u0435\u043D\u0442 \u0437\u0430\u0434\u0430\u0447</h3><p class="svelte-1u3w06f">\u041F\u0443\u0442\u044C \u043A \u0440\u0435\u043F\u043E\u0437\u0438\u0442\u043E\u0440\u0438\u044E \u0438 \u0440\u0443\u0447\u043D\u0430\u044F \u0441\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u044F \u0435\u0433\u043E \u0441\u043E\u0434\u0435\u0440\u0436\u0438\u043C\u043E\u0433\u043E.</p></div> <label class="field svelte-1u3w06f"><span class="svelte-1u3w06f">\u041F\u0443\u0442\u044C \u043A \u043A\u043E\u043D\u0442\u0435\u043D\u0442\u0443</span><input class="svelte-1u3w06f"/> <!></label> <div class="subsection svelte-1u3w06f"><div class="svelte-1u3w06f"><h4 class="svelte-1u3w06f">\u0421\u0438\u043D\u0445\u0440\u043E\u043D\u0438\u0437\u0430\u0446\u0438\u044F</h4><p class="muted svelte-1u3w06f">\u0417\u0430\u043F\u0443\u0441\u043A\u0430\u0435\u0442\u0441\u044F \u043F\u043E \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u043E\u043C\u0443 \u043F\u0443\u0442\u0438 \u0438 \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0430, \u043F\u043E\u043A\u0430 \u0444\u043E\u0440\u043C\u0430 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0430.</p></div> <div class="actions svelte-1u3w06f"><button type="button"> </button> <button type="button"> </button></div></div> <!> <!> <!> <!></div>`);
   var root_222 = from_html(`<option></option>`);
@@ -7963,7 +8120,7 @@ ${component_stack}
   var root_242 = from_html(`<label class="field compact svelte-1u3w06f"><span class="svelte-1u3w06f">Temperature</span><input type="number" min="0" max="2" step="0.1" class="svelte-1u3w06f"/></label>`);
   var root_252 = from_html(`<p class="inline-error svelte-1u3w06f"> </p>`);
   var root_262 = from_html(`<label class="toggle danger-toggle svelte-1u3w06f"><input type="checkbox" class="svelte-1u3w06f"/><span class="svelte-1u3w06f"><strong class="svelte-1u3w06f">\u0423\u0434\u0430\u043B\u0438\u0442\u044C \u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0439 \u043A\u043B\u044E\u0447</strong><small class="svelte-1u3w06f">\u0411\u0443\u0434\u0435\u0442 \u043F\u0440\u0438\u043C\u0435\u043D\u0435\u043D\u043E \u043F\u0440\u0438 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u0438\u0438; \u043F\u0443\u0441\u0442\u043E\u0435 \u043F\u043E\u043B\u0435 \u0441\u0430\u043C\u043E \u043F\u043E \u0441\u0435\u0431\u0435 \u043A\u043B\u044E\u0447 \u043D\u0435 \u043E\u0447\u0438\u0449\u0430\u0435\u0442.</small></span></label>`);
-  var root_27 = from_html(`<span> </span>`);
+  var root_272 = from_html(`<span> </span>`);
   var root_28 = from_html(`<span class="inline-error svelte-1u3w06f" role="alert"> </span>`);
   var root_29 = from_html(`<div class="panel svelte-1u3w06f"><div class="section-title svelte-1u3w06f"><h3 class="svelte-1u3w06f">\u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u0435 AI</h3><p class="svelte-1u3w06f">\u041D\u0430\u0441\u0442\u0440\u043E\u0439 \u0441\u043E\u0432\u043C\u0435\u0441\u0442\u0438\u043C\u044B\u0439 API. \u041A\u043B\u044E\u0447 \u0445\u0440\u0430\u043D\u0438\u0442\u0441\u044F \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u043E \u0438 \u043D\u0438\u043A\u043E\u0433\u0434\u0430 \u043D\u0435 \u0432\u043E\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442\u0441\u044F \u0441\u0435\u0440\u0432\u0435\u0440\u043E\u043C.</p></div> <label class="toggle svelte-1u3w06f"><input type="checkbox" class="svelte-1u3w06f"/><span class="svelte-1u3w06f"><strong>\u0412\u043A\u043B\u044E\u0447\u0438\u0442\u044C AI-\u043F\u043E\u043C\u043E\u0449\u043D\u0438\u043A\u0430</strong><small class="svelte-1u3w06f">\u041F\u0440\u0438 \u043E\u0442\u043A\u043B\u044E\u0447\u0435\u043D\u0438\u0438 \u0437\u0430\u043F\u0440\u043E\u0441\u044B \u043A AI \u043D\u0435 \u0432\u044B\u043F\u043E\u043B\u043D\u044F\u044E\u0442\u0441\u044F.</small></span></label> <!> <div class="form-grid svelte-1u3w06f"><label class="field svelte-1u3w06f"><span class="svelte-1u3w06f">\u0421\u043E\u0432\u043C\u0435\u0441\u0442\u0438\u043C\u044B\u0439 API base URL</span><input type="url" placeholder="https://api.example.com/v1" class="svelte-1u3w06f"/><!></label> <label class="field svelte-1u3w06f"><span class="svelte-1u3w06f">\u041C\u043E\u0434\u0435\u043B\u044C</span><div class="input-action svelte-1u3w06f"><input list="ai-model-options" placeholder="\u041D\u0430\u043F\u0440\u0438\u043C\u0435\u0440, gpt-4.1-mini" class="svelte-1u3w06f"/><datalist id="ai-model-options"></datalist><button type="button"> </button></div><!><!></label> <label class="field svelte-1u3w06f"><span class="svelte-1u3w06f">\u0422\u0430\u0439\u043C-\u0430\u0443\u0442 AI, \u0441\u0435\u043A\u0443\u043D\u0434</span><input type="number" min="5" max="180" class="svelte-1u3w06f"/><!></label> <label class="field svelte-1u3w06f"><span class="svelte-1u3w06f">\u041B\u0438\u043C\u0438\u0442 \u0442\u043E\u043A\u0435\u043D\u043E\u0432 \u043E\u0442\u0432\u0435\u0442\u0430</span><input type="number" min="256" max="16384" class="svelte-1u3w06f"/><!></label></div> <label class="field svelte-1u3w06f"><span class="svelte-1u3w06f">\u0418\u043C\u044F \u043F\u0430\u0440\u0430\u043C\u0435\u0442\u0440\u0430 \u043B\u0438\u043C\u0438\u0442\u0430 \u0442\u043E\u043A\u0435\u043D\u043E\u0432</span><select class="svelte-1u3w06f"><option>max_tokens</option><option>max_completion_tokens</option></select><small class="svelte-1u3w06f">\u0412\u044B\u0431\u0435\u0440\u0438 \u0444\u043E\u0440\u043C\u0430\u0442, \u043A\u043E\u0442\u043E\u0440\u044B\u0439 \u043F\u0440\u0438\u043D\u0438\u043C\u0430\u0435\u0442 API-\u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440.</small></label> <!> <label class="toggle svelte-1u3w06f"><input type="checkbox" class="svelte-1u3w06f"/><span class="svelte-1u3w06f"><strong>\u0417\u0430\u0434\u0430\u0442\u044C temperature \u0432\u0440\u0443\u0447\u043D\u0443\u044E</strong><small class="svelte-1u3w06f">\u0415\u0441\u043B\u0438 \u0432\u044B\u043A\u043B\u044E\u0447\u0435\u043D\u043E, \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0435\u0442\u0441\u044F \u0437\u043D\u0430\u0447\u0435\u043D\u0438\u0435 \u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430 \u043F\u043E \u0443\u043C\u043E\u043B\u0447\u0430\u043D\u0438\u044E.</small></span></label> <!> <!> <label class="toggle svelte-1u3w06f"><input type="checkbox" class="svelte-1u3w06f"/><span class="svelte-1u3w06f"><strong>\u0420\u0430\u0437\u0440\u0435\u0448\u0438\u0442\u044C \u0438\u043D\u0441\u0442\u0440\u0443\u043C\u0435\u043D\u0442\u044B</strong><small class="svelte-1u3w06f">\u041F\u0435\u0440\u0435\u0434\u0430\u0432\u0430\u0442\u044C \u043F\u043E\u0434\u0434\u0435\u0440\u0436\u0438\u0432\u0430\u0435\u043C\u044B\u0435 tools/function calls AI-\u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0443.</small></span></label> <!> <label class="field svelte-1u3w06f"><span class="svelte-1u3w06f">\u0421\u0438\u0441\u0442\u0435\u043C\u043D\u0430\u044F \u0438\u043D\u0441\u0442\u0440\u0443\u043A\u0446\u0438\u044F</span><textarea rows="7" class="svelte-1u3w06f"></textarea><!></label> <div class="key-panel svelte-1u3w06f"><div class="svelte-1u3w06f"><strong>API-\u043A\u043B\u044E\u0447</strong><p class="muted svelte-1u3w06f"> </p></div> <label class="field svelte-1u3w06f"><span class="svelte-1u3w06f"> </span><input type="password" autocomplete="new-password" class="svelte-1u3w06f"/></label> <!> <!> <!></div> <div class="actions footer-actions svelte-1u3w06f"><button class="primary svelte-1u3w06f" type="button"> </button> <!> <!></div></div>`);
   var root_30 = from_html(`<div class="svelte-1u3w06f"><small class="svelte-1u3w06f"> </small><strong class="svelte-1u3w06f"> </strong></div>`);
@@ -8235,11 +8392,11 @@ ${component_stack}
     var node_1 = sibling(div, 2);
     {
       var consequent_1 = ($$anchor2) => {
-        var div_1 = root_18();
+        var div_1 = root_110();
         append($$anchor2, div_1);
       };
       var consequent_2 = ($$anchor2) => {
-        var div_2 = root_26();
+        var div_2 = root_27();
         var p = child(div_2);
         var text_2 = only_child(p, true);
         var button = sibling(p, 2);
@@ -8253,7 +8410,7 @@ ${component_stack}
         var node_2 = child(fieldset);
         {
           var consequent_5 = ($$anchor3) => {
-            var div_3 = root_55();
+            var div_3 = root_56();
             var div_4 = child(div_3);
             var p_1 = sibling(child(div_4), 2);
             var node_3 = child(p_1);
@@ -8277,7 +8434,7 @@ ${component_stack}
             var node_4 = sibling(p_1, 2);
             {
               var consequent_4 = ($$anchor4) => {
-                var details = root_36();
+                var details = root_37();
                 var pre = sibling(child(details));
                 var text_5 = only_child(pre, true);
                 reset(details);
@@ -8287,7 +8444,7 @@ ${component_stack}
                 append($$anchor4, details);
               };
               var alternate_1 = ($$anchor4) => {
-                var details_1 = root_45();
+                var details_1 = root_46();
                 var pre_1 = sibling(child(details_1));
                 var text_6 = only_child(pre_1, true);
                 reset(details_1);
@@ -8581,7 +8738,7 @@ ${component_stack}
                     append($$anchor5, p_8);
                   };
                   var consequent_23 = ($$anchor5) => {
-                    var ul = root_19();
+                    var ul = root_192();
                     each(ul, 21, () => get2(logs), (item) => item.id, ($$anchor6, item) => {
                       var li = root_182();
                       var strong = child(li);
@@ -8910,7 +9067,7 @@ ${component_stack}
             var node_34 = sibling(button_14, 2);
             {
               var consequent_40 = ($$anchor4) => {
-                var span_5 = root_27();
+                var span_5 = root_272();
                 let classes_4;
                 var text_41 = only_child(span_5);
                 template_effect(() => {
@@ -9112,10 +9269,10 @@ ${component_stack}
 
   // src/components/ChatContent.svelte
   var root8 = from_html(`<div class="code-block svelte-1qmz6rz"><div class="code-title svelte-1qmz6rz"><span> </span><button type="button" class="svelte-1qmz6rz"> </button></div><pre class="svelte-1qmz6rz"><code class="svelte-1qmz6rz"> </code></pre></div>`);
-  var root_110 = from_html(`<strong> </strong>`);
+  var root_111 = from_html(`<strong> </strong>`);
   var root_210 = from_html(`<code class="svelte-1qmz6rz"> </code>`);
-  var root_37 = from_html(`<p class="svelte-1qmz6rz"></p>`);
-  var root_46 = from_html(`<div class="chat-content svelte-1qmz6rz"></div>`);
+  var root_38 = from_html(`<p class="svelte-1qmz6rz"></p>`);
+  var root_47 = from_html(`<div class="chat-content svelte-1qmz6rz"></div>`);
   var $$css8 = {
     hash: "svelte-1qmz6rz",
     code: ".chat-content.svelte-1qmz6rz {line-height:1.7;overflow-wrap:anywhere;}p.svelte-1qmz6rz {white-space:pre-wrap;margin:0 0 .8rem;}p.svelte-1qmz6rz:last-child {margin-bottom:0;}code.svelte-1qmz6rz {font-family:'Cascadia Code', Consolas, monospace;font-size:.9em;background:#252c34;padding:2px 5px;border-radius:4px;}.code-block.svelte-1qmz6rz {margin:14px 0;border:1px solid #39414c;border-radius:8px;overflow:hidden;}.code-title.svelte-1qmz6rz {display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:#252c34;color:#a5b2c2;font-size:12px;}.code-title.svelte-1qmz6rz button:where(.svelte-1qmz6rz) {background:transparent;border:0;padding:3px 8px;color:inherit;}pre.svelte-1qmz6rz {margin:0;padding:14px;background:#15191e;overflow-x:auto;white-space:pre;}pre.svelte-1qmz6rz code:where(.svelte-1qmz6rz) {padding:0;background:transparent;}"
@@ -9142,7 +9299,7 @@ ${component_stack}
         set(copied, -1);
       }
     }
-    var div = root_46();
+    var div = root_47();
     each(div, 21, () => get2(blocks), index, ($$anchor2, block2, i) => {
       var fragment = comment();
       var node = first_child(fragment);
@@ -9172,13 +9329,13 @@ ${component_stack}
           var fragment_1 = comment();
           var node_1 = first_child(fragment_1);
           each(node_1, 17, () => get2(block2).text.split(/\n{2,}/).filter(Boolean), index, ($$anchor4, paragraph) => {
-            var p = root_37();
+            var p = root_38();
             each(p, 21, () => get2(paragraph).split(/(\*\*[^*]+\*\*|`[^`]+`)/g), index, ($$anchor5, part) => {
               var fragment_2 = comment();
               var node_2 = first_child(fragment_2);
               {
                 var consequent_1 = ($$anchor6) => {
-                  var strong = root_110();
+                  var strong = root_111();
                   var text_4 = only_child(strong, true);
                   template_effect(($0) => set_text(text_4, $0), [() => get2(part).slice(2, -2)]);
                   append($$anchor6, strong);
@@ -9224,17 +9381,17 @@ ${component_stack}
 
   // src/components/Assistant.svelte
   var root9 = from_html(`<div><button class="chat-title svelte-1tlx730"> <small class="svelte-1tlx730"> </small></button> <button class="delete svelte-1tlx730">\xD7</button></div>`);
-  var root_111 = from_html(`<p class="muted svelte-1tlx730">\u0414\u0438\u0430\u043B\u043E\u0433\u0438 \u043F\u043E\u044F\u0432\u044F\u0442\u0441\u044F \u0437\u0434\u0435\u0441\u044C \u043F\u043E\u0441\u043B\u0435 \u043F\u0435\u0440\u0432\u043E\u0433\u043E \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F.</p>`);
+  var root_115 = from_html(`<p class="muted svelte-1tlx730">\u0414\u0438\u0430\u043B\u043E\u0433\u0438 \u043F\u043E\u044F\u0432\u044F\u0442\u0441\u044F \u0437\u0434\u0435\u0441\u044C \u043F\u043E\u0441\u043B\u0435 \u043F\u0435\u0440\u0432\u043E\u0433\u043E \u0441\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u044F.</p>`);
   var root_211 = from_html(`<p class="muted svelte-1tlx730">\u0417\u0430\u0433\u0440\u0443\u0436\u0430\u044E \u0434\u0438\u0430\u043B\u043E\u0433\u2026</p>`);
-  var root_38 = from_html(`<div class="empty-state svelte-1tlx730"><h2 class="svelte-1tlx730">\u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0438 \u0441\u0432\u043E\u0435\u0433\u043E AI-\u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430</h2><p>\u0423\u043A\u0430\u0436\u0438 URL API, \u043C\u043E\u0434\u0435\u043B\u044C \u0438 \u043A\u043B\u044E\u0447 \u0432 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430\u0445. \u0414\u0438\u0430\u043B\u043E\u0433\u0438 \u0438 \u0447\u0435\u0440\u043D\u043E\u0432\u0438\u043A\u0438 \u0431\u0443\u0434\u0443\u0442 \u0445\u0440\u0430\u043D\u0438\u0442\u044C\u0441\u044F \u043D\u0430 \u0441\u0435\u0440\u0432\u0435\u0440\u0435.</p><button class="primary">\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438</button></div>`);
-  var root_47 = from_html(`<button class="svelte-1tlx730"> </button>`);
-  var root_56 = from_html(`<div class="empty-state svelte-1tlx730"><span class="assistant-mark svelte-1tlx730">\u2726</span><h2 class="svelte-1tlx730">\u0427\u0442\u043E \u0440\u0430\u0437\u0431\u0435\u0440\u0451\u043C \u0432 \u0441\u0435\u0440\u0432\u0438\u0441\u0435?</h2><p>\u041C\u043E\u0433\u0443 \u043F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u0441\u043E\u0441\u0442\u043E\u044F\u043D\u0438\u0435, \u043D\u0430\u0439\u0442\u0438 \u0437\u0430\u0434\u0430\u0447\u0443, \u043F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u0438\u0442\u044C \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u0438 \u043F\u0440\u0435\u0434\u043B\u043E\u0436\u0438\u0442\u044C \u043F\u0440\u0430\u0432\u043A\u0443 \u0442\u0435\u043A\u0441\u0442\u0430 \u0438\u043B\u0438 \u0442\u0435\u0441\u0442\u043E\u0432.</p><div class="suggestions svelte-1tlx730"></div></div>`);
+  var root_39 = from_html(`<div class="empty-state svelte-1tlx730"><h2 class="svelte-1tlx730">\u041F\u043E\u0434\u043A\u043B\u044E\u0447\u0438 \u0441\u0432\u043E\u0435\u0433\u043E AI-\u043F\u0440\u043E\u0432\u0430\u0439\u0434\u0435\u0440\u0430</h2><p>\u0423\u043A\u0430\u0436\u0438 URL API, \u043C\u043E\u0434\u0435\u043B\u044C \u0438 \u043A\u043B\u044E\u0447 \u0432 \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430\u0445. \u0414\u0438\u0430\u043B\u043E\u0433\u0438 \u0438 \u0447\u0435\u0440\u043D\u043E\u0432\u0438\u043A\u0438 \u0431\u0443\u0434\u0443\u0442 \u0445\u0440\u0430\u043D\u0438\u0442\u044C\u0441\u044F \u043D\u0430 \u0441\u0435\u0440\u0432\u0435\u0440\u0435.</p><button class="primary">\u041E\u0442\u043A\u0440\u044B\u0442\u044C \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438</button></div>`);
+  var root_48 = from_html(`<button class="svelte-1tlx730"> </button>`);
+  var root_57 = from_html(`<div class="empty-state svelte-1tlx730"><span class="assistant-mark svelte-1tlx730">\u2726</span><h2 class="svelte-1tlx730">\u0427\u0442\u043E \u0440\u0430\u0437\u0431\u0435\u0440\u0451\u043C \u0432 \u0441\u0435\u0440\u0432\u0438\u0441\u0435?</h2><p>\u041C\u043E\u0433\u0443 \u043F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u0441\u043E\u0441\u0442\u043E\u044F\u043D\u0438\u0435, \u043D\u0430\u0439\u0442\u0438 \u0437\u0430\u0434\u0430\u0447\u0443, \u043F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u0438\u0442\u044C \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u0438 \u043F\u0440\u0435\u0434\u043B\u043E\u0436\u0438\u0442\u044C \u043F\u0440\u0430\u0432\u043A\u0443 \u0442\u0435\u043A\u0441\u0442\u0430 \u0438\u043B\u0438 \u0442\u0435\u0441\u0442\u043E\u0432.</p><div class="suggestions svelte-1tlx730"></div></div>`);
   var root_65 = from_html(`<div class="proposal svelte-1tlx730"><div class="svelte-1tlx730"><small class="svelte-1tlx730">\u0427\u0435\u0440\u043D\u043E\u0432\u0438\u043A \xB7 \u0442\u0440\u0435\u0431\u0443\u0435\u0442\u0441\u044F \u043F\u0440\u043E\u0432\u0435\u0440\u043A\u0430</small><strong> </strong><span class="svelte-1tlx730"> </span></div><button class="primary">\u041F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F \u2192</button></div>`);
   var root_75 = from_html(`<article><div class="message-heading svelte-1tlx730"><strong class="svelte-1tlx730"> </strong><span> </span><!></div> <!> <!></article>`);
   var root_85 = from_html(`<div class="inline-error svelte-1tlx730" role="alert"> </div>`);
   var root_95 = from_html(`<option> </option>`);
   var root_105 = from_html(`<button>\u25A0 \u041E\u0441\u0442\u0430\u043D\u043E\u0432\u0438\u0442\u044C</button>`);
-  var root_115 = from_html(`<button class="primary">\u041E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u2191</button>`);
+  var root_116 = from_html(`<button class="primary">\u041E\u0442\u043F\u0440\u0430\u0432\u0438\u0442\u044C \u2191</button>`);
   var root_125 = from_html(`<div class="assistant-layout svelte-1tlx730"><aside class="history svelte-1tlx730" aria-label="\u0418\u0441\u0442\u043E\u0440\u0438\u044F AI-\u0434\u0438\u0430\u043B\u043E\u0433\u043E\u0432"><button class="primary">\uFF0B \u041D\u043E\u0432\u044B\u0439 \u0434\u0438\u0430\u043B\u043E\u0433</button> <p class="eyebrow svelte-1tlx730">\u0418\u0441\u0442\u043E\u0440\u0438\u044F</p> <!> <!> <div class="history-footer svelte-1tlx730"><span class="model svelte-1tlx730"> </span><button>\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 AI \u2192</button></div></aside> <section class="conversation svelte-1tlx730" aria-label="\u0427\u0430\u0442 \u0441 AI-\u043F\u043E\u043C\u043E\u0449\u043D\u0438\u043A\u043E\u043C"><div class="context svelte-1tlx730"><span class="context-dot svelte-1tlx730"></span> \u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442: \u0441\u0435\u0440\u0432\u0438\u0441, \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u0438 \u043A\u0430\u0442\u0430\u043B\u043E\u0433 <span class="muted svelte-1tlx730">\xB7 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F \u0447\u0435\u0440\u0435\u0437 \u043F\u0440\u043E\u0432\u0435\u0440\u044F\u0435\u043C\u044B\u0435 \u0447\u0435\u0440\u043D\u043E\u0432\u0438\u043A\u0438</span></div> <div class="messages svelte-1tlx730" aria-live="polite"><!> <!> <!></div> <div class="composer svelte-1tlx730"><!> <label class="attachment svelte-1tlx730">\u0417\u0430\u0434\u0430\u0447\u0430 \u0432 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442\u0435 <select class="svelte-1tlx730"><option>\u041E\u0431\u0449\u0438\u0439 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u0441\u0435\u0440\u0432\u0438\u0441\u0430</option><!></select></label> <div class="input-box svelte-1tlx730"><textarea placeholder="\u041D\u0430\u043F\u0438\u0448\u0438, \u0447\u0442\u043E \u043D\u0443\u0436\u043D\u043E \u043F\u0440\u043E\u0432\u0435\u0440\u0438\u0442\u044C \u0438\u043B\u0438 \u043F\u043E\u0434\u0433\u043E\u0442\u043E\u0432\u0438\u0442\u044C\u2026" aria-label="\u0421\u043E\u043E\u0431\u0449\u0435\u043D\u0438\u0435 \u043F\u043E\u043C\u043E\u0449\u043D\u0438\u043A\u0443" maxlength="8000" class="svelte-1tlx730"></textarea><div class="composer-actions svelte-1tlx730"><small class="svelte-1tlx730"> </small><!></div></div></div></section></div>`);
   var $$css9 = {
     hash: "svelte-1tlx730",
@@ -9481,7 +9638,7 @@ ${component_stack}
     var node_1 = sibling(node, 2);
     {
       var consequent = ($$anchor2) => {
-        var p_1 = root_111();
+        var p_1 = root_115();
         append($$anchor2, p_1);
       };
       if_block(node_1, ($$render) => {
@@ -9509,7 +9666,7 @@ ${component_stack}
     var node_3 = sibling(node_2, 2);
     {
       var consequent_2 = ($$anchor2) => {
-        var div_4 = root_38();
+        var div_4 = root_39();
         var button_4 = sibling(child(div_4), 2);
         reset(div_4);
         delegated("click", button_4, function(...$$args) {
@@ -9518,10 +9675,10 @@ ${component_stack}
         append($$anchor2, div_4);
       };
       var consequent_3 = ($$anchor2) => {
-        var div_5 = root_56();
+        var div_5 = root_57();
         var div_6 = sibling(child(div_5), 3);
         each(div_6, 21, () => suggestions, index, ($$anchor3, suggestion) => {
-          var button_5 = root_47();
+          var button_5 = root_48();
           var text_4 = only_child(button_5, true);
           template_effect(() => set_text(text_4, get2(suggestion)));
           delegated("click", button_5, () => send(get2(suggestion)));
@@ -9548,7 +9705,7 @@ ${component_stack}
       var node_5 = sibling(span_1);
       {
         var consequent_4 = ($$anchor3) => {
-          var button_6 = root_47();
+          var button_6 = root_48();
           var text_7 = only_child(button_6, true);
           template_effect(() => set_text(text_7, get2(copied) === get2(message).id ? "\u0421\u043A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u043D\u043E" : "\u041A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u0442\u044C"));
           delegated("click", button_6, () => copy(get2(message)));
@@ -9652,7 +9809,7 @@ ${component_stack}
         append($$anchor2, button_8);
       };
       var alternate = ($$anchor2) => {
-        var button_9 = root_115();
+        var button_9 = root_116();
         template_effect(($0) => button_9.disabled = $0, [
           () => !get2(ready) || get2(loading) || !get2(input).trim()
         ]);
@@ -9694,11 +9851,11 @@ ${component_stack}
 
   // src/App.svelte
   var root10 = from_html(`<div class="boot svelte-1n46o8q">\u041F\u0440\u043E\u0432\u0435\u0440\u044F\u044E \u0441\u0435\u0441\u0441\u0438\u044E\u2026</div>`);
-  var root_116 = from_html(`<p class="auth-error svelte-1n46o8q" role="alert"> </p>`);
+  var root_117 = from_html(`<p class="auth-error svelte-1n46o8q" role="alert"> </p>`);
   var root_212 = from_html(`<!><!>`, 1);
-  var root_39 = from_html(`<p class="nav-caption svelte-1n46o8q">\u0410\u0434\u043C\u0438\u043D\u0438\u0441\u0442\u0440\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435</p><button><span class="svelte-1n46o8q">\u2726</span> AI-\u043F\u043E\u043C\u043E\u0449\u043D\u0438\u043A</button><button><span class="svelte-1n46o8q">\u2699</span> \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438</button>`, 1);
-  var root_48 = from_html(`<span class="unsaved svelte-1n46o8q">\u25CF \u041D\u0435\u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0435 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F</span>`);
-  var root_57 = from_html(`<span class="online svelte-1n46o8q">\u25CF</span> \u0421\u0435\u0440\u0432\u0438\u0441 \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D`, 1);
+  var root_310 = from_html(`<p class="nav-caption svelte-1n46o8q">\u0410\u0434\u043C\u0438\u043D\u0438\u0441\u0442\u0440\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435</p><button><span class="svelte-1n46o8q">\u2726</span> AI-\u043F\u043E\u043C\u043E\u0449\u043D\u0438\u043A</button><button><span class="svelte-1n46o8q">\u2699</span> \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438</button>`, 1);
+  var root_49 = from_html(`<span class="unsaved svelte-1n46o8q">\u25CF \u041D\u0435\u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0435 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u044F</span>`);
+  var root_58 = from_html(`<span class="online svelte-1n46o8q">\u25CF</span> \u0421\u0435\u0440\u0432\u0438\u0441 \u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D`, 1);
   var root_66 = from_html(`<main class="shell svelte-1n46o8q"><aside class="sidebar svelte-1n46o8q"><div class="brand svelte-1n46o8q"><span class="logo svelte-1n46o8q">e</span><div><strong class="svelte-1n46o8q"> </strong><small class="svelte-1n46o8q">\u041F\u0430\u043D\u0435\u043B\u044C \u0443\u043F\u0440\u0430\u0432\u043B\u0435\u043D\u0438\u044F</small></div></div> <p class="nav-caption svelte-1n46o8q">\u0420\u0430\u0431\u043E\u0447\u0435\u0435 \u043F\u0440\u043E\u0441\u0442\u0440\u0430\u043D\u0441\u0442\u0432\u043E</p><nav aria-label="\u041D\u0430\u0432\u0438\u0433\u0430\u0446\u0438\u044F \u0430\u0434\u043C\u0438\u043D\u043A\u0438" class="svelte-1n46o8q"><button><span class="svelte-1n46o8q">\u25EB</span> \u041E\u0431\u0437\u043E\u0440</button> <button><span class="svelte-1n46o8q">\u2659</span> \u041F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u0438</button> <button><span class="svelte-1n46o8q">\u25A4</span> \u041A\u0430\u0442\u0430\u043B\u043E\u0433 \u0437\u0430\u0434\u0430\u0447</button> <!></nav> <div class="account svelte-1n46o8q"><strong> </strong><small class="svelte-1n46o8q"> </small><button class="svelte-1n46o8q">\u0412\u044B\u0439\u0442\u0438 \u0438\u0437 \u0430\u043A\u043A\u0430\u0443\u043D\u0442\u0430</button></div></aside> <section class="workspace svelte-1n46o8q"><header class="page-header svelte-1n46o8q"><div><p class="eyebrow svelte-1n46o8q"> </p><h1 class="svelte-1n46o8q"> </h1></div><div class="header-status svelte-1n46o8q"><!></div></header> <div class="page-body svelte-1n46o8q"><!></div></section></main>`);
   var root_76 = from_html(`<!> <!>`, 1);
   var $$css10 = {
@@ -9849,7 +10006,7 @@ ${component_stack}
         var node_1 = first_child(fragment_1);
         {
           var consequent_1 = ($$anchor3) => {
-            var p = root_116();
+            var p = root_117();
             var text2 = only_child(p, true);
             template_effect(() => set_text(text2, get2(authError)));
             append($$anchor3, p);
@@ -9889,7 +10046,7 @@ ${component_stack}
         var node_4 = sibling(button_2, 2);
         {
           var consequent_3 = ($$anchor3) => {
-            var fragment_2 = root_39();
+            var fragment_2 = root_310();
             var button_3 = sibling(first_child(fragment_2));
             let classes_3;
             var button_4 = sibling(button_3);
@@ -9931,11 +10088,11 @@ ${component_stack}
         var node_5 = child(div_5);
         {
           var consequent_4 = ($$anchor3) => {
-            var span = root_48();
+            var span = root_49();
             append($$anchor3, span);
           };
           var alternate = ($$anchor3) => {
-            var fragment_3 = root_57();
+            var fragment_3 = root_58();
             next();
             append($$anchor3, fragment_3);
           };
