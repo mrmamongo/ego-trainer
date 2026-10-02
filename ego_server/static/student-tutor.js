@@ -1,5 +1,8 @@
 export function mountTutor({ target, task, conversation, getAccount, submission, request,
-  renderMarkdown, isCurrentStudent, onAccount, onDefense }) {
+  renderMarkdown, isCurrentStudent, onAccount, onDefense,
+  allowedModes = ['hint', 'explain'], title = 'Учебный помощник' }) {
+  if (!allowedModes.includes(conversation.mode)) conversation.mode = allowedModes[0];
+  const defenseOnly = allowedModes.length === 1 && allowedModes[0] === 'defend';
   const make = (tag, className, text) => {
     const element = document.createElement(tag);
     if (className) element.className = className;
@@ -7,10 +10,10 @@ export function mountTutor({ target, task, conversation, getAccount, submission,
     return element;
   };
   const tutor = make('section', 'tutor');
-  tutor.setAttribute('aria-label', 'Учебный помощник');
+  tutor.setAttribute('aria-label', title);
   const header = make('div', 'tutor-head');
   const status = make('small');
-  header.append(make('strong', '', 'Учебный помощник'), status);
+  header.append(make('strong', '', title), status);
   const modes = make('div', 'tutor-modes');
   const buttons = new Map();
   const restart = make('button', '', 'Новый диалог'); restart.type = 'button';
@@ -39,6 +42,12 @@ export function mountTutor({ target, task, conversation, getAccount, submission,
   const error = make('p', 'tutor-error'); error.setAttribute('role', 'alert');
   const retry = make('button', 'tutor-retry', 'Повторить получение ответа'); retry.type = 'button';
   retry.addEventListener('click', () => { void sendMessage(); });
+  const startDefense = make('button', 'quiet-button', 'Открыть защиту'); startDefense.type = 'button';
+  startDefense.addEventListener('click', () => {
+    if (conversation.session?.status === 'needs_review') conversation.session = null;
+    void sendMessage(true);
+  });
+  if (defenseOnly) modes.append(startDefense);
   form.append(input, send);
   tutor.append(header, modes, chat, codeField, error, retry, form);
   target.append(tutor);
@@ -50,12 +59,18 @@ export function mountTutor({ target, task, conversation, getAccount, submission,
     const terminal = session && session.status !== 'active';
     status.textContent = conversation.busy ? 'Готовлю и проверяю ответ…'
       : terminal ? (session.status === 'confirmed' ? 'Понимание подтверждено' : 'Нужен разбор с наставником')
-      : access?.available ? 'Подсказка · объяснение · защита' : (access?.reason || 'Сейчас недоступен');
+      : access?.available ? (defenseOnly ? ({ mechanism: 'Шаг 1 из 3 · объяснение', trace: 'Шаг 2 из 3 · выполнение', transfer: 'Шаг 3 из 3 · новый случай' }[session?.stage] || 'Три шага, по одному вопросу') : 'Подсказка или объяснение')
+      : (access?.reason || 'Сейчас недоступен');
     for (const [mode, button] of buttons) {
       button.disabled = conversation.busy || Boolean(conversation.pending) || !access?.available;
       button.setAttribute('aria-pressed', String(mode === conversation.mode));
     }
     codeField.hidden = conversation.mode === 'defend';
+    startDefense.hidden = !defenseOnly || conversation.busy || Boolean(conversation.pending)
+      || (session?.messages.length > 0 && session.status !== 'needs_review');
+    startDefense.textContent = session?.status === 'needs_review' ? 'Попробовать защиту снова' : 'Открыть защиту';
+    startDefense.disabled = !access?.available;
+    form.hidden = defenseOnly && (!session?.messages.length || terminal);
     restart.hidden = conversation.mode === 'defend' || !session;
     restart.disabled = conversation.busy || Boolean(conversation.pending) || !access?.available;
     code.disabled = conversation.busy || Boolean(conversation.pending) || !access?.available;
@@ -149,8 +164,8 @@ export function mountTutor({ target, task, conversation, getAccount, submission,
     });
     modes.append(button); buttons.set(mode, button);
   };
-  addMode('Подсказка', 'hint'); addMode('Объяснить', 'explain');
-  if (submission && submission.understanding !== 'confirmed') addMode('Защитить решение', 'defend');
+  if (allowedModes.includes('hint')) addMode('Подсказка', 'hint');
+  if (allowedModes.includes('explain')) addMode('Объяснить', 'explain');
   modes.append(restart);
   form.addEventListener('submit', event => { event.preventDefault(); void sendMessage(); });
   draw();

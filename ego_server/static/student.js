@@ -1,10 +1,13 @@
-import { mountTutor } from './student-tutor.js';
+import { mountTaskPage } from './student-task-page.js';
+import { readStudentRoute, studentTaskUrl, studentCatalogUrl, isPlainNavigation } from './student-navigation.js';
 
 (() => {
   const $ = (id) => document.getElementById(id);
-  const state = { token: localStorage.getItem('ego_student_token'), user: null, tasks: [], progress: [], selectedId: null, registering: false, understanding: [], account: null, providers: null, epoch: 0, taskEpoch: 0, tutors: new Map() };
+  const state = { ready: false, details: new Map(), pageController: null, pageTaskKey: null, catalogUrl: '/student', token: localStorage.getItem('ego_student_token'), user: null, tasks: [], progress: [], selectedId: null, registering: false, understanding: [], account: null, providers: null, epoch: 0, taskEpoch: 0, tutors: new Map() };
   const authScreen = $('auth-screen');
   const dashboard = $('dashboard');
+  const workspace = $('student-workspace');
+  history.scrollRestoration = 'manual';
   const authError = $('auth-error');
   let attempt = 0, popup = null, channel = null;
   const authForm = $('auth-form');
@@ -15,16 +18,31 @@ import { mountTutor } from './student-tutor.js';
 
   async function request(path, options = {}) {
     const headers = { Accept: 'application/json' };
-    if (state.token && path !== '/auth/providers') headers.Authorization = `Bearer ${state.token}`;
+    const requestToken = path === '/auth/providers' ? null : state.token;
+    if (requestToken) headers.Authorization = `Bearer ${requestToken}`;
     if (options.body !== undefined) headers['Content-Type'] = 'application/json';
-    const response = await fetch(path, { method: options.method || 'GET', headers, body: options.body === undefined ? undefined : JSON.stringify(options.body) });
+    let response;
+    try {
+      response = await fetch(path, { method: options.method || 'GET', headers, body: options.body === undefined ? undefined : JSON.stringify(options.body) });
+    } catch {
+      throw new ApiError('Не удалось связаться с сервером. Проверь подключение и повтори попытку.', 0);
+    }
     const data = await response.json().catch(() => null);
-    if (!response.ok) throw new ApiError(data?.detail || `Ошибка сервера: ${response.status}`, response.status);
+    if (!response.ok) {
+      if (response.status === 401 && requestToken && state.user && requestToken === state.token) {
+        state.epoch++; clearStudentData(); state.token = null;
+        localStorage.removeItem('ego_student_token');
+        showAuth('Сессия закончилась. Войди ещё раз — вернёшься к этой странице.');
+      }
+      const message = typeof data?.detail === 'string' ? data.detail : `Ошибка сервера: ${response.status}`;
+      throw new ApiError(message, response.status);
+    }
     return data;
   }
 
   function showAuth(error = '') {
-    dashboard.classList.add('hidden');
+    $('content-skip').href = '#auth-form';
+    workspace.classList.add('hidden');
     $('user-actions').classList.add('hidden');
     authScreen.classList.remove('hidden');
     authError.textContent = error;
@@ -108,6 +126,10 @@ import { mountTutor } from './student-tutor.js';
       const empty = document.createElement('div');
       empty.className = 'empty';
       empty.textContent = state.tasks.length ? 'По этим фильтрам ничего не нашлось.' : 'Задачи пока не загружены.';
+      if (state.tasks.length) {
+        const reset = document.createElement('button'); reset.className = 'quiet-button'; reset.type = 'button'; reset.textContent = 'Сбросить фильтры';
+        reset.addEventListener('click', () => { applyFilters({}); changeFilters(); }); empty.append(reset);
+      }
       list.append(empty);
       return;
     }
@@ -115,13 +137,13 @@ import { mountTutor } from './student-tutor.js';
     tasks.forEach((task) => {
       const status = taskState(task);
       const progress = progressFor(task);
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = `task-row${state.selectedId === task.id ? ' selected' : ''}`;
-      button.setAttribute('aria-pressed', String(state.selectedId === task.id));
+      const button = document.createElement('a');
+      button.href = studentTaskUrl(task.id);
+      button.className = 'task-row';
       const symbol = document.createElement('span');
       symbol.className = `task-symbol ${status}`;
-      symbol.textContent = status === 'passed' ? '✓' : status === 'started' ? '↻' : '·';
+      symbol.textContent = status === 'passed' ? '✓' : status === 'defense' ? '?' : status === 'started' ? '↻' : '·';
+      symbol.setAttribute('aria-hidden', 'true');
       const info = document.createElement('span');
       info.className = 'task-name';
       const title = document.createElement('span');
@@ -129,135 +151,144 @@ import { mountTutor } from './student-tutor.js';
       title.textContent = task.title || task.task_id || task.id;
       const meta = document.createElement('span');
       meta.className = 'task-meta';
-      meta.textContent = [`${task.block || 'Без блока'}${task.task_id ? ` · ${task.task_id}` : ''}`, task.level].filter(Boolean).join(' · ');
+      const levels = { easy: 'Базовый', medium: 'Средний', hard: 'Сложный' };
+      meta.textContent = [`${task.block ? `Блок ${task.block}` : 'Без блока'}${task.task_id ? ` · ${task.task_id}` : ''}`, levels[task.level] || task.level].filter(Boolean).join(' · ');
       info.append(title, meta);
       const score = document.createElement('span');
       score.className = 'task-score';
-      score.textContent = status === 'defense' ? 'Нужна защита' : progress ? `${progress.passed_tests}/${progress.total_tests} тестов` : stateLabel(status);
-      button.append(symbol, info, score);
-      button.addEventListener('click', () => openTask(task));
+      score.textContent = status === 'defense' ? 'Тесты пройдены · нужна защита'
+        : progress ? `${stateLabel(status)} · ${progress.passed_tests}/${progress.total_tests} тестов` : stateLabel(status);
+      const arrow = document.createElement('span'); arrow.className = 'task-arrow'; arrow.textContent = '→'; arrow.setAttribute('aria-hidden', 'true');
+      button.append(symbol, info, score, arrow);
+      button.addEventListener('click', event => {
+        if (!isPlainNavigation(event)) return;
+        event.preventDefault();
+        history.replaceState({ ...history.state, scrollY: window.scrollY }, '', location.href);
+        history.pushState({ catalogUrl: studentCatalogUrl(currentFilters()), fromCatalog: true }, '', button.href);
+        void renderRoute({ focus: true });
+      });
       fragment.append(button);
     });
     list.append(fragment);
   }
 
-  async function openTask(task) {
-    const epoch = state.epoch;
-    const selection = ++state.taskEpoch;
-    state.selectedId = task.id;
-    drawTasks();
-    const panel = $('task-detail');
-    const loading = document.createElement('div');
-    loading.className = 'loading';
-    loading.textContent = 'Открываю задачу…';
-    panel.replaceChildren(loading);
-    try {
-      const detail = await request(`/tasks/${encodeURIComponent(task.id)}`);
-      if (epoch !== state.epoch || selection !== state.taskEpoch) return;
-      drawTaskDetail(detail, task);
-    } catch (error) {
-      if (epoch === state.epoch && selection === state.taskEpoch) showPanelError(error);
-    }
+  function currentFilters() {
+    return { q: $('search').value, block: $('block-filter').value, status: $('status-filter').value };
   }
 
-  function drawTaskDetail(detail, meta) {
-    const panel = $('task-detail');
-    const wrap = document.createElement('div');
-    wrap.className = 'detail-content';
-    const top = document.createElement('div');
-    top.className = 'detail-top';
-    const id = document.createElement('span');
-    id.className = 'detail-id';
-    id.textContent = `${meta.block ? `Блок ${meta.block} · ` : ''}${meta.task_id || meta.id}`;
-    const badge = document.createElement('span');
-    const status = taskState(meta);
-    badge.className = `badge ${status}`;
-    badge.textContent = stateLabel(status);
-    top.append(id, badge);
-    const title = document.createElement('h2');
-    title.textContent = detail.title || meta.title || meta.task_id;
-    const body = document.createElement('div');
-    body.className = 'statement';
-    renderMarkdown(detail.statement_md || 'У этой задачи пока нет описания.', body);
-    wrap.append(top, title);
-    const progress = progressFor(meta);
-    if (progress) {
-      const summary = document.createElement('div');
-      summary.className = 'attempt-summary';
-      const lastRun = progress.last_run_at ? new Date(progress.last_run_at).toLocaleString('ru-RU') : '—';
-      summary.textContent = `${progress.passed_tests}/${progress.total_tests} тестов · ${progress.attempts} ${plural(progress.attempts, 'попытка', 'попытки', 'попыток')} · последняя попытка ${lastRun}`;
-      wrap.append(summary);
-    }
-    if (status === 'defense') {
-      const notice = document.createElement('p'); notice.className = 'notice';
-      notice.textContent = 'Тесты пройдены. Защити решение ниже: объясни его механизм, проследи выполнение и разбери новый пример.';
-      wrap.append(notice);
-    }
-    wrap.append(body);
-    if (detail.stub_py) {
-      const divider = document.createElement('div');
-      divider.className = 'detail-divider';
-      const details = document.createElement('details');
-      const summary = document.createElement('summary');
-      summary.textContent = 'Показать стартовый код';
-      const code = document.createElement('div');
-      code.className = 'stub-box';
-      const pre = document.createElement('pre');
-      pre.textContent = detail.stub_py;
-      code.append(pre);
-      details.append(summary, code);
-      wrap.append(divider, details);
-    }
-    const hintsButton = document.createElement('button');
-    hintsButton.type = 'button';
-    hintsButton.className = 'hint-button';
-    hintsButton.textContent = 'Показать подсказки';
-    const hints = document.createElement('div');
-    hints.className = 'hints';
-    hintsButton.addEventListener('click', async () => {
-      hints.textContent = 'Ищу подсказки…';
-      hintsButton.disabled = true;
-      try {
-        const response = await request(`/tasks/${encodeURIComponent(meta.id)}/hints?level=3`);
-        hints.replaceChildren();
-        if (!response.hints?.length) hints.textContent = 'Подсказок для этой задачи пока нет.';
-        (response.hints || []).forEach((hint) => {
-          const item = document.createElement('div');
-          item.className = 'hint-item';
-          const label = document.createElement('strong');
-          label.textContent = `${hint.level}. ${hint.title}: `;
-          item.append(label);
-          const content = document.createElement("div");
-          renderMarkdown(hint.content, content); item.append(content);
-          hints.append(item);
-        });
-      } catch (error) { hints.textContent = error.message; }
-      finally { hintsButton.disabled = false; }
-    });
-    wrap.append(hintsButton, hints);
-    const key = `${meta.id}@${meta.version}`;
+  function applyFilters(filters) {
+    $('search').value = filters.q || '';
+    $('block-filter').value = filters.block || '';
+    $('status-filter').value = filters.status || '';
+  }
+
+  function changeFilters() {
+    state.catalogUrl = studentCatalogUrl(currentFilters());
+    $('catalog-home').href = state.catalogUrl;
+    history.replaceState({ ...history.state }, '', state.catalogUrl);
+    drawTasks();
+  }
+
+  function backToCatalog() {
+    if (history.state?.fromCatalog) { history.back(); return; }
+    history.pushState({}, '', state.catalogUrl);
+    void renderRoute({ focus: true });
+  }
+
+  function submissionFor(task) {
+    const progress = progressFor(task);
+    return state.understanding.find(row => row.task_id === task.id
+      && row.version === task.version && row.solution_hash === progress?.solution_hash) || null;
+  }
+
+  function conversationFor(task, kind, submission) {
+    const key = JSON.stringify([task.id, task.version, task.content_hash, kind, submission?.id]);
     if (!state.tutors.has(key)) state.tutors.set(key, {
-      mode: 'hint', session: null, pending: null, busy: false, draft: '', code: '', error: ''
+      mode: kind === 'defense' ? 'defend' : 'hint', session: null, pending: null,
+      busy: false, draft: '', code: '', error: ''
     });
-    const epoch = state.epoch;
-    const submission = state.understanding.find(row => row.task_id === meta.id
-      && row.version === meta.version && row.solution_hash === progress?.solution_hash);
-    mountTutor({ target: wrap, task: meta, conversation: state.tutors.get(key),
-      getAccount: () => state.account, submission, request, renderMarkdown,
-      isCurrentStudent: () => epoch === state.epoch && Boolean(state.token),
-      onAccount: value => { state.account = value; updateAIStatus(); },
-      onDefense: session => {
-        const row = state.understanding.find(value => value.id === session.submission_id);
-        if (row) row.understanding = session.status;
-        updateOverview(); drawTasks();
-        if (state.selectedId === meta.id && panel.contains(wrap)) {
-          const current = taskState(meta);
-          badge.className = `badge ${current}`; badge.textContent = stateLabel(current);
-          if (current === 'passed') wrap.querySelector('.notice')?.remove();
+    return state.tutors.get(key);
+  }
+
+  function showTaskError(message, retry = false) {
+    const panel = $('task-page'); panel.replaceChildren();
+    const back = document.createElement('a'); back.className = 'back-link'; back.href = state.catalogUrl; back.textContent = '← Все задачи';
+    back.addEventListener('click', event => { if (isPlainNavigation(event)) { event.preventDefault(); backToCatalog(); } });
+    const box = document.createElement('div'); box.className = 'empty-state'; box.setAttribute('role', 'alert');
+    const heading = document.createElement('h1'); heading.textContent = 'Задача недоступна';
+    const text = document.createElement('p'); text.className = 'muted'; text.textContent = message;
+    box.append(heading, text);
+    if (retry) {
+      const button = document.createElement('button'); button.className = 'quiet-button'; button.type = 'button'; button.textContent = 'Повторить загрузку';
+      button.addEventListener('click', () => { void renderRoute({ force: true }); }); box.append(button);
+    }
+    panel.append(back, box);
+  }
+
+  async function renderRoute({ focus = false, force = false, restoreScroll = false } = {}) {
+    if (!state.ready || !state.user) return;
+    const route = readStudentRoute(location);
+    const epoch = state.epoch, selection = ++state.taskEpoch;
+    const panel = $('task-page');
+    dashboard.hidden = route.taskId !== null; panel.hidden = route.taskId === null;
+    if (route.taskId === null) {
+      state.selectedId = null; state.pageController = null; state.pageTaskKey = null;
+      state.catalogUrl = studentCatalogUrl(route.filters);
+      $('catalog-home').href = state.catalogUrl;
+      applyFilters(route.filters); drawTasks();
+      document.title = 'Мой прогресс — Cogito';
+      if (focus) $('catalog-title').focus({ preventScroll: true });
+      window.scrollTo(0, restoreScroll ? (history.state?.scrollY || 0) : 0);
+      return;
+    }
+    if (history.state?.catalogUrl) {
+      const saved = new URL(history.state.catalogUrl, location.origin);
+      state.catalogUrl = studentCatalogUrl(readStudentRoute(saved).filters);
+    }
+    $('catalog-home').href = state.catalogUrl;
+    state.selectedId = route.taskId;
+    const task = state.tasks.find(value => value.id === route.taskId);
+    if (!task) {
+      state.pageController = null; state.pageTaskKey = null;
+      document.title = 'Задача недоступна — Cogito';
+      showTaskError('Такой задачи нет в твоём каталоге. Возможно, ссылка устарела или доступ изменился.');
+      return;
+    }
+    document.title = `${task.title || task.task_id} — Cogito`;
+    const key = JSON.stringify([task.id, task.version, task.content_hash]);
+    if (state.pageTaskKey === key && state.pageController && !force) {
+      state.pageController.activateTab(route.tab, { notify: false }); return;
+    }
+    state.pageController = null; state.pageTaskKey = null;
+    const loading = document.createElement('p'); loading.className = 'loading'; loading.setAttribute('role', 'status'); loading.textContent = 'Открываю задачу…';
+    panel.replaceChildren(loading);
+    try {
+      const detail = state.details.get(key) || await request(`/tasks/${encodeURIComponent(task.id)}`);
+      if (epoch !== state.epoch || selection !== state.taskEpoch) return;
+      state.details.set(key, detail);
+      state.pageController = mountTaskPage({ root: panel, task, detail, initialTab: route.tab,
+        catalogUrl: state.catalogUrl, onBack: backToCatalog, onRefresh: refreshData,
+        onTab: tab => history.replaceState({ ...history.state }, '', studentTaskUrl(task.id, tab)),
+        getProgress: () => progressFor(task), getSubmission: () => submissionFor(task),
+        getAccount: () => state.account, getStatus: () => ({ key: taskState(task), label: stateLabel(taskState(task)) }),
+        conversationFor: (kind, submission) => conversationFor(task, kind, submission), request, renderMarkdown,
+        isCurrentStudent: () => epoch === state.epoch && Boolean(state.token),
+        onAccount: value => {
+          state.account = value; updateAIStatus(); updateOverview(); drawTasks();
+          for (const conversation of state.tutors.values()) conversation.changed?.();
+        },
+        onDefense: session => {
+          const row = state.understanding.find(value => value.id === session.submission_id);
+          if (row) { row.understanding = session.status; row.evidence = session.evidence || []; }
+          updateOverview(); drawTasks();
         }
-      }
-    });
-    panel.replaceChildren(wrap);
+      });
+      state.pageTaskKey = key;
+      if (focus) $('task-title').focus({ preventScroll: true });
+      window.scrollTo(0, restoreScroll ? (history.state?.scrollY || 0) : 0);
+    } catch (error) {
+      if (epoch === state.epoch && selection === state.taskEpoch) showTaskError(error.message, error.status !== 404);
+    }
   }
 
   function renderMarkdown(source, target) {
@@ -353,29 +384,26 @@ import { mountTutor } from './student-tutor.js';
     return mod10 === 1 ? one : mod10 >= 2 && mod10 <= 4 ? few : many;
   }
 
-  function showPanelError(error) {
-    const panel = $('task-detail');
-    const message = document.createElement('div');
-    message.className = 'error';
-    message.textContent = error.message || 'Не удалось загрузить задачу.';
-    panel.replaceChildren(message);
+  function showWorkspaceError(error) {
+    if (!state.user) return;
+    $('app-error-message').textContent = error.message || 'Не удалось обновить данные.';
+    $('app-error').classList.remove('hidden');
   }
 
   async function loadDashboard() {
     const epoch = state.epoch;
-    const [tasks, progress, understanding, account] = await Promise.all([
-      request('/tasks'), request('/progress/me'), request('/progress/me/understanding'), request('/ai/me')]);
-    if (epoch !== state.epoch || !state.token) return;
-    state.understanding = understanding; state.account = account;
-    updateAIStatus();
-    state.tasks = tasks;
-    state.progress = progress;
-    populateBlocks();
-    updateOverview();
-    drawTasks();
-    if (state.selectedId) {
-      const selected = state.tasks.find((task) => task.id === state.selectedId);
-      if (selected) await openTask(selected);
+    $('app-error').classList.add('hidden');
+    $('workspace-loading').hidden = state.ready;
+    try {
+      const [tasks, progress, understanding, account] = await Promise.all([
+        request('/tasks'), request('/progress/me'), request('/progress/me/understanding'), request('/ai/me')]);
+      if (epoch !== state.epoch || !state.token) return;
+      state.understanding = understanding; state.account = account;
+      state.tasks = tasks; state.progress = progress; state.ready = true;
+      updateAIStatus(); populateBlocks(); updateOverview();
+      await renderRoute({ force: true });
+    } finally {
+      if (epoch === state.epoch) $('workspace-loading').hidden = true;
     }
   }
 
@@ -383,18 +411,17 @@ import { mountTutor } from './student-tutor.js';
     const account = state.account;
     $('ai-access').classList.toggle('available', Boolean(account?.available));
     $('ai-access').textContent = account?.available
-      ? `Учебный помощник доступен · баланс $${account.balance_usd}. Открой задачу, чтобы задать вопрос или защитить решение.`
+      ? `Учебный помощник доступен · баланс ${new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'USD', maximumFractionDigits: 4 }).format(Number(account.balance_usd))}. Вопросы и защита — на странице задачи.`
       : `Учебный помощник: ${account?.reason || 'Сейчас недоступен'}. Если нужен доступ, обратись к наставнику.`;
   }
 
   function clearStudentData() {
     state.user = null; state.tasks = []; state.progress = []; state.understanding = [];
     state.account = null; state.selectedId = null; state.taskEpoch++; state.tutors.clear();
-    $('task-list').replaceChildren(); $('task-detail').replaceChildren();
-    const placeholder = document.createElement('div');
-    placeholder.className = 'detail-placeholder';
-    placeholder.textContent = 'Выбери задачу — покажу условие, стартовый код и учебного помощника.';
-    $('task-detail').append(placeholder);
+    state.details.clear(); state.ready = false; state.pageController = null; state.pageTaskKey = null;
+    $('task-list').replaceChildren(); $('task-page').replaceChildren();
+    dashboard.hidden = true; $('task-page').hidden = true;
+    $('app-error').classList.add('hidden');
     for (const id of ['total-count', 'passed-count', 'active-count', 'percent']) $(id).textContent = '—';
     $('progress-fill').style.width = '0%'; $('ai-access').textContent = '';
   }
@@ -413,10 +440,11 @@ import { mountTutor } from './student-tutor.js';
         location.assign('/'); return;
       }
       state.user = user;
+      $('content-skip').href = '#student-workspace';
       $('hello-name').textContent = state.user.username;
       $('user-name').textContent = state.user.username;
       authScreen.classList.add('hidden');
-      dashboard.classList.remove('hidden');
+      workspace.classList.remove('hidden');
       $('user-actions').classList.remove('hidden');
       await loadDashboard();
     } catch (error) {
@@ -425,6 +453,8 @@ import { mountTutor } from './student-tutor.js';
         localStorage.removeItem('ego_student_token');
         state.token = null;
         showAuth('Сессия закончилась. Войди ещё раз.');
+      } else if (state.user) {
+        showWorkspaceError(error);
       } else {
         showAuth(error.message);
       }
@@ -467,16 +497,34 @@ import { mountTutor } from './student-tutor.js';
     setMode(false);
     showAuth();
   });
-  $('search').addEventListener('input', drawTasks);
-  $('block-filter').addEventListener('change', drawTasks);
-  $('status-filter').addEventListener('change', drawTasks);
-  $('refresh').addEventListener('click', async () => {
-    const button = $('refresh');
-    button.disabled = true;
-    try { await loadDashboard(); }
-    catch (error) { showPanelError(error); }
-    finally { button.disabled = false; }
+  $('search').addEventListener('input', changeFilters);
+  $('block-filter').addEventListener('change', changeFilters);
+  $('status-filter').addEventListener('change', changeFilters);
+  async function refreshData(event) {
+    const button = event.currentTarget; button.disabled = true;
+    const currentUrl = location.href, scrollY = window.scrollY;
+    try {
+      await loadDashboard();
+    }
+    catch (error) { showWorkspaceError(error); }
+    finally {
+      button.disabled = false;
+      if (state.user && location.href === currentUrl) {
+        const target = button.hasAttribute('data-refresh-progress')
+          ? $('task-page').querySelector('[data-refresh-progress]') : button;
+        target?.focus({ preventScroll: true }); window.scrollTo(0, scrollY);
+      }
+    }
+  }
+  $('refresh').addEventListener('click', refreshData);
+  $('retry-data').addEventListener('click', refreshData);
+  $('catalog-home').addEventListener('click', event => {
+    if (!isPlainNavigation(event) || !state.ready) return;
+    event.preventDefault();
+    if (readStudentRoute(location).taskId !== null) backToCatalog();
+    else window.scrollTo(0, 0);
   });
+  window.addEventListener('popstate', () => { void renderRoute({ focus: true, restoreScroll: true }); });
 
   function cancelForgejo() {
     attempt++; popup?.close(); channel?.close(); popup = channel = null;
@@ -529,7 +577,7 @@ import { mountTutor } from './student-tutor.js';
     $('auth-switch').classList.toggle('hidden', !providers.local || !providers.registration);
     setMode(false);
     if (!providers.local && !providers.forgejo) showAuth('Вход пока не настроен. Обратись к наставнику.');
-  }).catch(error => showAuth(error.message));
+  }).catch(error => { if (state.user) showWorkspaceError(error); else showAuth(error.message); });
 
   if (state.token) enter(state.token);
   else showAuth();
