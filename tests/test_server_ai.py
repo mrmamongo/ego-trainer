@@ -192,6 +192,30 @@ def test_access_and_admin_controls(env):
     assert client.get(f"/ai/sessions/{session_id}", headers=headers["bob"]).status_code == 404
 
 
+@pytest.mark.parametrize("role", ["admin", "mentor"])
+def test_staff_cannot_use_student_tutoring_endpoints(env, role):
+    client, headers, connect = env
+    provision(env)
+    session_id = new_session(env)
+    with connect() as db:
+        db.execute("UPDATE students SET role = ? WHERE id = 'root'", (role,))
+        db.commit()
+    for path in ("/ai/me", "/ai/submissions", f"/ai/sessions/{session_id}"):
+        assert client.get(path, headers=headers["root"]).status_code == 403
+    assert client.post(
+        "/ai/sessions", headers=headers["root"], json={"task_id": "T1"}
+    ).status_code == 403
+    assert client.post(
+        f"/ai/sessions/{session_id}/messages", headers=headers["root"], json={"text": "Help"}
+    ).status_code == 403
+
+
+def test_admin_authoring_assistant_is_not_exposed(env):
+    client, headers, _ = env
+    assert client.get("/admin/assistant/sessions", headers=headers["root"]).status_code == 404
+    assert client.post("/admin/assistant/sessions", headers=headers["root"], json={}).status_code == 404
+
+
 def test_encrypted_config_persists_and_keys_are_never_returned(env):
     client, headers, connect = env
     config = client.get("/admin/ai/settings", headers=headers["root"]).json()

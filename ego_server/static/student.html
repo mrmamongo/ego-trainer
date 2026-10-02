@@ -3,8 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light">
+    <meta name="color-scheme" content="dark">
   <title>Мой прогресс — Cogito</title>
+  <link rel="stylesheet" href="/static/admin/theme.css">
   <style>
     :root {
       color-scheme: light;
@@ -137,6 +138,58 @@
       .user-name { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     }
   </style>
+  <style>
+    :root { color-scheme: dark; --ink:#fafafa; --muted:#a1a1aa; --line:#27272a; --paper:#111113; --canvas:#09090b; --accent:#3b82f6; --accent-dark:#60a5fa; --mint:#123126; --green:#4ade80; --amber:#fbbf24; --rose:#f87171; }
+    body { color:var(--ink); background:var(--canvas); }
+    .topbar, .progress-card, .stat, .task-list-card, .task-detail, .auth-card { background:#111113; border-color:var(--line); box-shadow:none; }
+    .brand-mark { background:#2563eb; }
+    .quiet-button, .filters input, .filters select, .field input { color:var(--ink); background:#18181b; border-color:var(--line); border-radius:8px; }
+    .quiet-button:hover { border-color:#3b82f6; color:#60a5fa; }
+    .progress-card { background:#111113; }
+    .progress-heading strong, .detail-id, summary, .hint-button, .auth-switch { color:#60a5fa; }
+    .progress-track { background:#27272a; }
+    .progress-fill { background:#3b82f6; }
+    .task-row { background:#111113; border-bottom-color:#27272a; }
+    .task-row:hover, .task-row.selected { background:#1c1c20; }
+    .task-row.selected { box-shadow:inset 3px 0 #3b82f6; }
+    .task-symbol, .badge { background:#27272a; color:#d4d4d8; }
+    .task-symbol.passed, .badge.passed { background:#123126; color:#4ade80; }
+    .task-symbol.started, .task-symbol.defense, .badge.started, .badge.defense { background:#302510; color:#fbbf24; }
+    .statement :not(pre)>code { background:#27272a; }
+    .statement pre, .stub-box pre { background:#09090b; color:#e4e4e7; border:1px solid #27272a; border-radius:8px; }
+    .hint-button, .tutor-modes button, .tutor-send { border:1px solid #27272a; background:#18181b; border-radius:8px; }
+    .error { color:#f87171; background:#1c1012; border:1px solid #7f1d1d; }
+    .notice { color:#fbbf24; background:#19150e; border:1px solid #3f3320; }
+    .primary-button { background:#2563eb; border:1px solid #3b82f6; border-radius:8px; }
+    .primary-button:hover { background:#1d4ed8; }
+    .tutor { margin-top:22px; border:1px solid #27272a; border-radius:10px; background:#0f0f11; overflow:hidden; }
+    .tutor-head { padding:14px 15px; border-bottom:1px solid #27272a; display:flex; align-items:center; justify-content:space-between; gap:10px; }
+    .tutor-head strong { font-size:13px; } .tutor-head small { color:#a1a1aa; font-size:11px; }
+    .tutor-modes { display:flex; gap:7px; flex-wrap:wrap; padding:12px 14px; }
+    .tutor-modes button, .tutor-send { color:#fafafa; padding:7px 10px; font-size:12px; cursor:pointer; }
+    .tutor-modes button:hover, .tutor-send:hover { border-color:#3b82f6; }
+    .tutor-chat { max-height:330px; overflow:auto; padding:0 14px 12px; }
+    .tutor-message { padding:10px 12px; margin:8px 0; border-radius:8px; background:#18181b; font-size:12px; line-height:1.55; white-space:pre-wrap; }
+    .tutor-message.user { margin-left:24px; background:#17202e; border:1px solid #223b5a; }
+    .tutor-composer { display:flex; gap:8px; padding:0 14px 14px; }
+    .tutor-composer { flex-direction:column; }
+    .tutor-composer textarea, .tutor-code textarea { min-width:0; width:100%; border:1px solid #3f3f46; border-radius:8px; padding:9px 10px; background:#18181b; color:#fafafa; font:inherit; font-size:12px; resize:vertical; }
+    .tutor-composer textarea:focus, .tutor-code textarea:focus { outline:2px solid #3b82f6; outline-offset:1px; }
+    .tutor-send { align-self:flex-end; }
+    .tutor-code { margin:0 14px 12px; font-size:12px; }
+    .tutor-code textarea { margin-top:8px; font-family:Consolas,monospace; }
+    .tutor-error { margin:0 14px 12px; color:#f87171; font-size:12px; }
+    .tutor-retry { margin:0 14px 12px; padding:7px 10px; border:1px solid #3b82f6; border-radius:8px; color:#93c5fd; background:#18181b; font-size:12px; }
+    .tutor-empty { margin:0; padding:4px 0; color:#a1a1aa; font-size:12px; }
+    .tutor-message { white-space:normal; }
+    .tutor-message-name { font-size:11px; color:#a1a1aa; }
+    .tutor-modes button[aria-pressed=true] { border-color:#3b82f6; color:#93c5fd; }
+    .tutor button:disabled, .tutor textarea:disabled { opacity:.5; cursor:not-allowed; }
+    .progress-card, .stat, .task-list-card, .task-detail, .auth-card { border-radius:12px; }
+    .notice.available { background:#111113; border-color:#27272a; color:#a1a1aa; }
+    .statement blockquote { border-left-color:#3b82f6; }
+    .filters input:focus, .filters select:focus, .field input:focus { border-color:#3b82f6; box-shadow:0 0 0 3px #3b82f633; }
+  </style>
 </head>
 <body>
   <header class="topbar">
@@ -203,6 +256,6 @@
       </div>
     </section>
   </main>
-  <script src="/static/student.js" defer></script>
+  <script type="module" src="/static/student.js"></script>
 </body>
 </html>

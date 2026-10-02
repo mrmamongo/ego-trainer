@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { getOverview, type OverviewDTO, type SyncLogRow } from '../api';
+	import Button from '../lib/components/ui/button/Button.svelte';
+	import Card from '../lib/components/ui/card/Card.svelte';
 
 	let overview = $state<OverviewDTO | null>(null);
 	let loading = $state(true);
@@ -57,10 +59,10 @@
 
 <div class="section">
 	<div class="section-header">
-		<h2>Overview</h2>
-		<button class="btn" type="button" onclick={load} disabled={loading} aria-label="Refresh overview">
-			{loading ? 'Refreshing…' : 'Refresh'}
-		</button>
+		<h2>Состояние сервиса</h2>
+		<Button variant="outline" size="sm" onclick={load} disabled={loading} aria-label="Обновить обзор">
+			{loading ? 'Обновляю…' : 'Обновить'}
+		</Button>
 	</div>
 
 	{#if loading && !overview}
@@ -69,26 +71,26 @@
 		<div class="error">{error}</div>
 	{:else if overview}
 		<div class="grid">
-			<div class="card">
-				<span class="card-label">Server</span>
+			<Card class="gap-2 p-5">
+				<span class="card-label">Сервер</span>
 				<span class="card-value status-{overview.server === 'ok' ? 'ok' : 'err'}">{overview.server}</span>
-			</div>
-			<div class="card">
-				<span class="card-label">Projects</span>
+			</Card>
+			<Card class="gap-2 p-5">
+				<span class="card-label">Проекты</span>
 				<span class="card-value">{overview.counts.projects}</span>
-			</div>
-			<div class="card">
-				<span class="card-label">Folders</span>
+			</Card>
+			<Card class="gap-2 p-5">
+				<span class="card-label">Папки</span>
 				<span class="card-value">{overview.counts.folders}</span>
-			</div>
-			<div class="card">
-				<span class="card-label">Tasks</span>
+			</Card>
+			<Card class="gap-2 p-5">
+				<span class="card-label">Задачи</span>
 				<span class="card-value">{overview.counts.tasks}</span>
-			</div>
-			<div class="card">
-				<span class="card-label">Students</span>
+			</Card>
+			<Card class="gap-2 p-5">
+				<span class="card-label">Ученики</span>
 				<span class="card-value">{overview.counts.students}</span>
-			</div>
+			</Card>
 		</div>
 
 		<div class="sync-block">
@@ -114,18 +116,8 @@
 	.section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
 	h2 { font-size: 0.9rem; font-weight: 600; }
 	h3 { font-size: 0.8rem; font-weight: 600; margin: 20px 0 10px; color: #858585; text-transform: uppercase; letter-spacing: 0.05em; }
-	.btn {
-		padding: 4px 12px; background: transparent; border: 1px solid #3c3c3c; border-radius: 4px;
-		color: #d4d4d4; font-family: inherit; font-size: 0.8rem; cursor: pointer;
-	}
-	.btn:hover:not(:disabled) { border-color: #007acc; }
-	.btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 	.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
-	.card {
-		display: flex; flex-direction: column; gap: 4px; padding: 14px 16px;
-		background: #2d2d2d; border: 1px solid #3c3c3c; border-radius: 6px;
-	}
 	.card-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: #858585; }
 	.card-value { font-size: 1.4rem; font-weight: 700; font-variant-numeric: tabular-nums; }
 	.status-ok { color: #22c55e; }

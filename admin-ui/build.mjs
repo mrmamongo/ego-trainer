@@ -6,13 +6,18 @@ import sveltePlugin from 'esbuild-svelte';
 import { mkdirSync, copyFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execFileSync, spawn } from 'node:child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const outDir = join(__dirname, '..', 'ego_server', 'static', 'admin');
 mkdirSync(outDir, { recursive: true });
 copyFileSync(join(__dirname, 'node_modules', 'monaco-editor', 'LICENSE'), join(outDir, 'monaco.LICENSE.txt'));
+copyFileSync(join(__dirname, 'src', 'lib', 'components', 'ui', 'LICENSE'), join(outDir, 'shadcn.LICENSE.txt'));
 
 const watch = process.argv.includes('--watch');
+const themeArgs = [join(__dirname, 'node_modules', '@tailwindcss', 'cli', 'dist', 'index.mjs'),
+  '-i', join(__dirname, 'src', 'theme.css'), '-o', join(outDir, 'theme.css'), '--minify'];
+execFileSync(process.execPath, themeArgs, { cwd: __dirname, stdio: 'inherit', windowsHide: true });
 
 const options = {
   entryPoints: [join(__dirname, 'src', 'main.ts')],
@@ -46,6 +51,8 @@ const workerOptions = {
 };
 
 if (watch) {
+  const theme = spawn(process.execPath, [...themeArgs, '--watch'], { cwd: __dirname, stdio: 'inherit', windowsHide: true });
+  process.on('exit', () => theme.kill());
   const ctx = await esbuild.context(options);
   const workerCtx = await esbuild.context(workerOptions);
   await ctx.watch();

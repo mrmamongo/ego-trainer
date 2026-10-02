@@ -1,6 +1,8 @@
+import { mountTutor } from './student-tutor.js';
+
 (() => {
   const $ = (id) => document.getElementById(id);
-  const state = { token: localStorage.getItem('ego_student_token'), user: null, tasks: [], progress: [], selectedId: null, registering: false, understanding: [], account: null, providers: null, epoch: 0 };
+  const state = { token: localStorage.getItem('ego_student_token'), user: null, tasks: [], progress: [], selectedId: null, registering: false, understanding: [], account: null, providers: null, epoch: 0, taskEpoch: 0, tutors: new Map() };
   const authScreen = $('auth-screen');
   const dashboard = $('dashboard');
   const authError = $('auth-error');
@@ -140,6 +142,8 @@
   }
 
   async function openTask(task) {
+    const epoch = state.epoch;
+    const selection = ++state.taskEpoch;
     state.selectedId = task.id;
     drawTasks();
     const panel = $('task-detail');
@@ -149,10 +153,10 @@
     panel.replaceChildren(loading);
     try {
       const detail = await request(`/tasks/${encodeURIComponent(task.id)}`);
-      if (state.selectedId !== task.id) return;
+      if (epoch !== state.epoch || selection !== state.taskEpoch) return;
       drawTaskDetail(detail, task);
     } catch (error) {
-      showPanelError(error);
+      if (epoch === state.epoch && selection === state.taskEpoch) showPanelError(error);
     }
   }
 
@@ -186,7 +190,7 @@
     }
     if (status === 'defense') {
       const notice = document.createElement('p'); notice.className = 'notice';
-      notice.textContent = 'Тесты пройдены. Открой это задание в расширении VS Code и пройди защиту решения. Понимание проверяется отдельно.';
+      notice.textContent = 'Тесты пройдены. Защити решение ниже: объясни его механизм, проследи выполнение и разбери новый пример.';
       wrap.append(notice);
     }
     wrap.append(body);
@@ -231,6 +235,28 @@
       finally { hintsButton.disabled = false; }
     });
     wrap.append(hintsButton, hints);
+    const key = `${meta.id}@${meta.version}`;
+    if (!state.tutors.has(key)) state.tutors.set(key, {
+      mode: 'hint', session: null, pending: null, busy: false, draft: '', code: '', error: ''
+    });
+    const epoch = state.epoch;
+    const submission = state.understanding.find(row => row.task_id === meta.id
+      && row.version === meta.version && row.solution_hash === progress?.solution_hash);
+    mountTutor({ target: wrap, task: meta, conversation: state.tutors.get(key),
+      getAccount: () => state.account, submission, request, renderMarkdown,
+      isCurrentStudent: () => epoch === state.epoch && Boolean(state.token),
+      onAccount: value => { state.account = value; updateAIStatus(); },
+      onDefense: session => {
+        const row = state.understanding.find(value => value.id === session.submission_id);
+        if (row) row.understanding = session.status;
+        updateOverview(); drawTasks();
+        if (state.selectedId === meta.id && panel.contains(wrap)) {
+          const current = taskState(meta);
+          badge.className = `badge ${current}`; badge.textContent = stateLabel(current);
+          if (current === 'passed') wrap.querySelector('.notice')?.remove();
+        }
+      }
+    });
     panel.replaceChildren(wrap);
   }
 
@@ -341,7 +367,7 @@
       request('/tasks'), request('/progress/me'), request('/progress/me/understanding'), request('/ai/me')]);
     if (epoch !== state.epoch || !state.token) return;
     state.understanding = understanding; state.account = account;
-    $('ai-access').textContent = `Учебный ассистент: ${account.reason}. Баланс $${account.balance_usd}. Подсказки, объяснения и защита решения доступны в расширении VS Code.`;
+    updateAIStatus();
     state.tasks = tasks;
     state.progress = progress;
     populateBlocks();
@@ -353,10 +379,22 @@
     }
   }
 
+  function updateAIStatus() {
+    const account = state.account;
+    $('ai-access').classList.toggle('available', Boolean(account?.available));
+    $('ai-access').textContent = account?.available
+      ? `Учебный помощник доступен · баланс $${account.balance_usd}. Открой задачу, чтобы задать вопрос или защитить решение.`
+      : `Учебный помощник: ${account?.reason || 'Сейчас недоступен'}. Если нужен доступ, обратись к наставнику.`;
+  }
+
   function clearStudentData() {
     state.user = null; state.tasks = []; state.progress = []; state.understanding = [];
-    state.account = null; state.selectedId = null;
+    state.account = null; state.selectedId = null; state.taskEpoch++; state.tutors.clear();
     $('task-list').replaceChildren(); $('task-detail').replaceChildren();
+    const placeholder = document.createElement('div');
+    placeholder.className = 'detail-placeholder';
+    placeholder.textContent = 'Выбери задачу — покажу условие, стартовый код и учебного помощника.';
+    $('task-detail').append(placeholder);
     for (const id of ['total-count', 'passed-count', 'active-count', 'percent']) $(id).textContent = '—';
     $('progress-fill').style.width = '0%'; $('ai-access').textContent = '';
   }
@@ -369,6 +407,11 @@
     try {
       const user = await request('/auth/me');
       if (epoch !== state.epoch || state.token !== token) return;
+      if (user.role !== 'student') {
+        localStorage.setItem('ego_admin_token', token);
+        localStorage.removeItem('ego_student_token');
+        location.assign('/'); return;
+      }
       state.user = user;
       $('hello-name').textContent = state.user.username;
       $('user-name').textContent = state.user.username;

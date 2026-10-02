@@ -74,8 +74,18 @@ def client(db_path: Path):
     importlib.reload(ego_server.main)
     from ego_server.main import app
 
-    with TestClient(app) as test_client:
-        yield test_client
+    # Retain isolated coverage of legacy history/stream helpers. The production
+    # application no longer registers this router (covered in test_server_ai).
+    from ego_server.routers.admin_assistant import router as legacy_assistant
+
+    production_routes = list(app.router.routes)
+    app.include_router(legacy_assistant, prefix="/admin")
+    try:
+        with TestClient(app) as test_client:
+            yield test_client
+    finally:
+        app.router.routes[:] = production_routes
+        app.openapi_schema = None
 
 
 def _token(client: TestClient, role: str, username: str | None = None) -> str:

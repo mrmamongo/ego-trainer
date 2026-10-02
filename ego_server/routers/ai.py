@@ -15,7 +15,7 @@ from ego_server.ai_models import (
 from ego_server.deps import CurrentUser, DbDep, require_role
 
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_role("student"))])
 admin_router = APIRouter(dependencies=[Depends(require_role("admin"))])
 
 

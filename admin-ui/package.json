@@ -7,9 +7,14 @@
     "watch": "node build.mjs --watch"
   },
   "devDependencies": {
+    "@tailwindcss/cli": "^4.3.3",
+    "clsx": "^2.1.1",
     "esbuild": "^0.28.1",
     "esbuild-svelte": "^0.9.5",
     "monaco-editor": "0.52.2",
-    "svelte": "^5.56.6"
+    "svelte": "^5.56.6",
+    "tailwind-merge": "^3.7.0",
+    "tailwind-variants": "^3.3.1",
+    "tailwindcss": "^4.3.3"
   }
 }

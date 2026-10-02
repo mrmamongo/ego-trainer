@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { login, authProviders, startForgejo, exchangeForgejo, type AuthResponse, type AuthProviders } from '../api';
+	import Button from '../lib/components/ui/button/Button.svelte';
 
 	let username = $state('');
 	let password = $state('');
@@ -76,20 +77,21 @@
 	<h1>Панель управления</h1>
 	<p class="sub">Вход для администратора или наставника</p>
 	{#if providers?.forgejo}
-		<button type="button" disabled={loading} onclick={forgejoLogin}>{loading ? 'Ожидаю вход в Forgejo…' : 'Войти через Forgejo'}</button>
-		{#if loading}<button type="button" onclick={cancel}>Отменить вход</button>{/if}
+		<Button class="w-full" disabled={loading} onclick={forgejoLogin}>{loading ? 'Ожидаю вход в Forgejo…' : 'Войти через Forgejo'}</Button>
+		{#if loading}<Button class="mt-2 w-full" variant="outline" onclick={cancel}>Отменить вход</Button>{/if}
 	{/if}
 	{#if providers?.local}
 	<form onsubmit={(e) => { e.preventDefault(); submit(); }}>
 		<input type="text" bind:value={username} placeholder="Имя пользователя" autocomplete="username" />
 		<input type="password" bind:value={password} placeholder="Пароль" autocomplete="current-password" />
-		<button type="submit" disabled={loading}>
+		<Button class="w-full" type="submit" disabled={loading}>
 			{loading ? 'Вхожу…' : 'Войти'}
-		</button>
+		</Button>
 	</form>
 	{/if}
 	{#if providers && !providers.forgejo && !providers.local}<p>Вход пока не настроен. Обратись к администратору.</p>{/if}
 	{#if error}<div class="error" role="alert">{error}</div>{/if}
+	<Button href="/student" variant="link" class="mt-4 w-full">Учебный кабинет →</Button>
 </div>
 
 <style>
@@ -99,15 +101,9 @@
 	.sub { color: #858585; font-size: 0.8rem; margin-bottom: 24px; }
 	input {
 		width: 100%; padding: 8px 12px; margin-bottom: 12px;
-		background: #2d2d2d; border: 1px solid #3c3c3c; border-radius: 4px;
-		color: #d4d4d4; font-family: inherit; font-size: 14px;
+		background: #18181b; border: 1px solid #3f3f46; border-radius: 4px;
+		color: #fafafa; font-family: inherit; font-size: 14px;
 	}
 	input:focus { outline: none; border-color: #007acc; }
-	button {
-		width: 100%; padding: 8px; background: #007acc; color: #fff;
-		border: none; border-radius: 4px; font-family: inherit; font-size: 14px; cursor: pointer;
-	}
-	button:hover:not(:disabled) { opacity: 0.9; }
-	button:disabled { opacity: 0.5; cursor: not-allowed; }
 	.error { color: #f87171; font-size: 0.8rem; margin-top: 8px; }
 </style>
