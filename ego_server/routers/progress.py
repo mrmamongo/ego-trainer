@@ -120,6 +120,7 @@ async def push_progress(body: ProgressPush, db: DbDep, user: CurrentUser) -> Pro
 
     return ProgressRow(
         student_id=student_id,
+        solution_hash=body.solution_hash,
         task_id=body.task_id,
         version=body.version,
         status=body.status,
@@ -128,6 +129,16 @@ async def push_progress(body: ProgressPush, db: DbDep, user: CurrentUser) -> Pro
         total_tests=body.total_tests,
         last_run_at=now,
     )
+
+
+@router.get("/me", response_model=list[ProgressRow])
+async def get_my_progress(db: DbDep, user: CurrentUser) -> list[ProgressRow]:
+    return await get_progress(user["sub"], db, user)
+
+
+@router.get("/me/understanding")
+async def get_my_understanding(db: DbDep, user: CurrentUser) -> list[dict]:
+    return await get_understanding(user["sub"], db, user)
 
 
 @router.get("/{student_id}", response_model=list[ProgressRow])
@@ -148,7 +159,10 @@ async def get_progress(
         )
     rows = db.execute(
         """SELECT student_id, task_id, version, status, attempts,
-                  passed_tests, total_tests, last_run_at
+                  passed_tests, total_tests, last_run_at,
+                  (SELECT solution_hash FROM runs WHERE runs.student_id = progress.student_id
+                   AND runs.task_id = progress.task_id AND runs.version = progress.version
+                   AND runs.created_at = progress.last_run_at ORDER BY id DESC LIMIT 1) AS solution_hash
            FROM progress WHERE student_id = ?
            ORDER BY task_id, version""",
         (student_id,),
@@ -163,6 +177,7 @@ async def get_progress(
             passed_tests=r["passed_tests"],
             total_tests=r["total_tests"],
             last_run_at=r["last_run_at"],
+            solution_hash=r["solution_hash"],
         )
         for r in rows
     ]

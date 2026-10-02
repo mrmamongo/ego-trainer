@@ -52,3 +52,8 @@ def test_admin_ui_is_only_at_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
         assert "/static/admin/bundle.js" in root.text
 
         assert client.get("/admin", follow_redirects=False).status_code == 404
+        student = client.get("/student")
+        assert student.status_code == 200
+        assert "/static/student.js" in student.text
+        assert "forgejo-login" in student.text
+        assert client.get("/student/").status_code == 200

@@ -1,5 +1,42 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { postToHost } from './shared/api';
+
+	const PHRASE = 'Cogito';
+	let text = $state(PHRASE);
+	let done = $state(false);
+	let reducedMotion = $state(false);
+
+	onMount(() => {
+		const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		let position = 0;
+		const finish = () => {
+			if (timer !== undefined) clearTimeout(timer);
+			timer = undefined;
+			text = PHRASE;
+			done = true;
+		};
+		const preferenceChanged = () => {
+			reducedMotion = motion.matches;
+			if (reducedMotion) finish();
+		};
+		const typeNext = () => {
+			text = PHRASE.slice(0, ++position);
+			if (position < PHRASE.length) timer = setTimeout(typeNext, 80);
+			else finish();
+		};
+		preferenceChanged();
+		if (!reducedMotion) {
+			text = '';
+			timer = setTimeout(typeNext, 80);
+		}
+		motion.addEventListener('change', preferenceChanged);
+		return () => {
+			if (timer !== undefined) clearTimeout(timer);
+			motion.removeEventListener('change', preferenceChanged);
+		};
+	});
 
 	function connect() {
 		postToHost({ type: 'welcome.connect' });
@@ -18,7 +55,9 @@
 	<div class="atmosphere" aria-hidden="true"></div>
 
 	<section class="compose">
-		<h1 class="brand">Ego Trainer</h1>
+		<h1 class="brand" aria-label={PHRASE}>
+			<span aria-hidden="true">{text}{#if !reducedMotion}<span class="cursor" class:blink={done}>|</span>{/if}</span>
+		</h1>
 		<p class="lede">
 			Practice coding tasks with auto-checking — connect to a server or work offline.
 		</p>
@@ -36,7 +75,7 @@
 	:global(body) {
 		margin: 0;
 		height: 100%;
-		font-family: var(--vscode-font-family, 'Segoe UI', sans-serif);
+		font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', 'Courier New', monospace;
 		color: var(--vscode-foreground);
 		background: var(--vscode-editor-background);
 	}
@@ -96,10 +135,31 @@
 		margin: 0;
 		font-size: clamp(2.25rem, 6vw, 3rem);
 		font-weight: 700;
-		letter-spacing: -0.03em;
+		letter-spacing: 0.01em;
 		line-height: 1.1;
 		color: var(--vscode-foreground);
 		animation: brand-rise 0.7s ease-out both;
+	}
+
+	.cursor {
+		font-weight: 300;
+		margin-left: 0.1em;
+		animation: cursor-glow 2s ease-in-out infinite alternate;
+	}
+
+	.cursor.blink {
+		animation: cursor-glow 2s ease-in-out infinite alternate,
+			cursor-blink 0.9s step-end infinite;
+	}
+
+	@keyframes cursor-glow {
+		from { text-shadow: 0 0 2px color-mix(in srgb, var(--vscode-foreground) 20%, transparent); }
+		to { text-shadow: 0 0 6px color-mix(in srgb, var(--vscode-foreground) 50%, transparent); }
+	}
+
+	@keyframes cursor-blink {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0; }
 	}
 
 	.lede {
@@ -192,6 +252,7 @@
 		.atmosphere,
 		.compose,
 		.brand,
+		.cursor,
 		.lede,
 		.actions {
 			animation: none;

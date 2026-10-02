@@ -91,6 +91,12 @@ async def admin_panel_root() -> FileResponse:
     return FileResponse(_STATIC_DIR / "admin.html")
 
 
+@app.get("/student", include_in_schema=False)
+@app.get("/student/", include_in_schema=False)
+async def student_panel() -> FileResponse:
+    return FileResponse(_STATIC_DIR / "student.html", headers={"Cache-Control": "no-store"})
+
+
 @app.get("/favicon.ico", include_in_schema=False)
 async def favicon() -> FileResponse:
     return FileResponse(_STATIC_DIR / "branding" / "favicon.ico", media_type="image/x-icon")

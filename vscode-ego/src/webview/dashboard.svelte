@@ -237,7 +237,7 @@
 	:global(body) {
 		margin: 0;
 		height: 100%;
-		font-family: var(--vscode-font-family, 'Segoe UI', sans-serif);
+		font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', 'Courier New', monospace;
 		font-size: var(--vscode-font-size, 13px);
 		color: var(--vscode-foreground);
 		background: var(--vscode-editor-background);

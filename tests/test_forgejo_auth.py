@@ -112,7 +112,11 @@ def execute(db_fn):
 def test_login_student_token_and_no_provider_credentials_persisted(setup):
     client, settings, _, calls = setup
     settings.local_auth_enabled = False
-    assert client.get("/auth/providers").json() == {"forgejo": True, "local": False}
+    assert client.get("/auth/providers").json() == {
+        "forgejo": True,
+        "local": False,
+        "registration": True,
+    }
     state, verifier = begin(client)
     assert (
         client.post(
@@ -322,7 +326,10 @@ def test_approved_username_links_existing_admin_with_registration_closed(setup):
     assert approval["issuer"] == "https://git.born-in-july.ru"
     assert approval["username"] == "mrmamongo"
     assert approval["user_id"] == "admin-id"
-    assert approval["expires_at"] - int(datetime.fromisoformat(approval["created_at"]).timestamp()) == 900
+    assert (
+        approval["expires_at"] - int(datetime.fromisoformat(approval["created_at"]).timestamp())
+        == 900
+    )
 
     profile["preferred_username"] = "mrmamongo"
     result = finish(client, *begin(client))
@@ -366,7 +373,10 @@ def test_closed_registration_never_links_same_username_without_approval(setup):
     )
     assert callback.status_code == 400
     assert execute(lambda conn: conn.execute("SELECT COUNT(*) FROM students").fetchone()[0]) == 1
-    assert execute(lambda conn: conn.execute("SELECT COUNT(*) FROM external_identities").fetchone()[0]) == 0
+    assert (
+        execute(lambda conn: conn.execute("SELECT COUNT(*) FROM external_identities").fetchone()[0])
+        == 0
+    )
     assert profile["preferred_username"] == "alice"
 
 
@@ -380,9 +390,7 @@ def test_approved_username_mismatch_does_not_consume_or_link(setup):
             "INSERT INTO students VALUES ('admin-id','local-admin','admin','',datetime('now'),NULL)"
         )
     )
-    assert main(
-        ["admin", "link-forgejo", "--user-id", "admin-id", "--username", "mrmamongo"]
-    ) == 0
+    assert main(["admin", "link-forgejo", "--user-id", "admin-id", "--username", "mrmamongo"]) == 0
     state, _ = begin(client)
     callback = client.get(
         "/auth/forgejo/callback", params={"state": state, "code": "provider-code"}
@@ -394,7 +402,10 @@ def test_approved_username_mismatch_does_not_consume_or_link(setup):
         ).fetchone()
     )
     assert tuple(approval) == ("pending", None, None)
-    assert execute(lambda conn: conn.execute("SELECT COUNT(*) FROM external_identities").fetchone()[0]) == 0
+    assert (
+        execute(lambda conn: conn.execute("SELECT COUNT(*) FROM external_identities").fetchone()[0])
+        == 0
+    )
 
 
 def test_expired_approval_cannot_link_username(setup):
@@ -408,19 +419,23 @@ def test_expired_approval_cannot_link_username(setup):
             "INSERT INTO students VALUES ('admin-id','local-admin','admin','',datetime('now'),NULL)"
         )
     )
-    assert main(
-        ["admin", "link-forgejo", "--user-id", "admin-id", "--username", "mrmamongo"]
-    ) == 0
+    assert main(["admin", "link-forgejo", "--user-id", "admin-id", "--username", "mrmamongo"]) == 0
     execute(lambda conn: conn.execute("UPDATE forgejo_link_approvals SET expires_at=0"))
     state, _ = begin(client)
     callback = client.get(
         "/auth/forgejo/callback", params={"state": state, "code": "provider-code"}
     )
     assert callback.status_code == 400
-    assert execute(lambda conn: conn.execute("SELECT COUNT(*) FROM external_identities").fetchone()[0]) == 0
-    assert execute(
-        lambda conn: conn.execute("SELECT status FROM forgejo_link_approvals").fetchone()[0]
-    ) == "pending"
+    assert (
+        execute(lambda conn: conn.execute("SELECT COUNT(*) FROM external_identities").fetchone()[0])
+        == 0
+    )
+    assert (
+        execute(
+            lambda conn: conn.execute("SELECT status FROM forgejo_link_approvals").fetchone()[0]
+        )
+        == "pending"
+    )
 
 
 def test_consumed_approval_cannot_bind_a_second_subject(setup):
@@ -434,9 +449,7 @@ def test_consumed_approval_cannot_bind_a_second_subject(setup):
             "INSERT INTO students VALUES ('admin-id','local-admin','admin','',datetime('now'),NULL)"
         )
     )
-    assert main(
-        ["admin", "link-forgejo", "--user-id", "admin-id", "--username", "mrmamongo"]
-    ) == 0
+    assert main(["admin", "link-forgejo", "--user-id", "admin-id", "--username", "mrmamongo"]) == 0
     first = finish(client, *begin(client))
     assert first["user_id"] == "admin-id"
     profile["sub"] = "43"
@@ -465,22 +478,22 @@ def test_existing_mapped_subject_precedes_username_approval(setup):
             "INSERT INTO students VALUES ('admin-id','local-admin','admin','',datetime('now'),NULL)"
         )
     )
-    assert main(
-        ["admin", "link-forgejo", "--user-id", "admin-id", "--username", "alice"]
-    ) == 0
+    assert main(["admin", "link-forgejo", "--user-id", "admin-id", "--username", "alice"]) == 0
     second = finish(client, *begin(client))
     assert second["user_id"] == first["user_id"]
     assert second["role"] == "student"
-    assert execute(
-        lambda conn: conn.execute(
-            "SELECT role FROM students WHERE id='admin-id'"
-        ).fetchone()[0]
-    ) == "admin"
-    assert execute(
-        lambda conn: conn.execute(
-            "SELECT status FROM forgejo_link_approvals"
-        ).fetchone()[0]
-    ) == "pending"
+    assert (
+        execute(
+            lambda conn: conn.execute("SELECT role FROM students WHERE id='admin-id'").fetchone()[0]
+        )
+        == "admin"
+    )
+    assert (
+        execute(
+            lambda conn: conn.execute("SELECT status FROM forgejo_link_approvals").fetchone()[0]
+        )
+        == "pending"
+    )
 
 
 def test_username_approval_cli_rejects_invalid_duplicate_and_linked_targets(setup):
@@ -496,10 +509,9 @@ def test_username_approval_cli_rejects_invalid_duplicate_and_linked_targets(setu
             ],
         )
     )
+
     def approve(user_id: str, username: str) -> int:
-        return main(
-            ["admin", "link-forgejo", "--user-id", user_id, "--username", username]
-        )
+        return main(["admin", "link-forgejo", "--user-id", user_id, "--username", username])
 
     assert approve("admin-id", "") == 1
     assert approve("admin-id", "mrmämongo") == 1

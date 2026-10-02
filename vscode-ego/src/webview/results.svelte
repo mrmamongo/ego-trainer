@@ -7,7 +7,7 @@
 
 <style>
 	:global(body) {
-		font-family: var(--vscode-font-family, 'Segoe UI', sans-serif);
+		font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', 'Courier New', monospace;
 		padding: 16px;
 		margin: 0;
 		color: var(--vscode-foreground, #333);

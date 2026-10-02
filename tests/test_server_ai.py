@@ -317,6 +317,9 @@ def test_defense_requires_server_check_and_three_independent_answers(env, monkey
     assert checked.status_code == 200, checked.text
     assert checked.json()["status"] == "passed"
     submission_id = checked.json()["understanding"]["submission_id"]
+    progress = client.get("/progress/me", headers=headers["alice"]).json()
+    assert progress[0]["solution_hash"] == checked.json()["solution_hash"]
+
     answers = [
         "Накопитель хранит сумму обработанных чисел",
         "После первого числа сумма равна двум",
@@ -485,6 +488,10 @@ def test_teacher_understanding_read_is_scoped_and_excludes_code_and_billing(env)
     teacher = client.get(endpoint, headers=headers["root"])
     assert own.status_code == teacher.status_code == 200
     assert own.json() == teacher.json()
+    assert client.get("/progress/me", headers=headers["alice"]).json() == []
+    assert client.get("/progress/me/understanding", headers=headers["alice"]).json() == own.json()
+    assert client.get("/progress/me/understanding", headers=headers["bob"]).json() == []
+    assert client.get("/progress/me/understanding").status_code == 401
     result = teacher.json()[0]
     assert result["understanding"] == "confirmed"
     assert result["evidence"][0]["quote"] == "My own explanation"

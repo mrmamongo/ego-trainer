@@ -16,6 +16,12 @@
 		return hints.find((h) => h.level === level);
 	}
 
+	function canRevealHint(hints: TaskHint[], level: number): boolean {
+		return hintForLevel(hints, level) !== undefined && HINT_LEVELS
+			.filter((previous) => previous < level && hintForLevel(hints, previous))
+			.every((previous) => revealedLevels.includes(previous));
+	}
+
 	function revealHint(level: number) {
 		if (!revealedLevels.includes(level)) {
 			revealedLevels = [...revealedLevels, level];
@@ -78,13 +84,22 @@
 			<div class="hint-actions">
 				{#each HINT_LEVELS as level (level)}
 					{@const hint = hintForLevel(data.hints, level)}
+					{@const revealed = revealedLevels.includes(level)}
+					{@const available = canRevealHint(data.hints, level)}
 					<button
 						type="button"
-						class="btn"
-						disabled={!hint}
+						class="btn hint-btn"
+						class:revealed
+						class:locked={hint && !available && !revealed}
+						disabled={!available}
 						onclick={() => revealHint(level)}
 					>
-						Hint {level}
+						<span class="hint-btn-label">
+							{#if revealed}<span class="hint-check" aria-hidden="true">✓</span>
+							{:else if hint && !available}<span aria-hidden="true">◆</span>{/if}
+							Hint {level}
+						</span>
+						<span class="hint-btn-sub">{hint ? hint.title : 'unavailable'}</span>
 					</button>
 				{/each}
 			</div>
@@ -123,7 +138,7 @@
 	:global(body) {
 		margin: 0;
 		height: 100%;
-		font-family: var(--vscode-font-family, 'Segoe UI', sans-serif);
+		font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', 'Courier New', monospace;
 		font-size: var(--vscode-font-size, 13px);
 		color: var(--vscode-foreground);
 		background: var(--vscode-editor-background);
@@ -304,7 +319,55 @@
 		background: var(--vscode-textCodeBlock-background, color-mix(in srgb, var(--vscode-foreground) 8%, transparent));
 	}
 
-	.hint-actions,
+	.hint-actions {
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+	}
+
+	.hint-btn {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 0.1rem;
+		padding: 0.35rem 0.55rem 0.35rem 0.7rem;
+		text-align: left;
+		transition: background-color 0.15s ease, border-color 0.15s ease,
+			opacity 0.15s ease, transform 0.15s ease;
+	}
+
+	.hint-btn:not(:disabled):hover {
+		transform: translateX(2px);
+	}
+
+	.hint-btn.revealed {
+		border-color: color-mix(in srgb, var(--vscode-focusBorder, var(--vscode-button-background)) 45%, transparent);
+		background: color-mix(in srgb, var(--vscode-focusBorder, var(--vscode-button-background)) 10%, transparent);
+	}
+
+	.hint-btn.locked {
+		opacity: 0.5;
+	}
+
+	.hint-btn-label {
+		display: flex;
+		align-items: center;
+		gap: 0.3rem;
+		font-size: 0.82rem;
+		font-weight: 600;
+	}
+
+	.hint-check {
+		color: var(--vscode-testing-iconPassed, #22c55e);
+		font-weight: 700;
+	}
+
+	.hint-btn-sub {
+		font-size: 0.7rem;
+		font-weight: 400;
+		opacity: 0.7;
+	}
+
 	.actions {
 		display: flex;
 		flex-wrap: wrap;
@@ -319,8 +382,11 @@
 	}
 
 	.hint {
-		padding: 0.45rem 0;
-		border-top: 1px solid color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
+		padding: 0.55rem 0.65rem;
+		border: 1px solid color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
+		border-radius: 3px;
+		background: color-mix(in srgb, var(--vscode-foreground) 2%, transparent);
+		animation: hint-reveal 0.35s ease-out both;
 	}
 
 	.hint-title {
@@ -333,6 +399,17 @@
 		margin: 0;
 		opacity: 0.9;
 		line-height: 1.5;
+	}
+
+	@keyframes hint-reveal {
+		from { opacity: 0; transform: translateY(0.5rem); }
+		to { opacity: 1; transform: translateY(0); }
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.hint { animation: none; }
+		.hint-btn { transition: none; }
+		.hint-btn:not(:disabled):hover { transform: none; }
 	}
 
 	.statement :global(.tok-kw) {

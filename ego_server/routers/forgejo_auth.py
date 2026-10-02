@@ -66,14 +66,18 @@ def _flow(db, state: str):
 
 
 @router.get("/providers")
-async def providers() -> dict:
+async def providers(db: DbDep) -> dict:
     enabled = False
     try:
         forgejo.provider_config()
         enabled = True
     except HTTPException:
         pass
-    return {"forgejo": enabled, "local": config.settings.local_auth_enabled}
+    return {
+        "forgejo": enabled,
+        "local": config.settings.local_auth_enabled,
+        "registration": load_settings(db).registration_enabled,
+    }
 
 
 @router.post("/forgejo/start")

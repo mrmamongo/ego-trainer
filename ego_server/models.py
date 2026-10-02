@@ -70,6 +70,7 @@ class ProgressPush(BaseModel):
 
 class ProgressRow(BaseModel):
     student_id: str
+    solution_hash: str | None = None
     task_id: str
     version: str
     status: str

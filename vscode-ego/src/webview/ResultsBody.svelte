@@ -3,7 +3,7 @@
 
 	let {
 		result = null,
-	history = [],
+		history = [],
 		emptyMessage = 'No results yet.'
 	}: {
 		result?: CheckResult | null;
@@ -12,29 +12,34 @@
 	} = $props();
 
 	const STATUS_COLORS: Record<string, string> = {
-		passed: '#22c55e',
-		partial: '#f59e0b',
-		failed: '#ef4444',
-		error: '#ef4444',
-		timeout: '#ef4444',
-		no_tests: '#6b7280'
+		passed: 'var(--vscode-testing-iconPassed, #22c55e)',
+		partial: 'var(--vscode-charts-yellow, #eab308)',
+		failed: 'var(--vscode-testing-iconFailed, #f87171)',
+		error: 'var(--vscode-editorError-foreground, #f87171)',
+		timeout: 'var(--vscode-charts-orange, #fb923c)',
+		no_tests: 'var(--vscode-descriptionForeground, #9ca3af)'
 	};
 
-	const STATUS_ICONS: Record<string, string> = {
-		passed: '✓',
-		partial: '◐',
-		failed: '✗',
-		error: '⚠',
-		timeout: '⏱',
-		no_tests: '○'
+	const STATUS_LABELS: Record<string, string> = {
+		passed: 'PASS',
+		partial: 'PART',
+		failed: 'FAIL',
+		error: 'ERR',
+		timeout: 'TIME',
+		no_tests: 'NO TESTS'
 	};
 
 	function statusColor(status: string): string {
-		return STATUS_COLORS[status] ?? '#6b7280';
+		return STATUS_COLORS[status.toLowerCase()] ?? 'var(--vscode-descriptionForeground, #9ca3af)';
 	}
 
-	function statusIcon(status: string): string {
-		return STATUS_ICONS[status] ?? '?';
+	function statusLabel(status: string): string {
+		return STATUS_LABELS[status.toLowerCase()] ?? status.toUpperCase();
+	}
+
+	function breadcrumb(taskId: string): string {
+		const match = taskId.match(/^([A-Za-z]+)(\d+)$/);
+		return match ? `${match[1].toUpperCase()} > ${taskId.toUpperCase()}` : taskId;
 	}
 
 	function formatRunTime(run: TaskRunSummary): string {
@@ -50,7 +55,11 @@
 			<thead><tr><th>Time</th><th>Status</th><th>Score</th></tr></thead>
 			<tbody>
 				{#each history as run (run.id)}
-					<tr><td>{formatRunTime(run)}</td><td>{run.status}</td><td>{run.passed_tests}/{run.total_tests}</td></tr>
+					<tr>
+						<td>{formatRunTime(run)}</td>
+						<td><span class="dot" style:background={statusColor(run.status)}></span>{statusLabel(run.status)}</td>
+						<td>{run.passed_tests}/{run.total_tests}</td>
+					</tr>
 				{/each}
 			</tbody>
 		</table>
@@ -65,17 +74,13 @@
 	<div
 		class="header"
 		style:--status-color={color}
-		style:background="{color}22"
-		style:border-color={color}
+		style:background="color-mix(in srgb, {color} 14%, transparent)"
+		style:border-color="color-mix(in srgb, {color} 50%, transparent)"
 	>
-		<span class="icon">{statusIcon(result.status)}</span>
-		<div>
-			<div class="title">
-				Task {result.task_id} — {result.status.toUpperCase()}
-			</div>
-			<div class="summary">
-				{result.passed_tests}/{result.total_tests} tests passed
-			</div>
+		<div class="crumb">{breadcrumb(result.task_id)}</div>
+		<div class="title-row">
+			<span class="badge" style:background={color}>{statusLabel(result.status)}</span>
+			<span class="title">Task {result.task_id} · {result.passed_tests}/{result.total_tests} tests</span>
 		</div>
 	</div>
 
@@ -87,11 +92,11 @@
 		<div class="no-tests">No tests available for this task.</div>
 	{:else}
 		{#each result.results as tr, i (i)}
-			{@const rowColor = tr.passed ? '#22c55e' : '#ef4444'}
+			{@const rowColor = statusColor(tr.passed ? 'passed' : 'failed')}
 			<div class="test-row" style:border-left-color={rowColor}>
 				<div class="test-header">
-					<span class="test-icon" style:color={rowColor}>
-						{tr.passed ? '✓' : '✗'}
+					<span class="test-tag" style:background={rowColor}>
+						{tr.passed ? 'OK' : 'FAIL'}
 					</span>
 					<span>{tr.description}</span>
 				</div>
@@ -165,6 +170,15 @@
 
 	.history td:last-child {
 		font-variant-numeric: tabular-nums;
+		text-align: right;
+	}
+
+	.dot {
+		display: inline-block;
+		width: 8px;
+		height: 8px;
+		margin-right: 6px;
+		border-radius: 50%;
 	}
 
 	.waiting {
@@ -178,34 +192,49 @@
 
 	.header {
 		display: flex;
-		align-items: center;
-		gap: 12px;
-		padding: 16px;
-		border-radius: 8px;
+		flex-direction: column;
+		gap: 6px;
+		padding: 12px 14px;
+		border-radius: 6px;
 		border: 1px solid;
-		margin-bottom: 16px;
+		margin-bottom: 14px;
 	}
 
-	.header .icon {
-		font-size: 28px;
-		color: var(--status-color);
-	}
-
-	.header .title {
-		font-size: 18px;
+	.crumb {
+		font-size: 0.7rem;
 		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		opacity: 0.6;
 	}
 
-	.header .summary {
-		font-size: 14px;
-		opacity: 0.8;
+	.title-row {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+
+	.badge {
+		font-size: 0.7rem;
+		font-weight: 700;
+		letter-spacing: 0.04em;
+		padding: 2px 7px;
+		border-radius: 3px;
+		color: var(--vscode-editor-background, #0a0a0a);
+	}
+
+	.title {
+		font-size: 0.9rem;
+		font-weight: 600;
 	}
 
 	.test-row {
 		border-left: 3px solid;
 		padding: 8px 12px;
 		margin: 4px 0;
-		background: var(--vscode-editor-inactive-selection-background, #f5f5f5);
+		background: var(--vscode-editor-inactiveSelectionBackground, transparent);
+		border-radius: 0 4px 4px 0;
 	}
 
 	.test-header {
@@ -214,8 +243,15 @@
 		gap: 8px;
 	}
 
-	.test-icon {
-		font-weight: bold;
+	.test-tag {
+		font-size: 0.65rem;
+		font-weight: 700;
+		letter-spacing: 0.04em;
+		padding: 1px 6px;
+		border-radius: 3px;
+		min-width: 36px;
+		text-align: center;
+		color: var(--vscode-editor-background, #0a0a0a);
 	}
 
 	.detail {
@@ -230,7 +266,7 @@
 	}
 
 	.detail code {
-		background: var(--vscode-textCodeBlock-background, #eee);
+		background: var(--vscode-textCodeBlock-background, transparent);
 		padding: 2px 6px;
 		border-radius: 3px;
 		font-family: var(--vscode-editor-font-family, monospace);
@@ -239,7 +275,7 @@
 	.detail .error pre {
 		margin-top: 4px;
 		padding: 8px;
-		background: color-mix(in srgb, #ef4444 12%, var(--vscode-editor-background, #fff));
+		background: color-mix(in srgb, var(--vscode-editorError-foreground, #f87171) 12%, transparent);
 		border-radius: 4px;
 		font-size: 12px;
 		overflow-x: auto;
