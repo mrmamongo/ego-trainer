@@ -1,0 +1,496 @@
+from ego.testing import case
+
+
+@case(
+    args=(
+        {"gold": {1: 13, 2: 0, 3: 0}, "bags": {1: {}, 2: {}, 3: {}}, "treasury": 0},
+        [
+            {"id": "b", "seller_id": 2, "item": "ore", "price": 3, "quantity": 2, "status": "open"},
+            {"id": "a", "seller_id": 3, "item": "ore", "price": 5, "quantity": 3, "status": "open"},
+        ],
+        1,
+        "ore",
+        4,
+    ),
+    expected={
+        "accounts": {
+            "gold": {1: 2, 2: 6, 3: 5},
+            "bags": {1: {"ore": 3}, 2: {}, 3: {}},
+            "treasury": 0,
+        },
+        "lots": [
+            {
+                "id": "b",
+                "seller_id": 2,
+                "item": "ore",
+                "price": 3,
+                "quantity": 0,
+                "status": "closed",
+            },
+            {"id": "a", "seller_id": 3, "item": "ore", "price": 5, "quantity": 2, "status": "open"},
+        ],
+        "receipts": [
+            {"lot_id": "b", "quantity": 2, "gross": 6, "fee": 0},
+            {"lot_id": "a", "quantity": 1, "gross": 5, "fee": 0},
+        ],
+        "acquired": 3,
+        "missing_qty": 1,
+        "spent": 11,
+    },
+    description="Бюджет пересчитывается после каждого лота; частичный заказ не откатывается",
+    level="smoke",
+    comparison="value",
+    check_inputs_unchanged=True,
+)
+@case(
+    args=(
+        {"gold": {1: 20, 2: 0, 3: 0}, "bags": {1: {}, 2: {}, 3: {}}, "treasury": 0},
+        [
+            {"id": "z", "seller_id": 2, "item": "ore", "price": 4, "quantity": 2, "status": "open"},
+            {"id": "a", "seller_id": 3, "item": "ore", "price": 4, "quantity": 2, "status": "open"},
+        ],
+        1,
+        "ore",
+        3,
+    ),
+    expected={
+        "accounts": {
+            "gold": {1: 8, 2: 4, 3: 8},
+            "bags": {1: {"ore": 3}, 2: {}, 3: {}},
+            "treasury": 0,
+        },
+        "lots": [
+            {"id": "z", "seller_id": 2, "item": "ore", "price": 4, "quantity": 1, "status": "open"},
+            {
+                "id": "a",
+                "seller_id": 3,
+                "item": "ore",
+                "price": 4,
+                "quantity": 0,
+                "status": "closed",
+            },
+        ],
+        "receipts": [
+            {"lot_id": "a", "quantity": 2, "gross": 8, "fee": 0},
+            {"lot_id": "z", "quantity": 1, "gross": 4, "fee": 0},
+        ],
+        "acquired": 3,
+        "missing_qty": 0,
+        "spent": 12,
+    },
+    description="Равная цена сортируется по ID; лоты сохраняют исходный порядок",
+    level="smoke",
+    comparison="value",
+    check_inputs_unchanged=True,
+)
+@case(
+    args=(
+        {"gold": {1: 13, 2: 0, 3: 0}, "bags": {1: {}, 2: {}, 3: {}}, "treasury": 0},
+        [],
+        1,
+        "ore",
+        2,
+    ),
+    expected={
+        "accounts": {"gold": {1: 13, 2: 0, 3: 0}, "bags": {1: {}, 2: {}, 3: {}}, "treasury": 0},
+        "lots": [],
+        "receipts": [],
+        "acquired": 0,
+        "missing_qty": 2,
+        "spent": 0,
+    },
+    description="Пустой рынок оставляет весь заказ невыполненным",
+    level="smoke",
+    comparison="value",
+    check_inputs_unchanged=True,
+)
+@case(
+    args=(
+        {"gold": {1: 20, 2: 0, 3: 0}, "bags": {1: {}, 2: {}, 3: {}}, "treasury": 0},
+        [
+            {
+                "id": "own",
+                "seller_id": 1,
+                "item": "ore",
+                "price": 1,
+                "quantity": 8,
+                "status": "open",
+            },
+            {
+                "id": "closed",
+                "seller_id": 2,
+                "item": "ore",
+                "price": 1,
+                "quantity": 8,
+                "status": "closed",
+            },
+            {
+                "id": "other",
+                "seller_id": 3,
+                "item": "wood",
+                "price": 1,
+                "quantity": 8,
+                "status": "open",
+            },
+            {
+                "id": "empty",
+                "seller_id": 2,
+                "item": "ore",
+                "price": 1,
+                "quantity": 0,
+                "status": "open",
+            },
+            {
+                "id": "valid",
+                "seller_id": 2,
+                "item": "ore",
+                "price": 5,
+                "quantity": 2,
+                "status": "open",
+            },
+        ],
+        1,
+        "ore",
+        1,
+    ),
+    expected={
+        "accounts": {
+            "gold": {1: 15, 2: 5, 3: 0},
+            "bags": {1: {"ore": 1}, 2: {}, 3: {}},
+            "treasury": 0,
+        },
+        "lots": [
+            {
+                "id": "own",
+                "seller_id": 1,
+                "item": "ore",
+                "price": 1,
+                "quantity": 8,
+                "status": "open",
+            },
+            {
+                "id": "closed",
+                "seller_id": 2,
+                "item": "ore",
+                "price": 1,
+                "quantity": 8,
+                "status": "closed",
+            },
+            {
+                "id": "other",
+                "seller_id": 3,
+                "item": "wood",
+                "price": 1,
+                "quantity": 8,
+                "status": "open",
+            },
+            {
+                "id": "empty",
+                "seller_id": 2,
+                "item": "ore",
+                "price": 1,
+                "quantity": 0,
+                "status": "open",
+            },
+            {
+                "id": "valid",
+                "seller_id": 2,
+                "item": "ore",
+                "price": 5,
+                "quantity": 1,
+                "status": "open",
+            },
+        ],
+        "receipts": [{"lot_id": "valid", "quantity": 1, "gross": 5, "fee": 0}],
+        "acquired": 1,
+        "missing_qty": 0,
+        "spent": 5,
+    },
+    description="Пропускаются собственные, закрытые, пустые и чужие по предмету лоты",
+    level="full",
+    comparison="value",
+    check_inputs_unchanged=True,
+)
+@case(
+    args=(
+        {"gold": {1: 13, 2: 0, 3: 0}, "bags": {1: {}, 2: {}, 3: {}}, "treasury": 0},
+        [
+            {"id": "b", "seller_id": 2, "item": "ore", "price": 3, "quantity": 2, "status": "open"},
+            {"id": "a", "seller_id": 3, "item": "ore", "price": 5, "quantity": 3, "status": "open"},
+        ],
+        1,
+        "ore",
+        0,
+    ),
+    expected={
+        "accounts": {"gold": {1: 13, 2: 0, 3: 0}, "bags": {1: {}, 2: {}, 3: {}}, "treasury": 0},
+        "lots": [
+            {"id": "b", "seller_id": 2, "item": "ore", "price": 3, "quantity": 2, "status": "open"},
+            {"id": "a", "seller_id": 3, "item": "ore", "price": 5, "quantity": 3, "status": "open"},
+        ],
+        "receipts": [],
+        "acquired": 0,
+        "missing_qty": 0,
+        "spent": 0,
+    },
+    description="Нулевой заказ ничего не покупает",
+    level="full",
+    comparison="value",
+    check_inputs_unchanged=True,
+)
+@case(
+    args=(
+        {"gold": {1: 2, 2: 0, 3: 0}, "bags": {1: {}, 2: {}, 3: {}}, "treasury": 0},
+        [
+            {"id": "b", "seller_id": 2, "item": "ore", "price": 3, "quantity": 2, "status": "open"},
+            {"id": "a", "seller_id": 3, "item": "ore", "price": 5, "quantity": 3, "status": "open"},
+        ],
+        1,
+        "ore",
+        1,
+    ),
+    expected={
+        "accounts": {"gold": {1: 2, 2: 0, 3: 0}, "bags": {1: {}, 2: {}, 3: {}}, "treasury": 0},
+        "lots": [
+            {"id": "b", "seller_id": 2, "item": "ore", "price": 3, "quantity": 2, "status": "open"},
+            {"id": "a", "seller_id": 3, "item": "ore", "price": 5, "quantity": 3, "status": "open"},
+        ],
+        "receipts": [],
+        "acquired": 0,
+        "missing_qty": 1,
+        "spent": 0,
+    },
+    description="Денег меньше минимальной цены: нулевые сделки не появляются",
+    level="full",
+    comparison="value",
+    check_inputs_unchanged=True,
+)
+@case(
+    args=(
+        {"gold": {1: 20, 2: 0, 3: 0}, "bags": {1: {}, 2: {}, 3: {}}, "treasury": 0},
+        [
+            {
+                "id": "own",
+                "seller_id": 1,
+                "item": "ore",
+                "price": 1,
+                "quantity": 8,
+                "status": "open",
+            },
+            {
+                "id": "closed",
+                "seller_id": 2,
+                "item": "ore",
+                "price": 1,
+                "quantity": 8,
+                "status": "closed",
+            },
+            {
+                "id": "other",
+                "seller_id": 3,
+                "item": "wood",
+                "price": 1,
+                "quantity": 8,
+                "status": "open",
+            },
+            {
+                "id": "empty",
+                "seller_id": 2,
+                "item": "ore",
+                "price": 1,
+                "quantity": 0,
+                "status": "open",
+            },
+        ],
+        1,
+        "ore",
+        2,
+    ),
+    expected={
+        "accounts": {"gold": {1: 20, 2: 0, 3: 0}, "bags": {1: {}, 2: {}, 3: {}}, "treasury": 0},
+        "lots": [
+            {
+                "id": "own",
+                "seller_id": 1,
+                "item": "ore",
+                "price": 1,
+                "quantity": 8,
+                "status": "open",
+            },
+            {
+                "id": "closed",
+                "seller_id": 2,
+                "item": "ore",
+                "price": 1,
+                "quantity": 8,
+                "status": "closed",
+            },
+            {
+                "id": "other",
+                "seller_id": 3,
+                "item": "wood",
+                "price": 1,
+                "quantity": 8,
+                "status": "open",
+            },
+            {
+                "id": "empty",
+                "seller_id": 2,
+                "item": "ore",
+                "price": 1,
+                "quantity": 0,
+                "status": "open",
+            },
+        ],
+        "receipts": [],
+        "acquired": 0,
+        "missing_qty": 2,
+        "spent": 0,
+    },
+    description="После фильтрации может не остаться предложений",
+    level="full",
+    comparison="value",
+    check_inputs_unchanged=True,
+)
+@case(
+    args=(
+        {"gold": {1: 30, 2: 1, 3: 2}, "bags": {1: {"ore": 1}, 2: {}, 3: {}}, "treasury": 5},
+        [
+            {"id": "a", "seller_id": 2, "item": "ore", "price": 3, "quantity": 2, "status": "open"},
+            {"id": "b", "seller_id": 3, "item": "ore", "price": 5, "quantity": 2, "status": "open"},
+        ],
+        1,
+        "ore",
+        4,
+        25,
+    ),
+    expected={
+        "accounts": {
+            "gold": {1: 14, 2: 6, 3: 10},
+            "bags": {1: {"ore": 5}, 2: {}, 3: {}},
+            "treasury": 8,
+        },
+        "lots": [
+            {
+                "id": "a",
+                "seller_id": 2,
+                "item": "ore",
+                "price": 3,
+                "quantity": 0,
+                "status": "closed",
+            },
+            {
+                "id": "b",
+                "seller_id": 3,
+                "item": "ore",
+                "price": 5,
+                "quantity": 0,
+                "status": "closed",
+            },
+        ],
+        "receipts": [
+            {"lot_id": "a", "quantity": 2, "gross": 6, "fee": 1},
+            {"lot_id": "b", "quantity": 2, "gross": 10, "fee": 2},
+        ],
+        "acquired": 4,
+        "missing_qty": 0,
+        "spent": 16,
+    },
+    description="Комиссия округляется отдельно для каждой сделки",
+    level="full",
+    comparison="value",
+    check_inputs_unchanged=True,
+)
+@case(
+    args=(
+        {"gold": {1: 100, 2: 0, 3: 0}, "bags": {1: {}, 2: {}, 3: {}}, "treasury": 0},
+        [
+            {"id": "b", "seller_id": 3, "item": "ore", "price": 4, "quantity": 2, "status": "open"},
+            {"id": "a", "seller_id": 2, "item": "ore", "price": 2, "quantity": 1, "status": "open"},
+        ],
+        1,
+        "ore",
+        5,
+    ),
+    expected={
+        "accounts": {
+            "gold": {1: 90, 2: 2, 3: 8},
+            "bags": {1: {"ore": 3}, 2: {}, 3: {}},
+            "treasury": 0,
+        },
+        "lots": [
+            {
+                "id": "b",
+                "seller_id": 3,
+                "item": "ore",
+                "price": 4,
+                "quantity": 0,
+                "status": "closed",
+            },
+            {
+                "id": "a",
+                "seller_id": 2,
+                "item": "ore",
+                "price": 2,
+                "quantity": 0,
+                "status": "closed",
+            },
+        ],
+        "receipts": [
+            {"lot_id": "a", "quantity": 1, "gross": 2, "fee": 0},
+            {"lot_id": "b", "quantity": 2, "gross": 8, "fee": 0},
+        ],
+        "acquired": 3,
+        "missing_qty": 2,
+        "spent": 10,
+    },
+    description="Заказ больше суммарного запаса; цена важнее входного порядка",
+    level="full",
+    comparison="value",
+    check_inputs_unchanged=True,
+)
+@case(
+    args=(
+        {"gold": {1: 17, 2: 0}, "bags": {1: {}, 2: {}}, "treasury": 0},
+        [
+            {"id": "a", "seller_id": 2, "item": "ore", "price": 5, "quantity": 1, "status": "open"},
+            {"id": "b", "seller_id": 2, "item": "ore", "price": 6, "quantity": 2, "status": "open"},
+        ],
+        1,
+        "ore",
+        3,
+    ),
+    expected={
+        "accounts": {"gold": {1: 0, 2: 16}, "bags": {1: {"ore": 3}, 2: {}}, "treasury": 1},
+        "lots": [
+            {
+                "id": "a",
+                "seller_id": 2,
+                "item": "ore",
+                "price": 5,
+                "quantity": 0,
+                "status": "closed",
+            },
+            {
+                "id": "b",
+                "seller_id": 2,
+                "item": "ore",
+                "price": 6,
+                "quantity": 0,
+                "status": "closed",
+            },
+        ],
+        "receipts": [
+            {"lot_id": "a", "quantity": 1, "gross": 5, "fee": 0},
+            {"lot_id": "b", "quantity": 2, "gross": 12, "fee": 1},
+        ],
+        "acquired": 3,
+        "missing_qty": 0,
+        "spent": 17,
+    },
+    description="Выручка одного продавца накапливается между лотами",
+    level="full",
+    comparison="value",
+    check_inputs_unchanged=True,
+)
+def task_xla21_buy_cheapest(accounts, lots, buyer_id, item, requested, fee_percent=10): ...

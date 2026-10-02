@@ -10,6 +10,7 @@ Legacy: ``## Тесты`` literal → ``extra["tests_code"]`` (deprecated).
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import re
 from pathlib import Path
@@ -130,8 +131,18 @@ def parse_task_text(text: str, path: Path, default_version: str = "1.0.0") -> Ta
         tests_file = None
     test_cases_raw = _extract_tests_code(sections.get("Тесты", []))
 
-    # 7. stub_py = генерируется из сигнатуры основной функции эталона
-    stub_py = _generate_stub(solution_py, task_id)
+    # Explicit starter supports debugging/modification tasks and GIVEN helpers.
+    student_path = _sidecar_path(path, ".student.py")
+    if student_path is not None and student_path.is_file():
+        stub_py = student_path.read_text(encoding="utf-8")
+        try:
+            ast.parse(stub_py, filename=str(student_path))
+        except SyntaxError as exc:
+            raise ValueError(f"Invalid student starter: {student_path}: {exc}") from exc
+        if not stub_py.strip():
+            raise ValueError(f"Empty student starter: {student_path}")
+    else:
+        stub_py = _generate_stub(solution_py, task_id)
 
     # 8. content_hash = sha256(statement_md + stub_py + solution_py)
     content_hash = _hash_content(statement_md, stub_py, solution_py)

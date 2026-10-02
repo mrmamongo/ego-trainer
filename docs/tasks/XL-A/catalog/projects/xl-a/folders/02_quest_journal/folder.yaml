@@ -1,0 +1,6 @@
+id: 02_quest_journal
+code: XLA02
+name: "Квестовый журнал"
+description: "Продуктовая практика: квестовый журнал"
+order: 2
+level: medium

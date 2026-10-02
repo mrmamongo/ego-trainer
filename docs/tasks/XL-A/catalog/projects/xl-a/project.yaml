@@ -1,0 +1,8 @@
+id: xl-a
+name: XL-A product practice
+description: "27 задач на продуктовую логику чатботов, агентов, игр и MMO"
+version: "1.0.0"
+order: 1
+default_locale: ru
+tags: [python, llm, agents, games, mmo]
+version_policy: declare

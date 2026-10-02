@@ -15,6 +15,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from ego_server.catalog_visibility import ACTIVE_TASK_FILTER
 from ego_server.db_helpers import get_task_meta
 from ego_server.deps import CurrentUser, DbDep, require_role
 from ego_server.models import Hint, HintsResponse, TaskFull, TaskMeta
@@ -33,14 +34,14 @@ async def list_tasks(
     if block:
         rows = db.execute(
             "SELECT id, block, slug, task_id, title, level, tags, version, "
-            "content_hash, breaking, md_path FROM tasks WHERE block = ? "
+            f"content_hash, breaking, md_path FROM tasks WHERE {ACTIVE_TASK_FILTER} AND block = ? "
             "ORDER BY block, task_id",
             (block,),
         ).fetchall()
     else:
         rows = db.execute(
             "SELECT id, block, slug, task_id, title, level, tags, version, "
-            "content_hash, breaking, md_path FROM tasks ORDER BY block, task_id"
+            f"content_hash, breaking, md_path FROM tasks WHERE {ACTIVE_TASK_FILTER} ORDER BY block, task_id"
         ).fetchall()
     return [_row_to_meta(r) for r in rows]
 

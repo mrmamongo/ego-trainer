@@ -1,5 +1,39 @@
 # Task file format: separate solution + tests
 
+## Product exercise contracts (XL-A)
+
+An optional `task_<slug>.student.py` sidecar supplies the actual learner
+starter, including intentional bugs, modification baselines and GIVEN helpers.
+The parser uses it verbatim after syntax validation. Without the sidecar,
+signature-based stub generation remains unchanged. Starter changes affect
+`content_hash`; bump the task version when changing a published starter.
+
+New `@case` options are opt-in; existing tests keep their previous behavior:
+
+- `comparison="value"`: compare literal data recursively. Dictionary key
+  order is ignored; list order, container types and scalar types matter
+  (`True` differs from `1`). The default remains `comparison="repr"`.
+- `check_inputs_unchanged=True`: observe arguments in the student subprocess
+  before and after the call; a change fails the case, even if the return value
+  looks correct. This checks data values and types, not Python reference counts.
+- `check_result_isolated=True`: reject returned mutable containers that are
+  shared with the arguments. Use only when the task explicitly requires an
+  independent result. Immutable strings/numbers/tuples may be shared.
+- `input_aliases=(((0, "B", "preferences"), (0, "A", "preferences")),)`:
+  recreate shared input objects inside the subprocess. Each pair is
+  `(target_path, source_path)`; a path starts with a positional argument index.
+  Pairs apply in declaration order, before the unchanged-input snapshot.
+
+For example, two users sharing one preferences object can expose a shallow
+copy bug. Plain literal argument serialization loses that relationship, so
+such a case must declare the alias explicitly. Reference implementations must
+pass the same observations as learner submissions.
+
+These checks grade public behavior. Helper composition and refactoring quality
+remain mentor review criteria; behavior tests cannot prove that a learner
+decomposed a function well. XL-A25 therefore legitimately passes behavior tests
+before refactoring.
+
 ## File layout
 
 ```

@@ -50,6 +50,12 @@ def _migrate_add_columns(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE tasks ADD COLUMN folder_id TEXT")
     if "project_id" not in tasks_cols:
         conn.execute("ALTER TABLE tasks ADD COLUMN project_id TEXT")
+    if "archived" not in tasks_cols:
+        conn.execute("ALTER TABLE tasks ADD COLUMN archived INTEGER NOT NULL DEFAULT 0")
+
+    projects_cols = {row["name"] for row in conn.execute("PRAGMA table_info(projects)")}
+    if "archived" not in projects_cols:
+        conn.execute("ALTER TABLE projects ADD COLUMN archived INTEGER NOT NULL DEFAULT 0")
 
     oauth_cols = {row["name"] for row in conn.execute("PRAGMA table_info(oauth_flows)")}
     if "callback_uri" not in oauth_cols:

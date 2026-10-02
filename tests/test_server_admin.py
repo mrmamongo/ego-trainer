@@ -2239,6 +2239,71 @@ def test_studio_save_content_hash_matches_candidate(studio_env: TestClient) -> N
     assert row["content_hash"] == parsed_saved.content_hash
 
 
+def test_studio_validate_and_save_preserve_explicit_starter(studio_env: TestClient) -> None:
+    """Studio keeps the learner starter while validating and saving the other files."""
+    from ego.parser import parse_task_file
+    from ego_server.content_config import content_settings
+
+    repo = content_settings.to_config().resolved_local_path
+    markdown_path = repo / _STUDIO_MD_PATH
+    starter_path = markdown_path.with_suffix(".student.py")
+    starter = (
+        "# Исправь ошибку, сохранив GIVEN-помощник.\n\n"
+        "def given_number():\n"
+        "    return 41\n\n\n"
+        "def task_f1():\n"
+        "    return given_number() - 1\n"
+    )
+    starter_bytes = starter.encode("utf-8")
+    starter_path.write_bytes(starter_bytes)
+
+    a_token, _ = _create_user(studio_env, "admin1", "pw", "admin")
+    s_token, _ = _make_student(studio_env)
+    etag = _get_studio_etag(studio_env, a_token)
+    before_files = _read_canonical(studio_env)
+    before_row = _db_task_row()
+    payload = _save_payload(
+        expected_content_etag=etag,
+        markdown=_valid_candidate_md().replace(
+            "Do the thing.", "Fix the supplied starter to return 42."
+        ),
+    )
+
+    validated = studio_env.post(
+        "/admin/tasks/F1/studio/validate",
+        json=payload,
+        headers=_auth_headers(a_token),
+    )
+    assert validated.status_code == 200, validated.text
+    assert validated.json()["valid"] is True
+    assert validated.json()["content_changed"] is True
+    assert _read_canonical(studio_env) == before_files
+    assert _db_task_row() == before_row
+    assert starter_path.read_bytes() == starter_bytes
+
+    saved = studio_env.put(
+        "/admin/tasks/F1/studio",
+        json=payload,
+        headers=_auth_headers(a_token),
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["new_version"] == "2.0.0"
+    assert saved.json()["sync"]["errors"] == 0
+    assert starter_path.read_bytes() == starter_bytes
+
+    canonical = parse_task_file(markdown_path)
+    assert canonical.stub_py == starter
+    row = _db_task_row()
+    assert row is not None
+    assert row["content_hash"] == canonical.content_hash
+
+    student_task = studio_env.get("/tasks/F1", headers=_auth_headers(s_token))
+    assert student_task.status_code == 200, student_task.text
+    assert student_task.json()["stub_py"] == starter
+    assert student_task.json()["content_hash"] == canonical.content_hash
+    assert student_task.json()["solution_py"] == ""
+
+
 # === Task Studio: rollback failure honesty ===
 
 

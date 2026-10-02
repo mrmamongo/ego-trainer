@@ -127,13 +127,14 @@ level: easy
 
 ## 3. Task Files
 
-Each task consists of **three files** with a shared basename:
+Each task consists of **three required files** and an optional starter with a shared basename:
 
 | File | Purpose |
 |------|---------|
 | `task_<slug>.md` | Statement (what the student sees) + YAML frontmatter (sync meta) |
 | `task_<slug>.solution.py` | Reference solution (hidden from students, used by checker) |
 | `task_<slug>.tests.py` | Test cases via `@case` decorator (run against student + reference) |
+| `task_<slug>.student.py` | Optional explicit starter for debugging, modifications and GIVEN helpers; otherwise generated from the reference signature |
 
 ### 3.1 `task_<slug>.md` — statement + frontmatter
 

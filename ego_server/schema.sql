@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS projects (
   default_locale TEXT NOT NULL DEFAULT 'ru',
   tags         TEXT NOT NULL DEFAULT '[]', -- JSON array as text
   version_policy TEXT NOT NULL DEFAULT 'declare',  -- declare | auto_minor
+  archived     INTEGER NOT NULL DEFAULT 0,
   created_at   TEXT NOT NULL,
   updated_at   TEXT NOT NULL
 );
@@ -48,6 +49,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   md_path      TEXT NOT NULL,              -- относительный путь к .md в git-репо сервера
   folder_id    TEXT,                       -- FK -> folders.id (nullable for legacy)
   project_id   TEXT,                       -- FK -> projects.id (nullable for legacy)
+  archived     INTEGER NOT NULL DEFAULT 0,
   created_at   TEXT NOT NULL,              -- ISO 8601
   updated_at   TEXT NOT NULL,
   UNIQUE(block, task_id)

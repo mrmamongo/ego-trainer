@@ -173,10 +173,10 @@ def test_import_tasks(temp_db, capsys, monkeypatch):
     rc = main(["admin", "import-tasks", "--docs-dir", "docs/tasks"])
     assert rc == 0
     captured = capsys.readouterr()
-    assert "Imported: 33" in captured.out
+    assert "Imported: 60" in captured.out
     conn = sqlite3.connect(temp_db)
     count = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
-    assert count == 33
+    assert count == 60
     # Check a specific task.
     row = conn.execute(
         "SELECT title, level, version FROM tasks WHERE id = 'F1'"
@@ -187,7 +187,7 @@ def test_import_tasks(temp_db, capsys, monkeypatch):
     assert row[2] == "1.0.0"
     # Version history should have one row per task.
     versions = conn.execute("SELECT COUNT(*) FROM task_versions").fetchone()[0]
-    assert versions == 33
+    assert versions == 60
 
 
 def test_import_tasks_idempotent(temp_db, capsys, monkeypatch):
@@ -200,7 +200,7 @@ def test_import_tasks_idempotent(temp_db, capsys, monkeypatch):
     rc = main(["admin", "import-tasks", "--docs-dir", "docs/tasks"])
     assert rc == 0
     captured = capsys.readouterr()
-    assert "Skipped: 33" in captured.out
+    assert "Skipped: 60" in captured.out
     assert "Imported: 0" in captured.out
 
 
@@ -214,8 +214,8 @@ def test_import_tasks_force_updates(temp_db, capsys, monkeypatch):
     rc = main(["admin", "import-tasks", "--docs-dir", "docs/tasks", "--force"])
     assert rc == 0
     captured = capsys.readouterr()
-    # All 33 should be updated.
-    assert "Updated: 33" in captured.out
+    # All 60 should be updated.
+    assert "Updated: 60" in captured.out
     assert "Imported: 0" in captured.out
 
 

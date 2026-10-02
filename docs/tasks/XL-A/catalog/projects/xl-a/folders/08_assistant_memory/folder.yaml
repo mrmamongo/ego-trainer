@@ -1,0 +1,6 @@
+id: 08_assistant_memory
+code: XLA08
+name: "Память помощника"
+description: "Продуктовая практика: память помощника"
+order: 8
+level: hard

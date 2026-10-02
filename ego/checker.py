@@ -29,6 +29,7 @@ from ego.testing import (
     TestLevel,
     case_matches_filter,
 )
+from ego.value_checks import _ego_same_value
 
 
 @dataclasses.dataclass
@@ -42,6 +43,10 @@ class TestCase:
     expected_repr: str
     description: str
     level: TestLevel = "smoke"
+    comparison: str = "repr"
+    check_inputs_unchanged: bool = False
+    check_result_isolated: bool = False
+    input_aliases: tuple = ()
 
 
 @dataclasses.dataclass
@@ -160,6 +165,9 @@ def run_check(
             args=tc.args,
             kwargs=tc.kwargs,
             timeout=timeout,
+            check_inputs_unchanged=tc.check_inputs_unchanged,
+            check_result_isolated=tc.check_result_isolated,
+            input_aliases=tc.input_aliases,
         )
 
         if stu_result.timed_out:
@@ -208,6 +216,13 @@ def run_check(
             continue
 
         passed = actual_repr == expected_repr
+        if tc.comparison == "value":
+            try:
+                passed = _ego_same_value(
+                    ast.literal_eval(actual_repr), ast.literal_eval(expected_repr)
+                )
+            except (ValueError, SyntaxError, TypeError, RecursionError):
+                passed = False
         if passed:
             passed_count += 1
         tr = TestResult(
@@ -370,6 +385,10 @@ def _extract_test_cases(
                     expected_repr=_safe_repr(ec.expected),
                     description=ec.description or "test",
                     level=ec.level,
+                    comparison=ec.comparison,
+                    check_inputs_unchanged=ec.check_inputs_unchanged,
+                    check_result_isolated=ec.check_result_isolated,
+                    input_aliases=ec.input_aliases,
                 )
             )
         return out

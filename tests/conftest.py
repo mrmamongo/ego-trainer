@@ -7,7 +7,7 @@ import pytest
 
 @pytest.fixture
 def tasks_dir() -> Path:
-    """Path to docs/tasks/ with the 33 markdown task files."""
+    """Path to docs/tasks/ with the 60 markdown task files."""
     return Path(__file__).parent.parent / "docs" / "tasks"
 
 

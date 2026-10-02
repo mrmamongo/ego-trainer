@@ -156,6 +156,7 @@ def begin_reply(db: sqlite3.Connection, session_id: str, owner_id: str, content:
 
 
 def _context(db: sqlite3.Connection) -> str:
+    from ego_server.catalog_visibility import ACTIVE_TASK_FILTER
     counts = {
         table: db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
         for table in ("projects", "folders", "tasks", "students")
@@ -163,7 +164,7 @@ def _context(db: sqlite3.Connection) -> str:
     tasks = [
         dict(row)
         for row in db.execute(
-            "SELECT id,task_id,title,version,block,level FROM tasks ORDER BY id LIMIT 100"
+            f"SELECT id,task_id,title,version,block,level FROM tasks WHERE {ACTIVE_TASK_FILTER} ORDER BY id LIMIT 100"
         )
     ]
     recent = db.execute(
@@ -256,10 +257,11 @@ async def _tool(
     if not isinstance(args, dict):
         raise ValueError("Tool arguments must be an object")
     if name == "search_catalog":
+        from ego_server.catalog_visibility import ACTIVE_TASK_FILTER
         needle = str(args.get("query", ""))[:200]
         rows = db.execute(
             "SELECT id,task_id,title,version,block,level FROM tasks "
-            "WHERE title LIKE ? OR task_id LIKE ? OR id LIKE ? ORDER BY id LIMIT 30",
+            f"WHERE {ACTIVE_TASK_FILTER} AND (title LIKE ? OR task_id LIKE ? OR id LIKE ?) ORDER BY id LIMIT 30",
             tuple([f"%{needle}%"] * 3),
         ).fetchall()
         return {"tasks": [dict(row) for row in rows]}, None

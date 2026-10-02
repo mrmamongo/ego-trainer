@@ -22,6 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from ego.content_repo import DiscoveredTask, discover_repo
 from ego_server import config
+from ego_server.catalog_visibility import ACTIVE_TASK_FILTER
 from ego_server.auth import generate_user_id, hash_password
 from ego_server.authoring import (
     contained_path,
@@ -262,9 +263,12 @@ async def get_overview(db: DbDep) -> OverviewDTO:
     come from the current DB state; ``latest_sync`` is the newest
     ``sync_log`` row or ``None`` when no sync has ever run.
     """
-    projects = db.execute("SELECT COUNT(*) AS n FROM projects").fetchone()["n"]
-    folders = db.execute("SELECT COUNT(*) AS n FROM folders").fetchone()["n"]
-    tasks = db.execute("SELECT COUNT(*) AS n FROM tasks").fetchone()["n"]
+    projects = db.execute("SELECT COUNT(*) AS n FROM projects WHERE archived = 0").fetchone()["n"]
+    folders = db.execute(
+        "SELECT COUNT(*) AS n FROM folders WHERE NOT EXISTS "
+        "(SELECT 1 FROM projects p WHERE p.id = folders.project_id AND p.archived = 1)"
+    ).fetchone()["n"]
+    tasks = db.execute(f"SELECT COUNT(*) AS n FROM tasks WHERE {ACTIVE_TASK_FILTER}").fetchone()["n"]
     students = db.execute("SELECT COUNT(*) AS n FROM students WHERE role = 'student'").fetchone()[
         "n"
     ]
@@ -314,7 +318,7 @@ async def get_catalog(db: DbDep, q: str | None = None) -> CatalogDTO:
     (or a ``q`` that matches nothing) yields ``{"projects": []}``.
     """
     projects_rows = db.execute(
-        'SELECT id, name, "order", version FROM projects ORDER BY "order", id'
+        'SELECT id, name, "order", version FROM projects WHERE archived = 0 ORDER BY "order", id'
     ).fetchall()
     folders_rows = db.execute(
         'SELECT id, project_id, code, name, "order", level '
@@ -322,7 +326,7 @@ async def get_catalog(db: DbDep, q: str | None = None) -> CatalogDTO:
     ).fetchall()
     tasks_rows = db.execute(
         "SELECT id, task_id, title, block, slug, level, version, breaking, "
-        "md_path, folder_id, project_id FROM tasks ORDER BY task_id, id"
+        f"md_path, folder_id, project_id FROM tasks WHERE {ACTIVE_TASK_FILTER} ORDER BY task_id, id"
     ).fetchall()
 
     # Folders are keyed by the composite (project_id, folder_id) — the
@@ -896,6 +900,12 @@ def _validate_studio_candidate(
             status_code=status.HTTP_409_CONFLICT,
             detail="tests sidecar path escapes content root",
         )
+    student_canonical = contained_path(root, _sidecar_rel(md_path_str, ".student.py"))
+    if student_canonical is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="student sidecar path escapes content root",
+        )
 
     # --- expected_version optimistic concurrency (409 on mismatch) ---
     current_version = row["version"]
@@ -993,6 +1003,11 @@ def _validate_studio_candidate(
         tmp_dir = Path(tmp)
         (tmp_dir / md_name).write_text(body.markdown, encoding="utf-8", newline="")
         (tmp_dir / sol_name).write_text(body.solution_py, encoding="utf-8", newline="")
+        # Studio edits the statement/reference/tests. An explicit learner
+        # starter stays in place and must participate in the candidate hash.
+        if student_canonical.is_file():
+            student_name = Path(md_path_str).with_suffix(".student.py").name
+            (tmp_dir / student_name).write_bytes(student_canonical.read_bytes())
         if body.tests_py:
             tests_name = Path(md_path_str).with_suffix(".tests.py").name
             (tmp_dir / tests_name).write_text(body.tests_py, encoding="utf-8", newline="")

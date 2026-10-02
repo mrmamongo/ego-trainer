@@ -1,0 +1,6 @@
+id: 01_chat_context
+code: XLA01
+name: "История чатбота"
+description: "Продуктовая практика: история чатбота"
+order: 1
+level: medium

@@ -1,0 +1,6 @@
+id: 03_party_finder
+code: XLA03
+name: "Поиск группы в MMO"
+description: "Продуктовая практика: поиск группы в mmo"
+order: 3
+level: medium

@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Literal
 
 TestLevel = Literal["smoke", "full"]
+Comparison = Literal["repr", "value"]
 
 # Which levels are included for a given run_check / CLI filter.
 LevelFilter = Literal["smoke", "full", "all"]
@@ -30,6 +31,10 @@ class TestCase:
     expected: Any
     description: str = ""
     level: TestLevel = "smoke"
+    comparison: Comparison = "repr"
+    check_inputs_unchanged: bool = False
+    check_result_isolated: bool = False
+    input_aliases: tuple = ()
 
 
 @dataclass
@@ -50,6 +55,10 @@ def case(
     expected: Any,
     description: str = "",
     level: TestLevel = "smoke",
+    comparison: Comparison = "repr",
+    check_inputs_unchanged: bool = False,
+    check_result_isolated: bool = False,
+    input_aliases: tuple = (),
 ) -> Callable[[Callable], Callable]:
     """Register a test case on a ``task_*`` function.
 
@@ -62,6 +71,16 @@ def case(
     """
     if level not in ("smoke", "full"):
         raise ValueError(f"invalid test level: {level!r} (expected 'smoke' or 'full')")
+    if comparison not in ("repr", "value"):
+        raise ValueError(f"invalid comparison: {comparison!r}")
+    aliases = []
+    for target, source in input_aliases:
+        for path in (target, source):
+            if not path or type(path[0]) is not int or path[0] < 0:
+                raise ValueError("input alias paths must start with a positional argument index")
+            if any(type(part) not in (int, str) for part in path):
+                raise ValueError("input alias path parts must be integers or strings")
+        aliases.append((tuple(target), tuple(source)))
 
     def decorator(func: Callable) -> Callable:
         if not hasattr(func, "_ego_cases"):
@@ -75,6 +94,10 @@ def case(
                 expected=expected,
                 description=description,
                 level=level,
+                comparison=comparison,
+                check_inputs_unchanged=check_inputs_unchanged,
+                check_result_isolated=check_result_isolated,
+                input_aliases=tuple(aliases),
             ),
         )
         return func

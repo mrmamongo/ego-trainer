@@ -30,7 +30,7 @@ def temp_db(monkeypatch):
 
 @pytest.fixture
 def client(temp_db, monkeypatch):
-    """FastAPI TestClient with temp DB and 33 tasks imported from docs/tasks/."""
+    """FastAPI TestClient with temp DB and 60 tasks imported from docs/tasks/."""
     repo_root = Path(__file__).parent.parent
     monkeypatch.chdir(repo_root)
 
@@ -75,12 +75,12 @@ def test_list_tasks_requires_auth(client):
     assert r.status_code == 401
 
 
-def test_list_tasks_returns_33(client):
+def test_list_tasks_returns_60(client):
     token = _register_and_login(client)
     r = client.get("/tasks", headers=_auth_headers(token))
     assert r.status_code == 200
     data = r.json()
-    assert len(data) == 33
+    assert len(data) == 60
 
 
 def test_list_tasks_filter_by_block(client):

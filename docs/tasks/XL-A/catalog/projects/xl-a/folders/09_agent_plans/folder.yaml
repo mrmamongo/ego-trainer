@@ -1,0 +1,6 @@
+id: 09_agent_plans
+code: XLA09
+name: "Планы агента"
+description: "Продуктовая практика: планы агента"
+order: 9
+level: hard

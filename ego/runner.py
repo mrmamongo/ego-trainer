@@ -9,13 +9,15 @@ See ADR-0001 D12 (sandbox для ego check) and D9 (сервер не выпол
 
 from __future__ import annotations
 
+import inspect
 import os
 import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+
+from ego.value_checks import _ego_mutable_ids, _ego_same_value
 
 
 # Зависимости, которые студенту запрещено использовать
@@ -246,6 +248,9 @@ def run_function(
     timeout: float = 5.0,
     block_network: bool = True,
     blocked_imports: set[str] | None = None,
+    check_inputs_unchanged: bool = False,
+    check_result_isolated: bool = False,
+    input_aliases: tuple = (),
 ) -> RunResult:
     """Run a function from ``code`` with given args, capture its return value.
 
@@ -267,6 +272,11 @@ def run_function(
         ``"===EGO_RETURN===\\n<repr of return value>\\n"``.
     """
     kwargs = kwargs or {}
+    observation_helpers = ""
+    if check_inputs_unchanged or check_result_isolated:
+        observation_helpers = (
+            inspect.getsource(_ego_same_value) + "\n" + inspect.getsource(_ego_mutable_ids)
+        )
     # NOTE: the caller is appended to `code` and exec'd inside `_namespace`.
     # Inside the exec'd code, `globals()` returns `_namespace`, so we use that
     # to look up the function. `traceback` is imported locally because it lives
@@ -276,12 +286,30 @@ def run_function(
 # === Call function and print return value ===
 import sys as _sys
 import traceback as _tb
+{observation_helpers}
 try:
     _func = globals().get({function_name!r})
     if _func is None:
         print("===EGO_NO_FUNCTION===", file=_sys.stderr)
         _sys.exit(1)
-    _result = _func(*{args!r}, **{kwargs!r})
+    _ego_args = list({args!r})
+    _ego_kwargs = {kwargs!r}
+    for _ego_target_path, _ego_source_path in {input_aliases!r}:
+        _ego_source = _ego_args
+        for _ego_part in _ego_source_path:
+            _ego_source = _ego_source[_ego_part]
+        _ego_target = _ego_args
+        for _ego_part in _ego_target_path[:-1]:
+            _ego_target = _ego_target[_ego_part]
+        _ego_target[_ego_target_path[-1]] = _ego_source
+    if {check_inputs_unchanged!r}:
+        from copy import deepcopy as _ego_deepcopy
+        _ego_snapshot = _ego_deepcopy((_ego_args, _ego_kwargs))
+    _result = _func(*_ego_args, **_ego_kwargs)
+    if {check_inputs_unchanged!r}:
+        assert _ego_same_value((_ego_args, _ego_kwargs), _ego_snapshot), "input arguments were modified"
+    if {check_result_isolated!r}:
+        assert not (_ego_mutable_ids(_result) & _ego_mutable_ids((_ego_args, _ego_kwargs))), "result shares mutable data with input"
     print("===EGO_RETURN===")
     print(repr(_result))
 except Exception:
