@@ -7,8 +7,11 @@ workers and restart-safe, atomic consumption of short-lived flows.
 
 from __future__ import annotations
 
+import json
+import re
 import secrets
 import time
+from html import escape
 from typing import Literal
 from urllib.parse import urlencode
 
@@ -25,17 +28,25 @@ from ego_server.service_settings import load_settings
 
 router = APIRouter()
 _HEADERS = {"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"}
+_VSCODE_CALLBACK = re.compile(
+    r"vscode(?:-insiders)?://ego-trainer\.ego-trainer/auth/forgejo/callback"
+    r"(?:\?windowId=[1-9][0-9]{0,9})?"
+)
 
 
 class StartRequest(BaseModel):
     code_challenge: str = Field(pattern=r"^[A-Za-z0-9_-]{43}$")
     client: Literal["browser", "vscode"] = "browser"
     callback_port: int | None = Field(default=None, ge=1024, le=65535)
+    callback_uri: str | None = Field(default=None, max_length=160)
 
     @model_validator(mode="after")
     def validate_callback(self):
-        if (self.client == "vscode") != (self.callback_port is not None):
-            raise ValueError("Only VSCode login requires a loopback callback port")
+        destinations = int(self.callback_port is not None) + int(self.callback_uri is not None)
+        if destinations != int(self.client == "vscode"):
+            raise ValueError("VSCode login requires exactly one callback destination")
+        if self.callback_uri is not None and not _VSCODE_CALLBACK.fullmatch(self.callback_uri):
+            raise ValueError("Callback must target the Ego VSCode extension")
         return self
 
 
@@ -89,8 +100,8 @@ async def start(body: StartRequest, db: DbDep) -> JSONResponse:
     db.execute("DELETE FROM oauth_flows WHERE expires_at<=?", (now,))
     db.execute(
         "INSERT INTO oauth_flows "
-        "(state_hash,issuer,client_id,redirect_uri,verifier,challenge,expires_at,callback_port) "
-        "VALUES (?,?,?,?,?,?,?,?)",
+        "(state_hash,issuer,client_id,redirect_uri,verifier,challenge,expires_at,callback_port,callback_uri) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
         (
             forgejo.digest(state),
             issuer,
@@ -100,6 +111,7 @@ async def start(body: StartRequest, db: DbDep) -> JSONResponse:
             body.code_challenge,
             now + forgejo.FLOW_SECONDS,
             body.callback_port,
+            body.callback_uri,
         ),
     )
     db.commit()
@@ -206,6 +218,32 @@ async def callback(
         else "Вход не завершён. Вернись в ego-trainer и попробуй снова. "
         "Если регистрация закрыта, обратись к наставнику."
     )
+    if row["callback_uri"] is not None:
+        # Only our fixed native extension URI is allowed; no bearer tokens in it.
+        destination = row["callback_uri"] + ("&" if "?" in row["callback_uri"] else "?")
+        destination += urlencode(
+            {"state": state, "ticket": ticket}
+            if success
+            else {"state": state, "error": "login_failed"}
+        )
+        nonce = secrets.token_urlsafe(32)
+        response = HTMLResponse(
+            '<!doctype html><html lang="ru"><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            "<title>Cogito — вход в VS Code</title><body><h1>Cogito</h1>"
+            "<p>Возвращаем тебя в VS Code. Если браузер не открыл редактор, нажми кнопку.</p>"
+            f'<p><a href="{escape(destination, quote=True)}">Открыть VS Code</a></p>'
+            "<p>После возвращения в редактор эту вкладку можно закрыть.</p>"
+            f'<script nonce="{nonce}">window.location.replace({json.dumps(destination)});</script>'
+            "</body></html>",
+            status_code=200 if success else 400,
+            headers={
+                **_HEADERS,
+                "Content-Security-Policy": f"default-src 'none'; script-src 'nonce-{nonce}'; frame-ancestors 'none'",
+            },
+        )
+        response.delete_cookie(_cookie(state), path="/auth/forgejo/callback")
+        return response
     if row["callback_port"] is not None:
         # Callback can only target a local native listener, never an arbitrary origin.
         response = RedirectResponse(

@@ -30,6 +30,27 @@ test('401 throws EgoApiError with path and login message', async () => {
     );
 });
 
+test('Forgejo start sends a window-bound editor URI and rejects a foreign login origin', async () => {
+    const callbackUri = 'vscode://ego-trainer.ego-trainer/auth/forgejo/callback?windowId=14';
+    const challenge = 'c'.repeat(43);
+    let loginUrl = 'https://ego.example/auth/forgejo/authorize?state=' + 's'.repeat(43);
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+        assert.equal(url, 'https://ego.example/auth/forgejo/start');
+        assert.equal(init?.method, 'POST');
+        assert.deepEqual(JSON.parse(String(init?.body)), {
+            code_challenge: challenge, client: 'vscode', callback_uri: callbackUri,
+        });
+        return {
+            ok: true, status: 200,
+            json: async () => ({ state: 's'.repeat(43), authorization_url: loginUrl, expires_in: 300 }),
+        };
+    }) as typeof fetch;
+    const api = new EgoApi('https://ego.example');
+    assert.equal((await api.startForgejo(challenge, callbackUri)).authorization_url, loginUrl);
+    loginUrl = 'https://attacker.example/login';
+    await assert.rejects(api.startForgejo(challenge, callbackUri), /does not match/);
+});
+
 test('403 throws EgoApiError with forbidden message', async () => {
     mockFetch(403, {});
     await assert.rejects(

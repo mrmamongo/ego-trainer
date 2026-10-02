@@ -119,6 +119,7 @@ CREATE TABLE IF NOT EXISTS oauth_flows (
   challenge     TEXT NOT NULL,
   browser_hash  TEXT,
   callback_port INTEGER,
+  callback_uri  TEXT,
   ticket_hash   TEXT,
   phase         TEXT NOT NULL DEFAULT 'pending',
   user_id       TEXT REFERENCES students(id) ON DELETE CASCADE,

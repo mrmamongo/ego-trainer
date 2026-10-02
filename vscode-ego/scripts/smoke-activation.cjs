@@ -109,6 +109,7 @@ const vscode = {
       return { appendLine() {}, show() {}, dispose() {} };
     },
     registerWebviewViewProvider() { return createDisposable(); },
+    registerUriHandler() { return createDisposable(); },
     showErrorMessage() {},
     showWarningMessage() {},
     showInformationMessage() {},

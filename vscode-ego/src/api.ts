@@ -152,8 +152,8 @@ export class EgoApi {
         }
     }
 
-    async startForgejo(code_challenge: string, callback_port: number): Promise<ForgejoFlow> {
-        const flow = await this.request<ForgejoFlow>('POST', '/auth/forgejo/start', { code_challenge, client: 'vscode', callback_port });
+    async startForgejo(code_challenge: string, callback_uri: string): Promise<ForgejoFlow> {
+        const flow = await this.request<ForgejoFlow>('POST', '/auth/forgejo/start', { code_challenge, client: 'vscode', callback_uri });
         if (new URL(flow.authorization_url).origin !== new URL(this.serverUrl).origin) {
             throw new Error('Login URL does not match the Ego server. Check EGO_PUBLIC_URL.');
         }

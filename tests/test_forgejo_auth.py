@@ -3,6 +3,7 @@
 import re
 import secrets
 from datetime import datetime
+from html import unescape
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
@@ -580,3 +581,148 @@ def test_vscode_completion_targets_only_local_listener(setup):
         ).status_code
         == 422
     )
+
+
+@pytest.mark.parametrize("scheme", ["vscode", "vscode-insiders"])
+@pytest.mark.parametrize("window", ["", "?windowId=14"])
+def test_vscode_uri_returns_ticket_to_extension_and_preserves_window(setup, scheme, window):
+    client, _, _, _ = setup
+    verifier = secrets.token_urlsafe(32)
+    uri = f"{scheme}://ego-trainer.ego-trainer/auth/forgejo/callback{window}"
+    started = client.post(
+        "/auth/forgejo/start",
+        json={
+            "code_challenge": forgejo.challenge(verifier),
+            "client": "vscode",
+            "callback_uri": uri,
+        },
+    )
+    assert started.status_code == 200
+    flow = started.json()
+    client.get(flow["authorization_url"], follow_redirects=False)
+    callback = client.get("/auth/forgejo/callback", params={"state": flow["state"], "code": "ok"})
+    assert callback.status_code == 200
+    assert callback.headers["cache-control"] == "no-store"
+    assert callback.headers["referrer-policy"] == "no-referrer"
+    assert "default-src 'none'" in callback.headers["content-security-policy"]
+    assert "Max-Age=0" in callback.headers["set-cookie"]
+    assert "window.location.replace" in callback.text
+    assert "Открыть VS Code" in callback.text
+    assert "private-provider-token" not in callback.text
+    assert "access_token" not in callback.text
+    destination = urlsplit(unescape(re.search(r'href="([^"]+)"', callback.text)[1]))
+    assert destination.scheme == scheme
+    assert destination.netloc == "ego-trainer.ego-trainer"
+    assert destination.path == "/auth/forgejo/callback"
+    query = parse_qs(destination.query)
+    assert query["state"] == [flow["state"]]
+    assert query.get("windowId") == (["14"] if window else None)
+    exchange_body = {"state": flow["state"], "code_verifier": verifier}
+    assert client.post("/auth/forgejo/exchange", json=exchange_body).status_code == 401
+    exchange_body["ticket"] = query["ticket"][0]
+    wrong_proof = {**exchange_body, "code_verifier": secrets.token_urlsafe(32)}
+    assert client.post("/auth/forgejo/exchange", json=wrong_proof).status_code == 401
+    assert client.post("/auth/forgejo/exchange", json=exchange_body).status_code == 200
+    assert client.post("/auth/forgejo/exchange", json=exchange_body).status_code == 400
+
+
+@pytest.mark.parametrize(
+    "uri",
+    [
+        "https://attacker.example/callback",
+        "http://127.0.0.1:51369/callback",
+        "vscode://other.extension/auth/forgejo/callback",
+        "vscode://ego-trainer.ego-trainer.evil/auth/forgejo/callback",
+        "vscode://user@ego-trainer.ego-trainer/auth/forgejo/callback",
+        "vscode://ego-trainer.ego-trainer:80/auth/forgejo/callback",
+        "vscode://ego-trainer.ego-trainer/other",
+        "vscode://ego-trainer.ego-trainer/auth/forgejo/callback#fragment",
+        "vscode://ego-trainer.ego-trainer/auth/forgejo/callback?state=attacker",
+        "vscode://ego-trainer.ego-trainer/auth/forgejo/callback?windowId=14&ticket=attacker",
+        "vscode://ego-trainer.ego-trainer/auth/forgejo/callback\n",
+    ],
+)
+def test_vscode_uri_rejects_redirects_outside_fixed_native_route(setup, uri):
+    client, _, _, calls = setup
+    response = client.post(
+        "/auth/forgejo/start",
+        json={
+            "code_challenge": forgejo.challenge(secrets.token_urlsafe(32)),
+            "client": "vscode",
+            "callback_uri": uri,
+        },
+    )
+    assert response.status_code == 422
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    "destination",
+    [
+        {
+            "client": "browser",
+            "callback_uri": "vscode://ego-trainer.ego-trainer/auth/forgejo/callback",
+        },
+        {"client": "vscode"},
+        {
+            "client": "vscode",
+            "callback_port": 41234,
+            "callback_uri": "vscode://ego-trainer.ego-trainer/auth/forgejo/callback",
+        },
+    ],
+)
+def test_callback_transport_must_match_client_and_be_unambiguous(setup, destination):
+    client, _, _, _ = setup
+    response = client.post(
+        "/auth/forgejo/start",
+        json={"code_challenge": forgejo.challenge(secrets.token_urlsafe(32)), **destination},
+    )
+    assert response.status_code == 422
+
+
+def test_vscode_uri_provider_cancellation_returns_only_failure(setup):
+    client, _, _, calls = setup
+    flow = client.post(
+        "/auth/forgejo/start",
+        json={
+            "code_challenge": forgejo.challenge(secrets.token_urlsafe(32)),
+            "client": "vscode",
+            "callback_uri": "vscode://ego-trainer.ego-trainer/auth/forgejo/callback?windowId=14",
+        },
+    ).json()
+    client.get(flow["authorization_url"], follow_redirects=False)
+    response = client.get(
+        "/auth/forgejo/callback", params={"state": flow["state"], "error": "access_denied"}
+    )
+    assert response.status_code == 400
+    destination = urlsplit(unescape(re.search(r'href="([^"]+)"', response.text)[1]))
+    assert parse_qs(destination.query) == {
+        "windowId": ["14"],
+        "state": [flow["state"]],
+        "error": ["login_failed"],
+    }
+    assert calls == []
+
+
+def test_callback_uri_migration_preserves_existing_loopback_flow(setup):
+    client, _, _, _ = setup
+    verifier = secrets.token_urlsafe(32)
+    flow = client.post(
+        "/auth/forgejo/start",
+        json={
+            "code_challenge": forgejo.challenge(verifier),
+            "client": "vscode",
+            "callback_port": 41234,
+        },
+    ).json()
+    execute(lambda conn: conn.execute("ALTER TABLE oauth_flows DROP COLUMN callback_uri"))
+    execute(db.init_schema)
+    execute(db.init_schema)
+    client.get(flow["authorization_url"], follow_redirects=False)
+    response = client.get(
+        "/auth/forgejo/callback",
+        params={"state": flow["state"], "code": "ok"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert urlsplit(response.headers["location"]).netloc == "127.0.0.1:41234"

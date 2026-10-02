@@ -17,7 +17,7 @@ import { DashboardView } from './dashboardView';
 import { TaskViewPanel } from './taskViewPanel';
 import { openTaskPy, openTaskWithView } from './openTask';
 import { readEgoConfig, writeEgoConfig, readManifest, type EgoMode } from './egoWorkspace';
-import { forgejoLogin } from './forgejoLogin';
+import { forgejoLogin, registerForgejoUriHandler } from './forgejoLogin';
 import { decideSession } from './sessionDecision';
 import { EgoStatusBar } from './statusBar';
 import { runOfflineCheck } from './offlineCheck';
@@ -50,6 +50,7 @@ async function refreshAssistantAccess(): Promise<void> {
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
+    registerForgejoUriHandler(context);
     // Load config.
     const config = vscode.workspace.getConfiguration('ego');
     const settingsUrl = config.get<string>('serverUrl', 'http://localhost:8000');

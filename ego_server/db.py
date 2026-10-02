@@ -51,6 +51,10 @@ def _migrate_add_columns(conn: sqlite3.Connection) -> None:
     if "project_id" not in tasks_cols:
         conn.execute("ALTER TABLE tasks ADD COLUMN project_id TEXT")
 
+    oauth_cols = {row["name"] for row in conn.execute("PRAGMA table_info(oauth_flows)")}
+    if "callback_uri" not in oauth_cols:
+        conn.execute("ALTER TABLE oauth_flows ADD COLUMN callback_uri TEXT")
+
 
 def init_db() -> None:
     """Initialize the database (call on app startup)."""

@@ -1,49 +1,67 @@
 /** Client proof stays in memory and is never included in the browser URL. */
 import { createHash, randomBytes } from 'node:crypto';
-import { createServer } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import type { AuthResponse, ForgejoFlow } from './api';
 
 interface LoginApi {
-    startForgejo(challenge: string, port: number): Promise<ForgejoFlow>;
+    startForgejo(challenge: string, callbackUri: string): Promise<ForgejoFlow>;
     exchangeForgejo(state: string, verifier: string, ticket: string): Promise<AuthResponse | { pending: true }>;
+}
+
+export const FORGEJO_CALLBACK_PATH = '/auth/forgejo/callback';
+export const FORGEJO_EXTENSION_ID = 'ego-trainer.ego-trainer';
+
+/** VS Code supplies the decoded query, including its window routing parameter. */
+export interface ForgejoCallback {
+    scheme: string;
+    authority: string;
+    path: string;
+    query: string;
+}
+
+export class ForgejoCallbacks {
+    private readonly listeners = new Set<(uri: ForgejoCallback) => void>();
+
+    handleUri(uri: ForgejoCallback): void {
+        for (const listener of this.listeners) listener(uri);
+    }
+
+    subscribe(listener: (uri: ForgejoCallback) => void): () => void {
+        this.listeners.add(listener);
+        return () => { this.listeners.delete(listener); };
+    }
 }
 
 export async function runForgejoFlow(
     api: LoginApi,
+    callbackUri: string,
+    callbacks: ForgejoCallbacks,
     openBrowser: (url: string) => Promise<boolean>,
     isCancelled: () => boolean,
-    pause: () => Promise<void> = () => new Promise(resolve => setTimeout(resolve, 1500)),
+    pause: () => Promise<void> = () => new Promise(resolve => setTimeout(resolve, 250)),
 ): Promise<AuthResponse | undefined> {
+    if (isCancelled()) return undefined;
     const verifier = randomBytes(32).toString('base64url');
     const challenge = createHash('sha256').update(verifier).digest('base64url');
+    const expectedScheme = new URL(callbackUri).protocol.slice(0, -1);
     let expectedState = '';
     let ticket = '';
     let failed = false;
-    // Completion proof returns to this machine. Sharing a login URL cannot
-    // deliver a victim's login token to a remote flow initiator.
-    const listener = createServer((request, response) => {
-        let url: URL;
-        try { url = new URL(request.url ?? '/', 'http://127.0.0.1'); }
-        catch { response.writeHead(400); response.end('Invalid login callback'); return; }
-        const valid = request.method === 'GET' && url.pathname === '/callback'
-            && expectedState !== '' && url.searchParams.get('state') === expectedState;
-        const received = url.searchParams.get('ticket') ?? '';
-        const error = url.searchParams.get('error') === 'login_failed';
-        if (!valid || (!error && !/^[A-Za-z0-9_-]{43}$/.test(received))) {
-            response.writeHead(400); response.end('Invalid login callback'); return;
+    // The independent completion proof returns to this editor window. The
+    // verifier alone cannot consume a login opened on someone else's machine.
+    const unsubscribe = callbacks.subscribe(uri => {
+        if (ticket || failed || uri.scheme !== expectedScheme
+            || uri.authority !== FORGEJO_EXTENSION_ID || uri.path !== FORGEJO_CALLBACK_PATH) return;
+        const params = new URLSearchParams(uri.query);
+        if (!expectedState || params.getAll('state').length !== 1 || params.get('state') !== expectedState) return;
+        if (params.getAll('error').length === 1 && params.get('error') === 'login_failed' && !params.has('ticket')) {
+            failed = true;
+        } else if (!params.has('error') && params.getAll('ticket').length === 1) {
+            const received = params.get('ticket') ?? '';
+            if (/^[A-Za-z0-9_-]{43}$/.test(received)) ticket = received;
         }
-        if (error) failed = true;
-        else if (!ticket) ticket = received;
-        response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'" });
-        response.end('<!doctype html><html lang="ru"><meta charset="utf-8"><title>Ego Trainer</title><p>Вернись в VSCode. Эту вкладку можно закрыть.</p></html>');
-    });
-    await new Promise<void>((resolve, reject) => {
-        listener.once('error', reject);
-        listener.listen(0, '127.0.0.1', resolve);
     });
     try {
-        const flow = await api.startForgejo(challenge, (listener.address() as AddressInfo).port);
+        const flow = await api.startForgejo(challenge, callbackUri);
         expectedState = flow.state;
         if (isCancelled()) return undefined;
         if (!await openBrowser(flow.authorization_url)) throw new Error('Could not open the Forgejo login browser.');
@@ -60,7 +78,6 @@ export async function runForgejoFlow(
         if (isCancelled()) return undefined;
         throw new Error('Forgejo login timed out. Run Ego: Login again.');
     } finally {
-        listener.closeAllConnections();
-        await new Promise<void>(resolve => listener.close(() => resolve()));
+        unsubscribe();
     }
 }
