@@ -84,9 +84,34 @@
 
     const initialModel = modelFor(documentId, value, language);
     activeDocumentId = documentId;
+    monaco.editor.defineTheme('cogito-dark', {
+      base: 'vs-dark',
+      inherit: true,
+      rules: [],
+      colors: {
+        'editor.background': '#111113',
+        'editor.foreground': '#e4e4e7',
+        'editorLineNumber.foreground': '#71717a',
+        'editorLineNumber.activeForeground': '#fafafa',
+        'editorCursor.foreground': '#60a5fa',
+        'editor.selectionBackground': '#2563eb40',
+        'editor.inactiveSelectionBackground': '#3f3f4660',
+        'editor.lineHighlightBackground': '#18181b',
+        'editorGutter.background': '#111113',
+        'editorWidget.background': '#18181b',
+        'editorWidget.border': '#3f3f46',
+        'input.background': '#18181b',
+        'input.border': '#3f3f46',
+        'dropdown.background': '#18181b',
+        'focusBorder': '#3b82f6',
+        'scrollbarSlider.background': '#52525b80',
+        'editorIndentGuide.background1': '#27272a',
+        'editorIndentGuide.activeBackground1': '#52525b',
+      }
+    });
     editor = monaco.editor.create(host, {
       model: initialModel,
-      theme: 'vs-dark',
+      theme: 'cogito-dark',
       automaticLayout: true,
       ariaLabel: 'Редактор содержимого задачи',
       readOnly,
