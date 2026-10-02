@@ -13,6 +13,26 @@ const callback: ForgejoCallback = {
     query: new URLSearchParams({ state, ticket }).toString(),
 };
 
+test('Copy in the external-link dialog keeps login pending for a later browser callback', async () => {
+    const callbacks = new ForgejoCallbacks();
+    let challenge = '';
+    let starts = 0;
+    let manualUrl = '';
+    const result = await runForgejoFlow({
+        async startForgejo(proof) { challenge = proof; starts++; return flow; },
+        async exchangeForgejo(returnedState, verifier, returnedTicket) {
+            assert.equal(returnedState, state);
+            assert.equal(returnedTicket, ticket);
+            assert.equal(createHash('sha256').update(verifier).digest('base64url'), challenge);
+            return auth;
+        },
+    }, callbackUri, callbacks, async () => false, () => false,
+    async () => { callbacks.handleUri(callback); }, url => { manualUrl = url; });
+    assert.deepEqual(result, auth);
+    assert.equal(starts, 1); // Copy must preserve the original attempt and verifier.
+    assert.equal(manualUrl, flow.authorization_url);
+});
+
 test('VS Code completion keeps window routing and needs both client proofs', async () => {
     const callbacks = new ForgejoCallbacks();
     let challenge = '';
@@ -102,11 +122,26 @@ test('cancellation after a valid callback does not exchange; later attempts have
     }, callbackUri, callbacks, async () => { callbacks.handleUri(callback); return true; }, () => false), /timed out/);
 });
 
-test('failure to open browser releases the callback subscription', async () => {
+test('explicit cancellation after Copy ends the pending flow without exchanging', async () => {
     const callbacks = new ForgejoCallbacks();
-    await assert.rejects(runForgejoFlow({
+    let cancelled = false;
+    const result = await runForgejoFlow({
         async startForgejo() { return flow; },
         async exchangeForgejo() { assert.fail('must not exchange'); },
-    }, callbackUri, callbacks, async () => false, () => false), /Could not open/);
+    }, callbackUri, callbacks, async () => false, () => cancelled,
+    async () => { cancelled = true; });
+    assert.equal(result, undefined);
     callbacks.handleUri(callback);
+});
+
+test('a browser launcher exception allows manual completion of the same flow', async () => {
+    const callbacks = new ForgejoCallbacks();
+    let manualUrl = '';
+    const result = await runForgejoFlow({
+        async startForgejo() { return flow; },
+        async exchangeForgejo() { return auth; },
+    }, callbackUri, callbacks, async () => { throw new Error('no default browser'); }, () => false,
+    async () => { callbacks.handleUri(callback); }, url => { manualUrl = url; });
+    assert.deepEqual(result, auth);
+    assert.equal(manualUrl, flow.authorization_url);
 });

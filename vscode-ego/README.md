@@ -1,11 +1,12 @@
-# Ego Trainer
+# Cogito for VS Code
 
 VSCode extension for the Ego practice platform — solve tasks, get auto-checked, track progress.
 
 ## Features
 
-- **Task Tree** — sidebar with blocks and tasks, status icons (passed/partial/new)
-- **Check Solution** — run your code against tests, see results in a rich panel
+- **Cogito sidebar** — separate Activity Bar entry with tasks, statements, progressive hints and results on the left
+- **Tutor chat** — native Secondary Side Bar on the right; follows the active task, keeps its conversation, and reads current unsaved code without editing files
+- **Check Solution** — run your code against tests; results have a separate tab and a collapsed detailed log
 - **Pull Tasks** — download task statements and stubs from server
 - **Push Progress** — sync your progress to the server
 - **Hints** — progressive hints (rules → example → function signature)
@@ -36,8 +37,27 @@ VSCode extension for the Ego practice platform — solve tasks, get auto-checked
 
 ## Requirements
 
+- VS Code **1.106+** (native Secondary Side Bar contributions)
 - An ego-server instance running (see [ego-trainer](https://github.com/ego-trainer) repo)
 - Python 3.11+ on server side
+
+## Layout and sign-in
+
+Open **Cogito** in the Activity Bar. Select a task: its condition stays in the
+left sidebar, the Python editor stays in the centre, and `Ego: Учебный ассистент`
+opens the chat on the right. VS Code can move these views through its native
+view context menu. The extension never rearranges other extensions' views.
+
+Students need server-granted AI access, available budget and configured main
+and reviewing models. The sidebar shows why help is unavailable. Model calls,
+review before display, billing and understanding defense stay on the server.
+
+Forgejo login returns through the extension's VS Code URI handler. Choosing
+**Copy** in the external-link dialog keeps the attempt pending: paste that
+same URL into a browser, complete login and allow the return to VS Code.
+You can copy the link again or cancel through the login notification. The
+attempt expires after at most five minutes; reloading the window requires a
+new attempt.
 
 ## Architecture
 

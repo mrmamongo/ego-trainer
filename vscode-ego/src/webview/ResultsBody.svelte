@@ -21,12 +21,12 @@
 	};
 
 	const STATUS_LABELS: Record<string, string> = {
-		passed: 'PASS',
-		partial: 'PART',
-		failed: 'FAIL',
-		error: 'ERR',
-		timeout: 'TIME',
-		no_tests: 'NO TESTS'
+		passed: 'Пройдено',
+		partial: 'Частично',
+		failed: 'Есть ошибки',
+		error: 'Ошибка',
+		timeout: 'Таймаут',
+		no_tests: 'Нет тестов'
 	};
 
 	function statusColor(status: string): string {
@@ -50,9 +50,9 @@
 
 {#if history && history.length > 0}
 	<section class="history" aria-label="Previous attempts">
-		<h3>Previous attempts</h3>
+		<h3>Предыдущие попытки</h3>
 		<table>
-			<thead><tr><th>Time</th><th>Status</th><th>Score</th></tr></thead>
+			<thead><tr><th>Время</th><th>Статус</th><th>Тесты</th></tr></thead>
 			<tbody>
 				{#each history as run (run.id)}
 					<tr>
@@ -80,7 +80,7 @@
 		<div class="crumb">{breadcrumb(result.task_id)}</div>
 		<div class="title-row">
 			<span class="badge" style:background={color}>{statusLabel(result.status)}</span>
-			<span class="title">Task {result.task_id} · {result.passed_tests}/{result.total_tests} tests</span>
+			<span class="title">{result.passed_tests} из {result.total_tests} тестов · {result.task_id}</span>
 		</div>
 	</div>
 
@@ -89,32 +89,32 @@
             ? 'Понимание решения подтверждено.' : 'Следующий этап — защита решения в ассистенте.'}</p>
     {/if}
 	{#if result.total_tests === 0}
-		<div class="no-tests">No tests available for this task.</div>
+		<div class="no-tests">У задания пока нет тестов.</div>
 	{:else}
 		{#each result.results as tr, i (i)}
 			{@const rowColor = statusColor(tr.passed ? 'passed' : 'failed')}
 			<div class="test-row" style:border-left-color={rowColor}>
 				<div class="test-header">
 					<span class="test-tag" style:background={rowColor}>
-						{tr.passed ? 'OK' : 'FAIL'}
+						{tr.passed ? '✓' : '✕'}
 					</span>
 					<span>{tr.description}</span>
 				</div>
 				{#if !tr.passed}
 					<div class="detail">
 						<div>
-							<span class="label">Expected:</span>
+							<span class="label">Ожидалось:</span>
 							<code>{tr.expected_repr}</code>
 						</div>
 						{#if tr.actual_repr !== null}
 							<div>
-								<span class="label">Got:</span>
+								<span class="label">Получено:</span>
 								<code>{tr.actual_repr}</code>
 							</div>
 						{/if}
 						{#if tr.error}
 							<div class="error">
-								<span class="label">Error:</span>
+								<span class="label">Ошибка:</span>
 								<pre>{tr.error}</pre>
 							</div>
 						{/if}
@@ -125,8 +125,8 @@
 	{/if}
 
 	{#if result.log?.trim()}
-		<details class="log" open={result.status !== 'passed'}>
-			<summary>Log</summary>
+		<details class="log">
+			<summary>Подробный лог</summary>
 			<pre>{result.log}</pre>
 		</details>
 	{/if}
@@ -258,6 +258,7 @@
 		margin-top: 8px;
 		padding-left: 24px;
 		font-size: 13px;
+		overflow-wrap: anywhere;
 	}
 
 	.detail .label {

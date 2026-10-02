@@ -26,12 +26,42 @@ export async function forgejoLogin(api: EgoApi): Promise<AuthResponse | null | u
     }
     return vscode.window.withProgress(
         { location: vscode.ProgressLocation.Notification, title: 'Ego: Sign in through Forgejo in your browser', cancellable: true },
-        async (_progress, cancellation) => runForgejoFlow(
-            api,
-            callbackUri.toString(true),
-            callbacks,
-            url => Promise.resolve(vscode.env.openExternal(vscode.Uri.parse(url))),
-            () => cancellation.isCancellationRequested,
-        ),
+        async (progress, cancellation) => {
+            let active = true;
+            let cancelled = false;
+            const isCancelled = () => cancelled || cancellation.isCancellationRequested;
+            const offerManualLogin = (url: string) => {
+                progress.report({ message: 'Открой ссылку в браузере вручную. Ожидаю подтверждения входа…' });
+                void vscode.window.showInformationMessage(
+                    'Браузер не открыт автоматически. Если ты выбрал Copy, открой скопированную ссылку вручную — вход продолжает ожидать подтверждения.',
+                    'Скопировать ссылку', 'Отменить вход',
+                ).then(async action => {
+                    if (!active || isCancelled()) return;
+                    if (action === 'Отменить вход') {
+                        cancelled = true;
+                    } else if (action === 'Скопировать ссылку') {
+                        try {
+                            await vscode.env.clipboard.writeText(url);
+                            if (active && !isCancelled()) progress.report({ message: 'Ссылка скопирована. Открой её в браузере; я жду подтверждения входа…' });
+                        } catch {
+                            if (active && !isCancelled()) void vscode.window.showErrorMessage('Не удалось скопировать ссылку. Повтори Ego: Login.');
+                        }
+                    }
+                }, () => undefined);
+            };
+            try {
+                return await runForgejoFlow(
+                    api,
+                    callbackUri.toString(true),
+                    callbacks,
+                    url => Promise.resolve(vscode.env.openExternal(vscode.Uri.parse(url))),
+                    isCancelled,
+                    undefined,
+                    offerManualLogin,
+                );
+            } finally {
+                active = false;
+            }
+        },
     );
 }

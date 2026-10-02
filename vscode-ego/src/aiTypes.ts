@@ -36,4 +36,5 @@ export interface AssistantData {
     submissionId?: string;
     busy: boolean;
     error: string;
+    offline?: boolean;
 }

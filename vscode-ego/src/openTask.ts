@@ -1,4 +1,4 @@
-/** Shared open-task helpers: .py in Col1 + Task view in Col2. */
+/** Open task code in the editor and its statement in the Cogito sidebar. */
 
 import * as vscode from 'vscode';
 import { TaskMeta } from './api';
@@ -57,13 +57,13 @@ export async function openTaskPy(
     return false;
 }
 
-/** Open task: .py Col1 + Task view Col2. */
+/** Show the task sidebar first, then keep focus in its Python editor. */
 export async function openTaskWithView(
     task: TaskMeta,
     status = 'new'
 ): Promise<void> {
-    await openTaskPy(task.id, task.slug, task.md_path || undefined);
     await TaskViewPanel.showFromMeta(task, status);
+    await openTaskPy(task.id, task.slug, task.md_path || undefined);
 }
 
 /** Open from dashboard/tree row fields. */
@@ -75,7 +75,6 @@ export async function openTaskById(opts: {
     status?: string;
     md_path?: string;
 }): Promise<void> {
-    await openTaskPy(opts.id, opts.slug, opts.md_path);
     await TaskViewPanel.show({
         id: opts.id,
         title: opts.title,
@@ -84,4 +83,5 @@ export async function openTaskById(opts: {
         status: opts.status || 'new',
         md_path: opts.md_path,
     });
+    await openTaskPy(opts.id, opts.slug, opts.md_path);
 }

@@ -30,6 +30,7 @@ export interface TaskViewData {
     history: TaskRunSummary[];
     mode: 'server' | 'offline';
     ai_available?: boolean;
+    loading?: boolean;
 }
 
 export interface TaskViewDeps {
@@ -48,158 +49,106 @@ interface TaskRef {
 }
 
 export class TaskViewPanel {
-    private static panel: vscode.WebviewPanel | undefined;
+    private static panel: vscode.WebviewView | undefined;
     private static extensionUri: vscode.Uri | undefined;
     private static deps: TaskViewDeps | undefined;
     private static ready = false;
     private static current: TaskRef | undefined;
-    private static pendingResult: CheckResponse | undefined;
+    private static generation = 0;
+    private static results = new Map<string, CheckResponse>();
 
     static configure(extensionUri: vscode.Uri, deps: TaskViewDeps): void {
-        TaskViewPanel.extensionUri = extensionUri;
-        TaskViewPanel.deps = deps;
+        this.extensionUri = extensionUri;
+        this.deps = deps;
     }
 
-    static isOpen(): boolean {
-        return TaskViewPanel.panel !== undefined;
+    static register(context: vscode.ExtensionContext): void {
+        context.subscriptions.push(vscode.window.registerWebviewViewProvider('egoTaskDetail', {
+            resolveWebviewView: view => {
+                this.panel = view;
+                this.ready = false;
+                view.webview.options = { enableScripts: true, localResourceRoots: webviewLocalRoots(context.extensionUri) };
+                view.webview.onDidReceiveMessage(msg => this.onMessage(msg), undefined, context.subscriptions);
+                view.onDidDispose(() => {
+                    if (this.panel === view) { this.panel = undefined; this.ready = false; this.generation++; }
+                }, undefined, context.subscriptions);
+                view.webview.html = webviewHtml({ webview: view.webview, extensionUri: context.extensionUri,
+                    bundleName: 'taskView.js', title: 'Cogito · Задание' });
+            },
+        }, { webviewOptions: { retainContextWhenHidden: true } }));
     }
 
-    static currentTaskId(): string | undefined {
-        return TaskViewPanel.current?.id;
+    static isOpen(): boolean { return this.current !== undefined; }
+    static currentTaskId(): string | undefined { return this.current?.id; }
+
+    /** Follow an editor change without moving focus away from the code. */
+    static async followTask(ref: TaskRef): Promise<void> {
+        if (this.current?.id === ref.id) return;
+        this.current = ref;
+        this.generation++;
+        await this.pushData();
     }
 
-    /** Open (or reuse) Task view for a task in column 2. */
     static async show(ref: TaskRef): Promise<void> {
-        const extensionUri = TaskViewPanel.extensionUri;
-        const deps = TaskViewPanel.deps;
-        if (!extensionUri || !deps) {
-            vscode.window.showErrorMessage('Ego: Task view not configured.');
-            return;
-        }
-
-        TaskViewPanel.current = ref;
-        TaskViewPanel.pendingResult = undefined;
-
-        if (TaskViewPanel.panel) {
-            TaskViewPanel.panel.title = `Ego: ${ref.id}`;
-            TaskViewPanel.panel.reveal(vscode.ViewColumn.Two);
-        } else {
-            TaskViewPanel.ready = false;
-            TaskViewPanel.panel = vscode.window.createWebviewPanel(
-                'egoTaskView',
-                `Ego: ${ref.id}`,
-                vscode.ViewColumn.Two,
-                {
-                    enableScripts: true,
-                    retainContextWhenHidden: true,
-                    localResourceRoots: webviewLocalRoots(extensionUri),
-                }
-            );
-            TaskViewPanel.panel.webview.html = webviewHtml({
-                webview: TaskViewPanel.panel.webview,
-                extensionUri,
-                bundleName: 'taskView.js',
-                title: `Ego: ${ref.id}`,
-            });
-            TaskViewPanel.panel.webview.onDidReceiveMessage(async (msg: { type?: string }) => {
-                await TaskViewPanel.onMessage(msg);
-            });
-            TaskViewPanel.panel.onDidDispose(() => {
-                TaskViewPanel.panel = undefined;
-                TaskViewPanel.ready = false;
-                TaskViewPanel.current = undefined;
-                TaskViewPanel.pendingResult = undefined;
-            });
-        }
-
-        if (TaskViewPanel.ready) {
-            await TaskViewPanel.pushData();
-        }
+        this.current = ref;
+        this.generation++;
+        if (this.panel) this.panel.show(true);
+        else await vscode.commands.executeCommand('egoTaskDetail.focus');
+        await this.pushData();
     }
 
     static showFromMeta(task: TaskMeta, status = 'new'): Promise<void> {
-        return TaskViewPanel.show({
-            id: task.id,
-            title: task.title,
-            slug: task.slug,
-            version: task.version,
-            status,
-            md_path: task.md_path || undefined,
-        });
+        return this.show({ id: task.id, title: task.title, slug: task.slug,
+            version: task.version, status, md_path: task.md_path || undefined });
     }
 
-    /** Route check results here when panel is open. */
+    /** Keep results attached to their task, even if the editor changed meanwhile. */
     static postResult(result: CheckResponse): boolean {
-        if (!TaskViewPanel.panel || !TaskViewPanel.current) return false;
-        if (result.task_id.toLowerCase() !== TaskViewPanel.current.id.toLowerCase()) return false;
-        TaskViewPanel.pendingResult = result;
-        // Keep host-side status in sync for later refreshes.
-        if (TaskViewPanel.current && result.task_id.toLowerCase() === TaskViewPanel.current.id.toLowerCase()) {
-            TaskViewPanel.current = { ...TaskViewPanel.current, status: result.status };
-        }
-        if (TaskViewPanel.ready) {
-            TaskViewPanel.panel.webview.postMessage({
-                type: 'taskView.setResult',
-                payload: result,
-            });
-            return true;
+        this.results.set(result.task_id.toLowerCase(), result);
+        if (this.current && result.task_id.toLowerCase() === this.current.id.toLowerCase()) {
+            this.current = { ...this.current, status: result.status };
+            if (this.ready && this.panel) {
+                void this.panel.webview.postMessage({ type: 'taskView.setResult', payload: result });
+            }
         }
         return true;
     }
 
-    private static async onMessage(msg: { type?: string }): Promise<void> {
-        const deps = TaskViewPanel.deps;
-        const cur = TaskViewPanel.current;
-        if (!deps || !msg?.type) return;
-
+    private static async onMessage(msg: { type?: string; taskId?: string }): Promise<void> {
+        const cur = this.current, deps = this.deps;
+        if (!deps) return;
+        if (msg.type !== 'ready' && msg.type !== 'taskView.refresh' && msg.taskId !== cur?.id) return;
         switch (msg.type) {
-            case 'ready':
-                TaskViewPanel.ready = true;
-                await TaskViewPanel.pushData();
-                if (TaskViewPanel.pendingResult) {
-                    TaskViewPanel.postResult(TaskViewPanel.pendingResult);
-                }
-                break;
-            case 'taskView.check':
-                if (cur) await deps.checkTask(cur.id);
-                break;
-            case 'taskView.openPy':
-                if (cur) await deps.openPy(cur.id, cur.slug, cur.md_path);
-                break;
-            case 'taskView.refresh':
-                await TaskViewPanel.pushData();
-                break;
-            case 'taskView.assistant':
-                if (cur) await vscode.commands.executeCommand('ego.assistant', cur.id);
-                break;
-            default:
-                break;
+            case 'ready': this.ready = true; await this.pushData(); break;
+            case 'taskView.check': if (cur) await deps.checkTask(cur.id); break;
+            case 'taskView.openPy': if (cur) await deps.openPy(cur.id, cur.slug, cur.md_path); break;
+            case 'taskView.refresh': await this.pushData(); break;
+            case 'taskView.assistant': if (cur) await vscode.commands.executeCommand('ego.assistant', cur.id); break;
         }
     }
 
     private static async pushData(): Promise<void> {
-        const deps = TaskViewPanel.deps;
-        const cur = TaskViewPanel.current;
-        const panel = TaskViewPanel.panel;
-        if (!deps || !cur || !panel || !TaskViewPanel.ready) return;
-
+        const deps = this.deps, cur = this.current, panel = this.panel, generation = this.generation;
+        if (!deps || !cur || !panel || !this.ready) return;
+        void panel.webview.postMessage({ type: 'taskView.setData', payload: {
+            id: cur.id, title: cur.title, status: cur.status, version: cur.version,
+            statement_html: '', hints: [], history: [], mode: 'offline', loading: true,
+        } satisfies TaskViewData });
+        const isCurrent = () => this.generation === generation && this.panel === panel;
         try {
             const data = await loadTaskViewData(deps.getApi(), cur);
-            panel.webview.postMessage({ type: 'taskView.setData', payload: data });
-        } catch (e) {
-            panel.webview.postMessage({
-                type: 'taskView.setData',
-                payload: {
-                    id: cur.id,
-                    title: cur.title,
-                    status: cur.status,
-                    version: cur.version,
-                    statement_html: `<p>Failed to load task: ${escapeHtml((e as Error).message)}</p>`,
-                    hints: [],
-                    history: await readLocalRunHistory(cur.id),
-                    mode: 'offline',
-                } satisfies TaskViewData,
-            });
+            if (!isCurrent()) return;
+            const result = this.results.get(cur.id.toLowerCase());
+            if (result) data.status = result.status;
+            void panel.webview.postMessage({ type: 'taskView.setData', payload: data });
+            if (result) void panel.webview.postMessage({ type: 'taskView.setResult', payload: result });
+        } catch (error) {
+            if (!isCurrent()) return;
+            void panel.webview.postMessage({ type: 'taskView.setData', payload: {
+                id: cur.id, title: cur.title, status: cur.status, version: cur.version,
+                statement_html: '<p>' + escapeHtml((error as Error).message) + '</p>',
+                hints: [], history: [], mode: 'offline',
+            } satisfies TaskViewData });
         }
     }
 }

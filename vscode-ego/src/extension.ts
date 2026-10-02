@@ -24,6 +24,7 @@ import { runOfflineCheck } from './offlineCheck';
 import { switchMode } from './modeSwitch';
 import { AssistantPanel } from './assistantPanel';
 import { setupPythonEnv } from './pythonSetup';
+import { taskIdFromFilePath } from './taskContext';
 
 const SECRET_KEY = 'ego.token';
 
@@ -62,6 +63,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // Svelte webview bundles live under out/webview/ (ADR-0015).
     TestResultsPanel.configure(context.extensionUri);
     AssistantPanel.configure(context.extensionUri, () => api);
+    AssistantPanel.register(context);
 
     api = new EgoApi(serverUrl, session.apiToken);
 
@@ -83,15 +85,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         checkTask: (taskId) => cmdCheckTask(taskId),
         openPy: (taskId, slug, mdPath) => openTaskPy(taskId, slug, mdPath).then(() => undefined),
     });
+    TaskViewPanel.register(context);
     const treeView = vscode.window.createTreeView('egoTaskTree', {
         treeDataProvider: treeProvider,
         showCollapseAll: true,
     });
     context.subscriptions.push(treeView);
+    let selectionGeneration = 0;
+    const followEditor = async (editor: vscode.TextEditor | undefined) => {
+        const taskId = editor && taskIdFromFilePath(editor.document.fileName);
+        if (!editor || !taskId) return;
+        const generation = ++selectionGeneration;
+        const doc = editor.document;
+        const getCode = async () => doc.isClosed ? await readTaskPy(taskId) || '' : doc.getText();
+        void AssistantPanel.follow(taskId, doc.getText(), getCode);
+        const manifest = await readManifest();
+        if (generation !== selectionGeneration) return;
+        const entry = manifest?.tasks.find(task => task.id.toUpperCase() === taskId);
+        const mdPath = vscode.workspace.asRelativePath(doc.uri).replace(/\\/g, '/').replace(/\.py$/i, '.md');
+        await TaskViewPanel.followTask({ id: taskId, title: taskId, status: 'new',
+            slug: entry?.slug || '', version: entry?.version || '0.0.0', md_path: entry?.md_path || mdPath });
+        statusBar?.setTask(taskId);
+    };
+    context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(editor => { void followEditor(editor); }));
 
     // Status bar — click opens Dashboard (ADR-0015 / 8bv.9.8).
     statusBar = new EgoStatusBar('ego.dashboard');
     context.subscriptions.push(statusBar.disposable);
+    void followEditor(vscode.window.activeTextEditor);
 
     const welcomeDeps = () => ({
         onApiChanged: async () => {
@@ -461,7 +482,8 @@ async function runCheckOnCode(
         }
         showCheckResult(result, taskId);
         if (!offline && result.understanding && result.understanding.status !== 'confirmed') {
-            await AssistantPanel.show(taskId, code, result.understanding.submission_id);
+            await AssistantPanel.show(taskId, code, result.understanding.submission_id,
+                async () => await readTaskPy(taskId) ?? code);
         }
         statusBar.setCheckResult(
             taskId,
@@ -493,10 +515,13 @@ async function cmdAssistant(taskId?: string): Promise<void> {
         if (!taskId) throw new Error('Открой файл задания или выбери задание в дереве.');
         const expected = `task_${taskId.replace(/\./g, '_').toLowerCase()}.py`;
         const id = taskId;
+        const original = editor?.document.uri.path.split('/').pop()?.toLowerCase() === expected ? editor.document : undefined;
         const getCode = async () => {
             const current = vscode.window.activeTextEditor;
             return current?.document.uri.path.split('/').pop()?.toLowerCase() === expected
-                ? current.document.getText() : await readTaskPy(id) || '';
+                ? current.document.getText() : original && !original.isClosed ? original.getText()
+                    : vscode.workspace.textDocuments.find(doc => doc.uri.path.split('/').pop()?.toLowerCase() === expected)?.getText()
+                        ?? await readTaskPy(id) ?? '';
         };
         await AssistantPanel.show(taskId, await getCode(), undefined, getCode);
     } catch (e) {
@@ -510,6 +535,12 @@ async function readTaskPy(taskId: string): Promise<string | undefined> {
     if (!root) return undefined;
     const normalized = taskId.replace(/\./g, '_').toLowerCase();
     const filename = `task_${normalized}.py`;
+
+    // Sidebar focus hides activeTextEditor; open documents still hold unsaved code.
+    const active = vscode.window.activeTextEditor?.document;
+    const documents = active ? [active, ...vscode.workspace.textDocuments] : vscode.workspace.textDocuments;
+    const open = documents.find(doc => !doc.isClosed && doc.uri.path.split('/').pop()?.toLowerCase() === filename);
+    if (open) return open.getText();
 
     const matches = await vscode.workspace.findFiles(
         new vscode.RelativePattern(root, `**/${filename}`),

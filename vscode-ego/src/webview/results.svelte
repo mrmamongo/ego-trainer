@@ -3,11 +3,11 @@
 	import ResultsBody from './ResultsBody.svelte';
 </script>
 
-<ResultsBody result={$checkResult} emptyMessage="Waiting for results…" />
+<ResultsBody result={$checkResult} emptyMessage="Ожидаю результаты проверки…" />
 
 <style>
 	:global(body) {
-		font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', 'Consolas', 'Courier New', monospace;
+		font-family: var(--vscode-font-family, system-ui, sans-serif);
 		padding: 16px;
 		margin: 0;
 		color: var(--vscode-foreground, #333);

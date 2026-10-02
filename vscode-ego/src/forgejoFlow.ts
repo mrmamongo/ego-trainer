@@ -38,6 +38,7 @@ export async function runForgejoFlow(
     openBrowser: (url: string) => Promise<boolean>,
     isCancelled: () => boolean,
     pause: () => Promise<void> = () => new Promise(resolve => setTimeout(resolve, 250)),
+    onBrowserUnavailable: (url: string) => void = () => {},
 ): Promise<AuthResponse | undefined> {
     if (isCancelled()) return undefined;
     const verifier = randomBytes(32).toString('base64url');
@@ -64,8 +65,16 @@ export async function runForgejoFlow(
         const flow = await api.startForgejo(challenge, callbackUri);
         expectedState = flow.state;
         if (isCancelled()) return undefined;
-        if (!await openBrowser(flow.authorization_url)) throw new Error('Could not open the Forgejo login browser.');
         const deadline = Date.now() + Math.min(flow.expires_in, 300) * 1000;
+        let opened = false;
+        try { opened = await openBrowser(flow.authorization_url); }
+        catch { /* Manual opening can still complete the same login attempt. */ }
+        if (isCancelled()) return undefined;
+        // VS Code returns false for Copy as well as Cancel. Only the explicit
+        // login cancellation or expiry ends our callback subscription.
+        if (!opened && !ticket && !failed && Date.now() < deadline) {
+            onBrowserUnavailable(flow.authorization_url);
+        }
         while (!isCancelled() && Date.now() < deadline) {
             await pause();
             if (isCancelled()) return undefined;

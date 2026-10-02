@@ -14,7 +14,7 @@ export class TaskItem extends vscode.TreeItem {
         public readonly progress: ProgressRow | undefined,
         collapsibleState: vscode.TreeItemCollapsibleState
     ) {
-        super(task.task_id, collapsibleState);
+        super(task.title && task.title !== task.task_id ? `${task.task_id} · ${task.title}` : task.task_id, collapsibleState);
         const lastRun = progress?.last_run_at
             ? ` · last ${formatRelative(progress.last_run_at)}`
             : '';
@@ -31,7 +31,7 @@ export class TaskItem extends vscode.TreeItem {
 
     private _statusLabel(): string {
         if (!this.progress) {
-            return 'new';
+            return '';
         }
         const icon = this._statusIcon(this.progress.status);
         return `${icon} ${this.progress.passed_tests}/${this.progress.total_tests}`;
@@ -79,8 +79,8 @@ export class BlockItem extends vscode.TreeItem {
         public readonly taskCount: number,
         collapsibleState: vscode.TreeItemCollapsibleState
     ) {
-        super(`Block ${block}`, collapsibleState);
-        this.description = `${taskCount} tasks`;
+        super(`Блок ${block}`, collapsibleState);
+        this.description = `${taskCount}`;
         this.contextValue = 'block';
         this.iconPath = new vscode.ThemeIcon('folder');
     }

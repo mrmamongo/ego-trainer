@@ -78,4 +78,5 @@ export interface TaskViewData {
 	history: TaskRunSummary[];
 	mode: EgoMode;
     ai_available?: boolean;
+    loading?: boolean;
 }

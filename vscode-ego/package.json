@@ -1,11 +1,11 @@
 {
   "name": "ego-trainer",
-  "displayName": "Ego Trainer",
+  "displayName": "Cogito",
   "description": "Practice tasks for junior developers — check, pull, push progress",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "ego-trainer",
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.106.0"
   },
   "categories": [
     "Education",
@@ -129,22 +129,43 @@
         "category": "Ego"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [{ "id": "cogito", "title": "Cogito", "icon": "media/cogito.svg" }],
+      "secondarySidebar": [{ "id": "cogito-assistant", "title": "Cogito · Ассистент", "icon": "$(comment-discussion)" }]
+    },
     "views": {
-      "explorer": [
+      "cogito": [
         {
           "id": "egoTaskTree",
-          "name": "Ego Tasks",
-          "when": "ego.ready || ego.loggedIn"
+          "name": "Задачи",
+          "icon": "media/cogito.svg",
+          "initialSize": 30
+        },
+        {
+          "id": "egoTaskDetail",
+          "type": "webview",
+          "name": "Задание",
+          "icon": "$(book)",
+          "initialSize": 70
         }
+      ],
+      "cogito-assistant": [
+        { "id": "egoAssistant", "type": "webview", "name": "Учебный ассистент", "icon": "$(comment-discussion)" }
       ]
     },
+    "viewsWelcome": [
+      { "view": "egoTaskTree", "contents": "Решай задачи, проверяй код и обсуждай решение с ассистентом.\n[Подключиться или настроить](command:ego.init)\n[Войти в Cogito](command:ego.login)", "when": "!ego.ready && !ego.loggedIn" },
+      { "view": "egoTaskTree", "contents": "Задач пока нет.\n[Загрузить задачи](command:ego.pullAll)\n[Открыть обзор](command:ego.dashboard)", "when": "ego.ready || ego.loggedIn" }
+    ],
     "menus": {
       "view/title": [
         {
           "command": "ego.refreshTree",
           "when": "view == egoTaskTree",
           "group": "navigation"
-        }
+        },
+        { "command": "ego.dashboard", "when": "view == egoTaskTree", "group": "navigation@2" },
+        { "command": "ego.login", "when": "view == egoTaskTree && !ego.loggedIn && !ego.offline", "group": "navigation@3" }
       ],
       "view/item/context": [
         {
@@ -209,7 +230,7 @@
     "lint": "eslint src --ext ts",
     "test": "node ./out/test/runTest.js",
     "test:unit": "node --test out/test/*.test.js",
-    "smoke": "node ./scripts/smoke-activation.cjs",
+    "smoke": "node ./scripts/smoke-activation.cjs && node ./scripts/smoke-forgejo-login.cjs && node ./scripts/smoke-sidebars.cjs",
     "package": "vsce package --allow-missing-repository"
   },
   "devDependencies": {
