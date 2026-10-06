@@ -167,6 +167,14 @@ bd search "keyword"                # Search issues by text
 - **ADR-0016**: Tasks content repo — separate git, server sync (cron/manual), configurable URL/auth/ref; catalog = Project → Folder → Task (see docs/CONTENT_CATALOG.md)
 - **Task Format**: separate .solution.py + .tests.py with @case/@before/@after hooks (see docs/TESTS_DESIGN.md)
 
+### Authoring Cogito tasks
+
+When asked to add, edit, or publish Cogito task content, follow
+`docs/XL_A_AGENT_GUIDE.md`. It identifies the source files, generated files,
+checker gates, version constraints, and production sync boundary. Consult
+`docs/TASK_AUTHORING.md` for catalog schemas and `docs/TESTS_DESIGN.md` for
+the test API.
+
 See `docs/adr/` for full text.
 
 ## Session Completion
