@@ -235,3 +235,14 @@ CREATE TABLE IF NOT EXISTS collab_snapshots (
   text       TEXT NOT NULL DEFAULT '',   -- plain text mirror (debug/API)
   updated_at TEXT NOT NULL
 );
+
+-- Link-shared collab rooms: join by unguessable id only (no listing).
+CREATE TABLE IF NOT EXISTS collab_share_rooms (
+  id         TEXT PRIMARY KEY,           -- secrets.token_urlsafe(12)-style
+  task_id    TEXT NOT NULL,              -- task the room was created for
+  title      TEXT NOT NULL DEFAULT '',   -- optional human label
+  created_by TEXT NOT NULL,              -- students.id of the creator
+  active     INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  closed_at  TEXT
+);

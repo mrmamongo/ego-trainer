@@ -108,6 +108,27 @@ async def ide_panel() -> FileResponse:
     return FileResponse(_STATIC_DIR / "ide.html", headers={"Cache-Control": "no-store"})
 
 
+@app.get("/ide/task/{task_id:path}", include_in_schema=False)
+async def ide_task_deeplink(task_id: str) -> FileResponse:
+    """Serve the IDE shell for task deep links (`/ide/task/<id>`).
+
+    Same shell as /ide; the client resolves the task after login and
+    imports/opens the bound workspace file. Task data stays behind the
+    authenticated API boundary.
+    """
+    return FileResponse(_STATIC_DIR / "ide.html", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/ide/room/{room_id}", include_in_schema=False)
+async def ide_room_deeplink(room_id: str) -> FileResponse:
+    """Serve the IDE shell for shared collab rooms (`/ide/room/<id>`).
+
+    The opaque room id is a capability: metadata and ws access are checked
+    against collab_share_rooms by the collab API/handshake.
+    """
+    return FileResponse(_STATIC_DIR / "ide.html", headers={"Cache-Control": "no-store"})
+
+
 @app.get("/student/tasks/{task_id:path}", include_in_schema=False)
 async def student_task_page(task_id: str) -> FileResponse:
     """Serve bookmarkable task pages; task data keeps its authenticated API boundary."""

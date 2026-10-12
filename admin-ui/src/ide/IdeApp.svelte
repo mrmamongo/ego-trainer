@@ -21,6 +21,8 @@
     type AuthProviders,
   } from './api';
   import { workspaceStore } from './workspace';
+  import { readIdeRoute, findIdeFileForTask, findIdeTaskForId, ideRoomUrl } from './route.js';
+  import { getShareRoom, createShareRoom } from './api';
   import {
     IdeCollabSession,
     collabRoomFor,
@@ -71,6 +73,7 @@
 
   const SEARCH_DEBOUNCE_MS = 300;
   const AUTOSAVE_DEBOUNCE_MS = 400;
+  const ROUTE_NOTICE_MS = 4000;
 
   let screen = $state<Screen>('boot');
   let username = $state('');
@@ -115,6 +118,17 @@
   let dirty = $state(false);
   let savedAt = $state<Date | null>(null);
   let storeNotice = $state('');
+
+  // --- Deeplink /ide/task/<task_id> и /ide/room/<room_id> (ссылки) ---
+  let pendingTaskId = $state<string | null>(null);
+  let pendingRoomId = $state<string | null>(null);
+  let routeNotice = $state('');
+  let routeError = $state('');
+  let routeNoticeTimer: ReturnType<typeof setTimeout> | undefined;
+  // Активная share-комната: непрозрачный id + задача, к которой она привязана.
+  let sharedRoomId = $state<string | null>(null);
+  let sharedRoomTaskId = $state<string | null>(null);
+  let sharedRoomTitle = $state('');
 
   let editorHost = $state<HTMLDivElement>();
   let editor: monaco.editor.IStandaloneCodeEditor | undefined;
@@ -434,8 +448,140 @@
     }
   }
 
-  async function submitBind() {
-    const file = activeFile;
+  // --- Deeplink /ide/task/<task_id>: открыть задачу по ссылке ---
+
+  function clearRouteNotice() {
+    routeNotice = '';
+    if (routeNoticeTimer) { clearTimeout(routeNoticeTimer); routeNoticeTimer = undefined; }
+  }
+
+  function showRouteNotice(message: string) {
+    routeNotice = message;
+    if (routeNoticeTimer) clearTimeout(routeNoticeTimer);
+    routeNoticeTimer = setTimeout(() => {
+      routeNoticeTimer = undefined;
+      if (!disposed) routeNotice = '';
+    }, ROUTE_NOTICE_MS);
+  }
+
+  function cleanDeepLinkUrl() {
+    try {
+      history.replaceState(null, '', '/ide');
+    } catch {
+      /* история недоступна — не критично */
+    }
+  }
+
+  /**
+   * Разрешить ссылку вида /ide/task/<task_id> после загрузки файлов и задач.
+   * Существующий файл открываем, иначе выгружаем заготовку через exportTask.
+   */
+  async function resolveDeepLink(taskId: string) {
+    const task = findIdeTaskForId(tasks, taskId);
+    if (!task) {
+      routeError = `Задача «${taskId}» не найдена`;
+      cleanDeepLinkUrl();
+      return;
+    }
+    const existing = findIdeFileForTask(files, taskId);
+    if (existing) {
+      openFile(existing.id);
+      showRouteNotice('Открыта задача из ссылки');
+      cleanDeepLinkUrl();
+      return;
+    }
+    await exportTask(task);
+    if (disposed) return;
+    if (exportError) {
+      // Ошибка выгрузки уже показана в сайдбаре (exportError) — оставляем её.
+      cleanDeepLinkUrl();
+      return;
+    }
+    showRouteNotice('Задача выгружена по ссылке');
+    cleanDeepLinkUrl();
+  }
+
+  /**
+   * Разрешить ссылку вида /ide/room/<room_id>: проверить share-комнату,
+   * найти/выгрузить файл её задачи и включить режим этой комнаты.
+   */
+  async function resolveRoomLink(roomId: string) {
+    let share: Awaited<ReturnType<typeof getShareRoom>>;
+    try {
+      share = await getShareRoom(roomId);
+    } catch (e) {
+      routeError = `Комната не найдена или закрыта (${(e as Error).message})`;
+      cleanDeepLinkUrl();
+      return;
+    }
+    if (disposed) return;
+    const task = findIdeTaskForId(tasks, share.task_id);
+    if (!task) {
+      routeError = `Задача комнаты «${share.task_id}» не найдена`;
+      cleanDeepLinkUrl();
+      return;
+    }
+    const existing = findIdeFileForTask(files, share.task_id);
+    if (!existing) {
+      await exportTask(task);
+      if (disposed) return;
+      if (exportError) {
+        cleanDeepLinkUrl();
+        return;
+      }
+    } else {
+      openFile(existing.id);
+    }
+    if (disposed) return;
+    // Файл задачи готов; после refreshFiles возьмём актуальный id.
+    const list = await refreshFiles();
+    if (disposed) return;
+    const target = findIdeFileForTask(list, share.task_id);
+    if (target) openFile(target.id);
+    sharedRoomId = share.room_id;
+    sharedRoomTaskId = share.task_id;
+    sharedRoomTitle = share.title || share.task_id;
+    showRouteNotice(`Ты в комнате: ${sharedRoomTitle}`);
+    cleanDeepLinkUrl();
+  }
+
+  // --- Share-комната для активной задачи (ментор) ---
+
+  let shareBusy = $state(false);
+  let shareError = $state('');
+  let shareCopied = $state(false);
+  const shareRoomLink = $derived(sharedRoomId ? ideRoomUrl(sharedRoomId) : '');
+
+  async function createRoomForActiveTask() {
+    const task = activeFile;
+    if (!task?.task_id || shareBusy) return;
+    shareBusy = true;
+    shareError = '';
+    try {
+      const share = await createShareRoom(task.task_id, task.name || task.task_id);
+      if (disposed) return;
+      sharedRoomId = share.room_id;
+      sharedRoomTaskId = share.task_id;
+      sharedRoomTitle = share.title || share.task_id;
+      showRouteNotice(`Комната создана: скопируй ссылку в панели «Тесты»`);
+    } catch (e) {
+      if (!disposed) shareError = `Не удалось создать комнату: ${(e as Error).message}`;
+    } finally {
+      if (!disposed) shareBusy = false;
+    }
+  }
+
+  async function copyShareLink() {
+    try {
+      await navigator.clipboard.writeText(location.origin + shareRoomLink);
+      shareCopied = true;
+      setTimeout(() => { if (!disposed) shareCopied = false; }, 2000);
+    } catch {
+      shareError = 'Не удалось скопировать — выдели ссылку и скопируй вручную.';
+    }
+  }
+
+  async function submitBind() {    const file = activeFile;
     const taskId = bindTaskId.trim();
     if (!file || !taskId) return;
     checkError = '';
@@ -592,10 +738,26 @@
       if (!disposed) filesError = `Не удалось загрузить файлы: ${(e as Error).message}`;
     }
     await loadTasksOnce();
+    // Файлы и задачи загружены — можно разрешить ссылки /ide/task и /ide/room.
+    const deepRoomId = pendingRoomId;
+    if (deepRoomId && screen === 'ready') {
+      pendingRoomId = null;
+      await resolveRoomLink(deepRoomId);
+      return;
+    }
+    const deepTaskId = pendingTaskId;
+    if (deepTaskId && screen === 'ready') {
+      pendingTaskId = null;
+      await resolveDeepLink(deepTaskId);
+    }
   }
 
   function resetWorkspaceState() {
     stopCollabSession();
+    sharedRoomId = null;
+    sharedRoomTaskId = null;
+    sharedRoomTitle = '';
+    pendingRoomId = null;
     files = [];
     activeFileId = null;
     checkResult = null;
@@ -609,6 +771,9 @@
     renamingId = null;
     renameError = '';
     exportError = '';
+    pendingTaskId = null;
+    clearRouteNotice();
+    routeError = '';
   }
 
   function logout() {
@@ -752,8 +917,9 @@
     }
     swapModel(file);
     // Модель смонтирована — теперь безопасно привязывать коллаб-сессию
-    // (эффект сессии стартует раньше и мог не найти модель).
-    if (collabSession && collabSession.room === collabRoom) {
+    // (эффект сессии стартует позже и мог не найти модель). Комнату считаем
+    // из текущего файла: коллабRoom ещё держит старое значение при смене файла.
+    if (collabSession && file.task_id && collabSession.room === collabRoomFor(file.task_id, file.id)) {
       collabSession.attachEditor(editor, model, file.content ?? '');
     }
   });
@@ -785,7 +951,10 @@
       stopCollabSession();
       return;
     }
-    const room = collabRoomFor(taskId, fileId);
+    // Активная share-комната перекрывает pair-комнату для СВОЕЙ задачи;
+    // файл другой задачи уходит в обычный pair-режим.
+    const inSharedRoom = sharedRoomId !== null && sharedRoomTaskId === taskId;
+    const room = inSharedRoom ? `share:${sharedRoomId}` : collabRoomFor(taskId, fileId);
     if (collabSession && collabSession.room === room) return; // файл не менялся
     stopCollabSession();
     collabRoom = room;
@@ -829,6 +998,11 @@
     void authProviders()
       .then((value) => { if (!disposed) providers = value; })
       .catch(() => { if (!disposed) loginError = 'Не удалось получить способы входа. Обнови страницу.'; });
+    // Ссылки /ide/task/<id> и /ide/room/<id> читаем один раз до входа;
+    // разрешаем их в enterWorkspace после загрузки файлов и задач.
+    const initialRoute = readIdeRoute(window.location);
+    if (initialRoute.taskId) pendingTaskId = initialRoute.taskId;
+    if (initialRoute.roomId) pendingRoomId = initialRoute.roomId;
     if (getIdeToken()) {
       void enterWorkspace();
     } else {
@@ -840,8 +1014,10 @@
       stopCollabSession();
       if (searchTimer) clearTimeout(searchTimer);
       if (autosaveTimer) clearTimeout(autosaveTimer);
+      if (routeNoticeTimer) clearTimeout(routeNoticeTimer);
       searchTimer = undefined;
       autosaveTimer = undefined;
+      routeNoticeTimer = undefined;
       window.removeEventListener('ego:ide-session-expired', onSessionExpired);
     };
   });
@@ -999,6 +1175,11 @@
       </aside>
 
       <section class="editor-pane">
+        {#if routeNotice || routeError}
+          <div class="route-banner" class:error={!!routeError} role={routeError ? 'alert' : 'status'}>
+            {routeError || routeNotice}
+          </div>
+        {/if}
         {#if activeFile}
           <div class="editor-tabs">
             <span class="editor-tab active"><span class="tab-name">{activeFile.name}</span>{#if dirty}<span class="tab-dirty" title="Есть несохранённые изменения">•</span>{/if}</span>
@@ -1027,6 +1208,21 @@
               <div class="collab-error-banner" role="alert">
                 <span>Совместное редактирование недоступно: {collabDetail || 'нет соединения'}</span>
                 <button class="mini-btn" onclick={continueSolo}>Продолжить одному</button>
+              </div>
+            {/if}
+            {#if sharedRoomId && activeFile?.task_id === sharedRoomTaskId}
+              <div class="share-room-card">
+                <div class="share-room-title" title={sharedRoomTitle}>Комната: {sharedRoomTitle}</div>
+                <div class="share-room-link-row">
+                  <input class="share-room-link" readonly value={shareRoomLink} onfocus={(e) => (e.target as HTMLInputElement).select()} aria-label="Ссылка на комнату" />
+                  <button class="mini-btn" onclick={copyShareLink}>{shareCopied ? 'Скопировано' : 'Копировать'}</button>
+                </div>
+                <p class="share-room-hint">Студент попадёт в совместный режим только по этой ссылке.</p>
+              </div>
+            {:else if activeFile?.task_id}
+              <div class="share-room-create">
+                <button class="mini-btn" onclick={() => void createRoomForActiveTask()} disabled={shareBusy}>{shareBusy ? 'Создаю…' : 'Создать комнату со ссылкой'}</button>
+                {#if shareError}<p class="side-error" role="alert">{shareError}</p>{/if}
               </div>
             {/if}
             {#if collabStatus === 'live'}
@@ -1171,6 +1367,9 @@
 
   /* ---------- Редактор ---------- */
   .editor-pane { display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; min-height: 0; }
+  .editor-pane:has(> .route-banner) { grid-template-rows: auto auto minmax(0, 1fr); }
+  .route-banner { padding: 6px 14px; background: var(--card); border-bottom: 1px solid var(--border); color: var(--muted-foreground); font-size: 12px; overflow-wrap: anywhere; }
+  .route-banner.error { color: var(--destructive); }
   .editor-tabs { display: flex; align-items: stretch; background: var(--card); border-bottom: 1px solid var(--border); }
   .editor-tab { display: flex; align-items: center; gap: 7px; padding: 8px 14px; font-size: 12px; color: var(--muted-foreground); border-right: 1px solid var(--border); background: var(--card); }
   .editor-tab.active { color: var(--foreground); box-shadow: inset 0 -2px var(--primary); }
@@ -1236,6 +1435,12 @@
   .collab-error-banner { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 9px 11px; border: 1px solid color-mix(in srgb, var(--destructive) 45%, var(--border)); border-radius: 8px; background: color-mix(in srgb, var(--destructive) 10%, transparent); color: var(--destructive); font-size: 12px; }
   .collab-error-banner .mini-btn { flex-shrink: 0; }
   .collab-live-hint { margin: 0; color: var(--muted-foreground); font-size: 11px; }
+  .share-room-card { display: grid; gap: 7px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--secondary); }
+  .share-room-title { font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .share-room-link-row { display: flex; gap: 6px; align-items: center; }
+  .share-room-link { flex: 1; min-width: 0; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--background); color: var(--foreground); font-size: 11px; font-family: inherit; }
+  .share-room-hint { margin: 0; color: var(--muted-foreground); font-size: 11px; }
+  .share-room-create { padding: 2px 0 6px; }
   .tab-collab-hint { display: inline-flex; align-items: center; padding: 0 12px; color: var(--muted-foreground); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   /* ---------- Статусная строка ---------- */

@@ -78,6 +78,14 @@ export interface ForgejoExchangeResult extends Partial<LoginResponse> {
 	pending?: boolean;
 }
 
+export interface ShareRoom {
+	room_id: string;
+	task_id: string;
+	title: string;
+	created_by: string;
+	active: boolean;
+}
+
 // === Client ===
 
 /** Typed view of the client returned by createIdeApi (runtime lives in apiCore.js). */
@@ -196,4 +204,27 @@ export async function runCheck(taskId: string, studentCode: string): Promise<Che
 		task_id: taskId,
 		student_code: studentCode,
 	});
+}
+
+// === Collab share rooms (link-capability rooms) ===
+
+/** POST /collab/share {task_id, title} — mentor/admin creates a share room. */
+export async function createShareRoom(
+	taskId: string,
+	title = '',
+): Promise<ShareRoom> {
+	return request<ShareRoom>('POST', '/collab/share', { task_id: taskId, title });
+}
+
+/** GET /collab/share/{room_id} — check a deep-linked share room. */
+export async function getShareRoom(roomId: string): Promise<ShareRoom> {
+	return request<ShareRoom>('GET', `/collab/share/${encodeURIComponent(roomId)}`);
+}
+
+/** POST /collab/share/{room_id}/close — creator or admin closes the room. */
+export async function closeShareRoom(roomId: string): Promise<{ ok: boolean }> {
+	return request<{ ok: boolean }>(
+		'POST',
+		`/collab/share/${encodeURIComponent(roomId)}/close`,
+	);
 }

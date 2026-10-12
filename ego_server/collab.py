@@ -21,6 +21,8 @@ import contextlib
 import gc
 import logging
 import re
+import secrets
+import sqlite3
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import NamedTuple
@@ -42,10 +44,11 @@ log = logging.getLogger(__name__)
 
 # === Грамматика имени комнаты и ACL (ADR-0017 D17.3) ===
 
-_SCENARIOS = ("studio", "defense", "pair")
+_SCENARIOS = ("studio", "defense", "pair", "share")
 _STUDIO_FILE_KEYS = ("markdown", "solution_py", "tests_py")
 _FREE_FILE_KEY_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 _TASK_ID_RE = re.compile(r"[A-Za-z0-9._-]{1,64}")
+_SHARE_ROOM_ID_RE = re.compile(r"[A-Za-z0-9_-]{16,64}")
 
 # Минимальный «пустой» update от y_py (см. ypy-websocket/yutils.py, y-py #98).
 _EMPTY_UPDATE = b"\x00\x00"
@@ -62,10 +65,13 @@ class RoomSpec(NamedTuple):
 def parse_room(name: str) -> RoomSpec:
     """Разобрать и провалидировать имя комнаты; ValueError если оно кривое.
 
-    Грамматика: ``scenario:taskId:fileKey``, где scenario — studio|defense|pair,
-    taskId — ``[A-Za-z0-9._-]{1,64}`` (существование в БД проверяется отдельно,
-    в ``_task_exists``), fileKey — markdown|solution_py|tests_py для studio и
-    ``[A-Za-z0-9_-]{1,64}`` для остальных сценариев.
+    Грамматика: ``scenario:taskId:fileKey``, где scenario —
+    studio|defense|pair|share. Для studio/defense/pair taskId — это id задачи
+    (``[A-Za-z0-9._-]{1,64}``, существование в БД проверяется отдельно в
+    ``_task_exists``); для share «taskId»-слот занимает непрозрачный id
+    share-комнаты (``[A-Za-z0-9_-]{16,64}``, существование/active — в
+    ``_share_room_row``). fileKey — markdown|solution_py|tests_py для studio
+    и ``[A-Za-z0-9_-]{1,64}`` для остальных сценариев.
     """
     parts = name.split(":")
     if len(parts) != 3:
@@ -73,7 +79,10 @@ def parse_room(name: str) -> RoomSpec:
     scenario, task_id, file_key = parts
     if scenario not in _SCENARIOS:
         raise ValueError(f"Unknown scenario: {scenario!r}")
-    if not _TASK_ID_RE.fullmatch(task_id):
+    if scenario == "share":
+        if not _SHARE_ROOM_ID_RE.fullmatch(task_id):
+            raise ValueError(f"Malformed share room id: {task_id!r}")
+    elif not _TASK_ID_RE.fullmatch(task_id):
         raise ValueError(f"Malformed task id in room: {task_id!r}")
     if scenario == "studio":
         if file_key not in _STUDIO_FILE_KEYS:
@@ -84,11 +93,16 @@ def parse_room(name: str) -> RoomSpec:
 
 
 def room_allowed(user: dict, spec: RoomSpec) -> bool:
-    """Scenario ACL. ``user`` — свежие из БД клеймы (см. ``_ws_user``)."""
+    """Scenario ACL. ``user`` — свежие из БД клеймы (см. ``_ws_user``).
+
+    share-комнаты дополнительно проверяются на active в ``_handshake_allowed``:
+    ссылка = capability, доступа «по списку задач» нет.
+    """
     role = user.get("role", "")
     if spec.scenario == "studio":
         return role in ("mentor", "admin")
-    # defense / pair: любой аутентифицированный пользователь (P1).
+    # defense / pair / share: любой аутентифицированный пользователь,
+    # у share — при наличии валидной активной комнаты (проверяется отдельно).
     return True
 
 
@@ -138,6 +152,19 @@ def _task_exists(task_id: str) -> bool:
         )
     except Exception:  # noqa: BLE001
         return False
+    finally:
+        conn.close()
+
+
+def share_room_row(room_id: str) -> sqlite3.Row | None:
+    """Активная share-комната по её непрозрачному id (или None)."""
+    conn = db.get_connection()
+    try:
+        return conn.execute(
+            "SELECT id, task_id, title, created_by, active FROM collab_share_rooms "
+            "WHERE id=? AND active=1 LIMIT 1",
+            (room_id,),
+        ).fetchone()
     finally:
         conn.close()
 
@@ -387,7 +414,7 @@ class CollabWSApp:
             )
 
     def _handshake_allowed(self, scope: dict, room: str | None) -> bool:
-        """Authn + грамматика комнаты + существование задачи + scenario ACL."""
+        """Authn + грамматика комнаты + задача/ share-комната + scenario ACL."""
         if not room:
             log.warning("collab ws: отказ (нет комнаты в path)")
             return False
@@ -400,7 +427,13 @@ class CollabWSApp:
         except ValueError:
             log.warning("collab ws: отказ (имя комнаты) %r", room)
             return False
-        if not _task_exists(spec.task_id):
+        if spec.scenario == "share":
+            # Ссылка = capability: имя комнаты угадать нельзя, список комнат
+            # не отдаётся; вход только с валидным активным id.
+            if share_room_row(spec.task_id) is None:
+                log.info("collab ws: отказ (share-комната закрыта/не найдена) %s", spec.task_id)
+                return False
+        elif not _task_exists(spec.task_id):
             log.warning("collab ws: отказ (нет задачи) %r", spec.task_id)
             return False
         if not room_allowed(user, spec):
@@ -419,6 +452,11 @@ class CollabWSApp:
 
 class CollabResetRequest(BaseModel):
     content: str
+
+
+class ShareRoomCreateRequest(BaseModel):
+    task_id: str
+    title: str = ""
 
 
 def create_collab_router() -> APIRouter:
@@ -474,6 +512,74 @@ def create_collab_router() -> APIRouter:
         except Exception as e:  # noqa: BLE001
             raise HTTPException(status_code=500, detail=f"Snapshot write failed: {e}") from e
         return {"ok": True}
+
+    # --- Share-комнаты: вход по непрозрачной ссылке (D17.3, M2-подготовка) ---
+
+    @router.post("/collab/share", dependencies=[Depends(require_role("mentor", "admin"))])
+    async def share_room_create(body: ShareRoomCreateRequest, user: CurrentUser) -> dict:
+        """Создать share-комнату для задачи и вернуть её ссылку-capability.
+
+        Id непрозрачен (secrets.token_urlsafe(12)), списка комнат нет —
+        подключиться можно только по ссылке ``/ide/room/<id>``.
+        """
+        task_id = body.task_id.strip()
+        if not _task_exists(task_id):
+            raise HTTPException(status_code=404, detail=f"Task '{task_id}' not found")
+        room_id = secrets.token_urlsafe(12)  # ~16 chars, unguessable
+        conn = db.get_connection()
+        try:
+            conn.execute(
+                "INSERT INTO collab_share_rooms (id, task_id, title, created_by, "
+                "active, created_at) VALUES (?, ?, ?, ?, 1, ?)",
+                (room_id, task_id, body.title.strip()[:120], user["sub"], _now_iso()),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        log.info("collab share: создана комната %s (task=%s, by=%s)", room_id, task_id, user["sub"])
+        return {"room_id": room_id, "task_id": task_id, "title": body.title.strip()[:120], "active": True}
+
+    @router.get("/collab/share/{room_id}")
+    async def share_room_get(room_id: str, user: CurrentUser) -> dict:
+        """Метаданные активной share-комнаты (проверка ссылки перед входом)."""
+        row = share_room_row(room_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Share room not found or closed")
+        return {
+            "room_id": row["id"],
+            "task_id": row["task_id"],
+            "title": row["title"],
+            "created_by": row["created_by"],
+            "active": bool(row["active"]),
+        }
+
+    @router.post("/collab/share/{room_id}/close")
+    async def share_room_close(room_id: str, user: CurrentUser) -> dict:
+        """Закрыть комнату: создатель или admin. Новые ws-коннекты отклоняются."""
+        conn = db.get_connection()
+        try:
+            row = conn.execute(
+                "SELECT id, created_by, active FROM collab_share_rooms WHERE id=? LIMIT 1",
+                (room_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Share room not found")
+        if user["role"] != "admin" and user["sub"] != row["created_by"]:
+            raise HTTPException(status_code=403, detail="Only the creator or an admin can close")
+        if row["active"]:
+            conn = db.get_connection()
+            try:
+                conn.execute(
+                    "UPDATE collab_share_rooms SET active=0, closed_at=? WHERE id=?",
+                    (_now_iso(), room_id),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        log.info("collab share: комната %s закрыта (by=%s)", room_id, user["sub"])
+        return {"ok": True, "room_id": room_id, "active": False}
 
     return router
 

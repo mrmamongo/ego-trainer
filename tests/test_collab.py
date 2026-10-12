@@ -463,3 +463,79 @@ def test_collab_disabled_by_default(monkeypatch):
 
     with TestClient(app) as c:
         assert c.get("/health").status_code == 200
+
+
+# === Share-комнаты: вход по непрозрачной ссылке ===
+
+
+def test_share_room_lifecycle(client: TestClient):
+    """Создание (mentor) → чтение по id → закрытие создателем → 404 после."""
+    mentor = _role_token(client, "share_mentor", "mentor")
+    student = _student_token(client, "share_stu")
+
+    # Создание — только mentor/admin.
+    r = client.post("/collab/share", json={"task_id": "F2"}, headers=_auth(student))
+    assert r.status_code == 403
+    r = client.post(
+        "/collab/share",
+        json={"task_id": "F2", "title": "Разбор F2"},
+        headers=_auth(mentor),
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    room_id = data["room_id"]
+    assert data["task_id"] == "F2"
+    assert data["title"] == "Разбор F2"
+    assert data["active"] is True
+
+    # Чтение метаданных — любой авторизованный с валидным id (ссылка = capability).
+    r = client.get(f"/collab/share/{room_id}", headers=_auth(student))
+    assert r.status_code == 200
+    assert r.json()["task_id"] == "F2"
+
+    # Неизвестный id → 404; без auth → 401.
+    assert client.get("/collab/share/doesnotexist1234", headers=_auth(student)).status_code == 404
+    assert client.get(f"/collab/share/{room_id}").status_code == 401
+
+    # Закрытие: не создатель → 403; создатель → ок; после закрытия get/ws → 404/закрыто.
+    r = client.post(f"/collab/share/{room_id}/close", headers=_auth(student))
+    assert r.status_code == 403
+    r = client.post(f"/collab/share/{room_id}/close", headers=_auth(mentor))
+    assert r.status_code == 200
+    assert client.get(f"/collab/share/{room_id}", headers=_auth(student)).status_code == 404
+
+
+def test_share_room_requires_known_task(client: TestClient):
+    mentor = _role_token(client, "share_mentor2", "mentor")
+    r = client.post("/collab/share", json={"task_id": "NOPE"}, headers=_auth(mentor))
+    assert r.status_code == 404
+
+
+def test_share_room_ws_accepted_then_rejected_after_close(client: TestClient):
+    """ws в share-комнату: активная пускает, закрытая — нет."""
+    mentor = _role_token(client, "share_mentor3", "mentor")
+    student = _student_token(client, "share_stu3")
+    room_id = client.post(
+        "/collab/share", json={"task_id": "F2"}, headers=_auth(mentor)
+    ).json()["room_id"]
+
+    ws_room = f"share:{room_id}:main"
+    with client.websocket_connect(f"/collab/ws/{ws_room}?token={student}") as ws:
+        first = ws.receive_bytes()
+        assert first[:2] == b"\x00\x00"
+
+    client.post(f"/collab/share/{room_id}/close", headers=_auth(mentor))
+    with pytest.raises(Exception):  # noqa: BLE001 — любое закрытие/дисконнект
+        with client.websocket_connect(f"/collab/ws/{ws_room}?token={student}"):
+            pass
+
+
+def test_share_room_id_grammar():
+    """share-слот требует capability-подобный id (не короткий/не угадываемый)."""
+    from ego_server.collab import parse_room
+
+    assert parse_room("share:abcdefghijklmnop:main").scenario == "share"
+    with pytest.raises(ValueError):
+        parse_room("share:short:main")  # <16 chars
+    with pytest.raises(ValueError):
+        parse_room("share:точка.невалидна:main")

@@ -22,6 +22,23 @@ def test_ide_entry_points_serve_workspace_shell(url):
 
 
 @pytest.mark.parametrize(
+    "url",
+    [
+        "/ide/task/F2",
+        "/ide/task/course%2Ftask%20one",
+        "/ide/task/1.5",
+        "/ide/task/unknown-task",
+    ],
+)
+def test_ide_task_deeplinks_serve_the_same_shell(url):
+    """Deep links serve the IDE shell; the client resolves the task client-side."""
+    response = TestClient(app).get(url)
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert 'src="/static/admin/ide.js"' in response.text
+
+
+@pytest.mark.parametrize(
     "name",
     ["ide.html", "admin/ide.js"],
 )
