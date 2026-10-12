@@ -17,7 +17,6 @@ from ego_server.db import init_db
 from ego_server.routers import ai as ai_router
 from ego_server.routers import admin as admin_router
 from ego_server.routers import (
-    admin_assistant,
     admin_settings,
     auth,
     check,
@@ -65,7 +64,6 @@ app.include_router(ai_router.router, prefix="/ai", tags=["ai"])
 app.include_router(ai_router.admin_router, prefix="/admin/ai", tags=["ai-admin"])
 app.include_router(admin_router.router, prefix="/admin", tags=["admin"])
 app.include_router(admin_settings.router, prefix="/admin", tags=["admin-settings"])
-app.include_router(admin_assistant.router, prefix="/admin", tags=["admin-assistant"])
 
 
 @app.exception_handler(RequestValidationError)
@@ -94,6 +92,19 @@ async def admin_panel_root() -> FileResponse:
 @app.get("/student", include_in_schema=False)
 @app.get("/student/", include_in_schema=False)
 async def student_panel() -> FileResponse:
+    return FileResponse(_STATIC_DIR / "student.html", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/ide", include_in_schema=False)
+@app.get("/ide/", include_in_schema=False)
+async def ide_panel() -> FileResponse:
+    """Serve the in-browser IDE workspace (per-user, browser-persisted)."""
+    return FileResponse(_STATIC_DIR / "ide.html", headers={"Cache-Control": "no-store"})
+
+
+@app.get("/student/tasks/{task_id:path}", include_in_schema=False)
+async def student_task_page(task_id: str) -> FileResponse:
+    """Serve bookmarkable task pages; task data keeps its authenticated API boundary."""
     return FileResponse(_STATIC_DIR / "student.html", headers={"Cache-Control": "no-store"})
 
 

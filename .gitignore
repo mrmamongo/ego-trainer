@@ -20,3 +20,10 @@ dist/
 build/
 node_modules/
 vscode-ego/*.vsix
+
+# Built web assets (rebuilt via `node admin-ui/build.mjs`)
+ego_server/static/admin/bundle.js
+ego_server/static/admin/bundle.css
+ego_server/static/admin/ide.js
+ego_server/static/admin/theme.css
+ego_server/static/admin/workers/
