@@ -28,28 +28,20 @@ from ego_server.routers import (
 
 _STATIC_DIR = Path(__file__).parent / "static"
 _mcp_http_app = None
-_collab: object | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _collab
     validate_runtime_settings(settings)
     init_db()
     async with AsyncExitStack() as stack:
         if settings.collab_enabled:
-            import ego_server.collab as _collab_mod
+            from ego_server.collab import get_collab_server
 
-            _collab = _collab_mod.get_collab_server()
-            try:
-                await stack.enter_async_context(_collab)
-            except RuntimeError:
-                # Already running (test reloads share the process-wide server).
-                pass
+            await stack.enter_async_context(get_collab_server().start())
         if _mcp_http_app is not None:
             await stack.enter_async_context(_mcp_http_app.lifespan(_mcp_http_app))
         yield
-    _collab = None
 
 
 app = FastAPI(
@@ -131,13 +123,12 @@ app.mount("/static", StaticFiles(directory=_STATIC_DIR), name="static")
 
 if settings.collab_enabled:
     # Collaborative editing (ADR-0017): REST snapshot routes + ws ASGI sub-app
-    # at /collab/ws/{room}. Room auth/ACL happens in the ws handshake.
-    # The server object is a process-wide singleton so test-suite reloads of
-    # this module never stack a second WebsocketServer on the same event loop.
-    import ego_server.collab as _collab_mod
-    from ego_server.collab import setup_collab
+    # at /collab/ws/{room}. Auth/ACL happens in the ws handshake; the room
+    # server is a process-wide singleton, so test reloads of this module never
+    # stack a second WebsocketServer on the same event loop.
+    from ego_server.collab import mount_collab
 
-    setup_collab(app, _collab_mod.get_collab_server())
+    mount_collab(app)
 
 if settings.mcp_enabled:
     # Mount last: normal Ego routes keep their routing/auth contracts. The

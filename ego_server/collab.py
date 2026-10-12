@@ -1,54 +1,72 @@
-"""Collaborative editing server (ADR-0017): Yjs rooms over WebSocket.
+"""Collaborative editing backend (ADR-0017, P1 MVP): Yjs rooms over WebSocket.
 
-Design (ADR-0017 D17.1-D17.5):
-- Transport: ypy-websocket ``WebsocketServer`` mounted as an ASGI sub-app at
+- Transport: ``ypy-websocket`` mounted as a raw ASGI sub-app at
   ``/collab/ws/{room}`` inside the main uvicorn process — no extra Node
-  service, no extra container.
-- Rooms: ``scenario:taskId:fileKey`` with per-scenario ACL
-  (studio → mentor/admin; defense → any authenticated user; pair → any
-  authenticated user for P1).
-- Persistence: in-memory rooms + idle snapshots into ``collab_snapshots``
-  (SQLite). A fresh room is hydrated from its snapshot, so a reopened
-  document continues where the last session left off.
-- Commit to canonical content still flows through Task Studio
-  (``PUT /admin/tasks/{id}/studio``) — the collab doc is a draft layer.
+  service, no extra container (ADR-0017 D17.1/D17.4).
+- Rooms: ``scenario:taskId:fileKey`` with a per-scenario ACL (D17.3):
+  ``studio`` → mentor/admin, ``defense`` and ``pair`` → any authenticated
+  user (P1).
+- Persistence: rooms live in process memory; the Y-state is snapshotted into
+  the ``collab_snapshots`` SQLite table whenever a room is dropped (last
+  client left, idle sweep, server shutdown), and a fresh room is hydrated
+  from that snapshot (D17.5).
+- Коммит в канонический контент по-прежнему идёт через Task Studio;
+  коллаб-документ — черновик (D17.2).
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import gc
 import logging
 import re
-from datetime import datetime, timezone
-from typing import Any
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime
+from typing import NamedTuple
+from urllib.parse import parse_qs
 
 import y_py as Y
 from fastapi import APIRouter, Depends, FastAPI, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
+from starlette.responses import PlainTextResponse
+from starlette.types import Receive, Scope, Send
+from ypy_websocket import WebsocketServer, YRoom
+from ypy_websocket.asgi_server import ASGIServer
 
+from ego_server import config, db
 from ego_server.auth import decode_token
-from ego_server.config import settings
-from ego_server.db import get_connection
 from ego_server.deps import CurrentUser, require_role
 
 log = logging.getLogger(__name__)
 
-# === Room grammar and ACL (ADR-0017 D17.3) ===
+# === Грамматика имени комнаты и ACL (ADR-0017 D17.3) ===
 
 _SCENARIOS = ("studio", "defense", "pair")
-_STUDIO_FILES = ("markdown", "solution_py", "tests_py")
-_FREE_FILE_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
-_TASK_ID_RE = re.compile(r"^[^:/\\]{1,128}$")
+_STUDIO_FILE_KEYS = ("markdown", "solution_py", "tests_py")
+_FREE_FILE_KEY_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
+_TASK_ID_RE = re.compile(r"[A-Za-z0-9._-]{1,64}")
+
+# Минимальный «пустой» update от y_py (см. ypy-websocket/yutils.py, y-py #98).
+_EMPTY_UPDATE = b"\x00\x00"
 
 
-class RoomSpec(BaseModel):
+class RoomSpec(NamedTuple):
+    """Разобранное имя комнаты ``scenario:taskId:fileKey``."""
+
     scenario: str
     task_id: str
     file_key: str
 
 
 def parse_room(name: str) -> RoomSpec:
-    """Parse ``scenario:taskId:fileKey``; ValueError on malformed input."""
+    """Разобрать и провалидировать имя комнаты; ValueError если оно кривое.
+
+    Грамматика: ``scenario:taskId:fileKey``, где scenario — studio|defense|pair,
+    taskId — ``[A-Za-z0-9._-]{1,64}`` (существование в БД проверяется отдельно,
+    в ``_task_exists``), fileKey — markdown|solution_py|tests_py для studio и
+    ``[A-Za-z0-9_-]{1,64}`` для остальных сценариев.
+    """
     parts = name.split(":")
     if len(parts) != 3:
         raise ValueError(f"Malformed room name: {name!r}")
@@ -58,331 +76,423 @@ def parse_room(name: str) -> RoomSpec:
     if not _TASK_ID_RE.fullmatch(task_id):
         raise ValueError(f"Malformed task id in room: {task_id!r}")
     if scenario == "studio":
-        if file_key not in _STUDIO_FILES:
+        if file_key not in _STUDIO_FILE_KEYS:
             raise ValueError(f"Bad studio file key: {file_key!r}")
-    elif not _FREE_FILE_RE.fullmatch(file_key):
+    elif not _FREE_FILE_KEY_RE.fullmatch(file_key):
         raise ValueError(f"Bad file key: {file_key!r}")
     return RoomSpec(scenario=scenario, task_id=task_id, file_key=file_key)
 
 
 def room_allowed(user: dict, spec: RoomSpec) -> bool:
-    """Scenario ACL. ``user`` is the DB-fresh claims dict from _ws_user."""
-    role = user.get("role", "student")
+    """Scenario ACL. ``user`` — свежие из БД клеймы (см. ``_ws_user``)."""
+    role = user.get("role", "")
     if spec.scenario == "studio":
         return role in ("mentor", "admin")
-    # defense / pair: any authenticated user in P1.
+    # defense / pair: любой аутентифицированный пользователь (P1).
     return True
 
 
+# === Auth для ws-хендшейка ===
+
+
 def _ws_user(token: str | None) -> dict | None:
-    """Verify a JWT and return DB-fresh user claims, or None."""
+    """Проверить JWT и вернуть свежие из БД клеймы пользователя, либо None.
+
+    Повторяет логику ``ego_server.deps.get_current_user``, но с коротким
+    sqlite-соединением: у сырого ASGI-хендшейка нет FastAPI-зависимостей.
+    """
     if not token:
         return None
     try:
         claims = decode_token(token)
-    except Exception:  # noqa: BLE001 — any token error rejects the socket
+    except Exception:  # noqa: BLE001 — любая ошибка токена = отказ
         return None
     try:
-        conn = get_connection()
-    except Exception:  # noqa: BLE001 — DB unavailable
+        conn = db.get_connection()
+    except Exception:  # noqa: BLE001 — БД недоступна
         return None
     try:
         row = conn.execute(
             "SELECT id, username, role FROM students WHERE id=?", (claims.get("sub"),)
         ).fetchone()
+    except Exception:  # noqa: BLE001
+        return None
     finally:
         conn.close()
     if row is None:
         return None
-    return {**claims, "sub": row["id"], "username": row["username"], "role": row["role"]}
+    # Привилегии берём из текущего состояния БД, а не из клеймов JWT.
+    return {**claims, "username": row["username"], "role": row["role"]}
 
 
 def _task_exists(task_id: str) -> bool:
+    """Существует ли задача с таким id в таблице tasks."""
     try:
-        conn = get_connection()
+        conn = db.get_connection()
     except Exception:  # noqa: BLE001
         return False
     try:
         return (
-            conn.execute("SELECT 1 FROM tasks WHERE id=? OR task_id=?", (task_id, task_id)).fetchone()
+            conn.execute("SELECT 1 FROM tasks WHERE id=? LIMIT 1", (task_id,)).fetchone()
             is not None
         )
+    except Exception:  # noqa: BLE001
+        return False
     finally:
         conn.close()
 
 
-# === Snapshots (SQLite) ===
+def _token_from_scope(scope: dict) -> str | None:
+    """JWT из query-параметра ``token``."""
+    query = scope.get("query_string") or b""
+    params = parse_qs(query.decode("utf-8", "replace"))
+    values = params.get("token")
+    return values[0] if values else None
+
+
+def _room_from_scope(scope: dict) -> str | None:
+    """Голое имя комнаты из path смонтированного scope.
+
+    Внутри mount starlette оставляет в ``scope['path']`` ПОЛНЫЙ путь, а префикс
+    кладёт в ``scope['root_path']``; поддерживаем обе формы —
+    ``/collab/ws/<room>`` и ``/<room>``.
+    """
+    path = scope.get("path") or ""
+    root = scope.get("root_path") or ""
+    if root and path.startswith(root):
+        path = path[len(root) :]
+    if path.startswith("/collab/ws"):
+        path = path[len("/collab/ws") :]
+    path = path.strip("/")
+    return path or None
+
+
+# === Снапшоты (SQLite, ADR-0017 D17.5) ===
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
-def save_snapshot(room_name: str, ydoc: Y.YDoc) -> None:
-    """Upsert the room's Y-state and plain text into collab_snapshots."""
-    state = bytes(Y.encode_state_as_update(ydoc))
+def _save_snapshot(room_name: str, ydoc: Y.YDoc) -> None:
+    """Upsert Y-state и плоского текста комнаты в ``collab_snapshots``."""
+    ystate = bytes(Y.encode_state_as_update(ydoc))
     text = str(ydoc.get_text("content"))
-    conn = get_connection()
+    conn = db.get_connection()
     try:
         conn.execute(
             """
             INSERT INTO collab_snapshots (room, ystate, text, updated_at)
             VALUES (?, ?, ?, ?)
             ON CONFLICT(room) DO UPDATE SET
-              ystate=excluded.ystate, text=excluded.text, updated_at=excluded.updated_at
+              ystate=excluded.ystate,
+              text=excluded.text,
+              updated_at=excluded.updated_at
             """,
-            (room_name, state, text, _now_iso()),
+            (room_name, ystate, text, _now_iso()),
         )
         conn.commit()
     finally:
         conn.close()
 
 
-def load_snapshot(room_name: str) -> tuple[bytes, str] | None:
-    conn = get_connection()
+def _load_snapshot(room_name: str) -> tuple[bytes, str, str] | None:
+    """``(ystate, text, updated_at)`` для комнаты, либо None."""
+    conn = db.get_connection()
     try:
         row = conn.execute(
-            "SELECT ystate, text FROM collab_snapshots WHERE room=?", (room_name,)
+            "SELECT ystate, text, updated_at FROM collab_snapshots WHERE room=?",
+            (room_name,),
         ).fetchone()
     finally:
         conn.close()
     if row is None:
         return None
-    return bytes(row["ystate"]), str(row["text"])
+    return bytes(row["ystate"]), str(row["text"]), str(row["updated_at"])
 
 
-def _doc_from_text(text: str) -> Y.YDoc:
+def _doc_from_text(content: str) -> Y.YDoc:
+    """Свежий YDoc, чей текст 'content' равен ``content``."""
     ydoc = Y.YDoc()
-    if text:
+    if content:
         ytext = ydoc.get_text("content")
         with ydoc.begin_transaction() as tx:
-            ytext.insert(tx, 0, text)
+            ytext.insert(tx, 0, content)
     return ydoc
 
 
-# === Collab server (WebsocketServer with snapshot hydration + idle sweep) ===
-
-from ypy_websocket.websocket_server import WebsocketServer  # noqa: E402
-from ypy_websocket.yroom import YRoom  # noqa: E402
+# === Сервер комнат: гидратация при открытии, снапшот при закрытии ===
 
 
 class CollabWebsocketServer(WebsocketServer):
-    """WebsocketServer hydrating fresh rooms from collab_snapshots."""
+    """``WebsocketServer``, политый свежие комнаты из collab_snapshots.
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
+    ypy-websocket с ``auto_clean_rooms=True`` сам удаляет комнату, когда ушёл
+    последний клиент (``_serve``), поэтому снапшот пишется в переопределённом
+    ``delete_room`` — иначе текст, написанный за <30с до дисконнекта,
+    терялся бы до тика sweeper'а.
+    """
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)  # type: ignore[arg-type]
+        # Имена комнат, уже политых из снапшота.
         self._hydrated: set[str] = set()
 
     async def get_room(self, name: str) -> YRoom:
         room = await super().get_room(name)
         if name not in self._hydrated:
             self._hydrated.add(name)
-            snapshot = load_snapshot(name)
+            try:
+                snapshot = _load_snapshot(name)
+            except Exception:  # noqa: BLE001
+                log.exception("collab: не удалось прочитать снапшот %s", name)
+                snapshot = None
             if snapshot is not None:
-                state, _ = snapshot
-                if state:
-                    # Apply on top of whatever the room already merged.
-                    Y.apply_update(room.ydoc, state)
-                    log.info("collab: hydrated room %s from snapshot (%d bytes)", name, len(state))
+                ystate = snapshot[0]
+                if ystate and ystate != _EMPTY_UPDATE:
+                    Y.apply_update(room.ydoc, ystate)
+                    log.info("collab: комната %s политa из снапшота", name)
         return room
+
+    def delete_room(self, *, name: str | None = None, room: YRoom | None = None) -> None:
+        """Сохранить снапшот и убрать комнату из реестра (любой путь вызова).
+
+        В отличие от ``WebsocketServer.delete_room`` мы НЕ вызываем
+        ``room.stop()``: он выставляет ``room._task_group = None``, а
+        ``_broadcast_updates`` (задача того же task group'а) после этого
+        падает с AttributeError на ``cancel_scope`` — гонка внутри
+        ypy-websocket 0.12.4. Task group комнаты будет отменён вызывающей
+        стороной (``_serve`` отменяет свой scope сразу после автоочистки).
+        """
+        if name is not None and room is not None:
+            raise RuntimeError("Cannot pass name and room")
+        target = name
+        if target is None:
+            if room is None:
+                raise RuntimeError("Either name or room must be passed")
+            try:
+                target = self.get_room_name(room)
+            except ValueError:
+                # Комнату уже удалили другим путём (например, reset-эндпоинт) —
+                # повторная автоочистка _serve не должна ронять serve-таску.
+                return
+        live = self.rooms.pop(target, None)
+        self._hydrated.discard(target)
+        if live is not None:
+            try:
+                _save_snapshot(target, live.ydoc)
+            except Exception:  # noqa: BLE001 — снапшот best-effort
+                log.exception("collab: снапшот при удалении %s не записан", target)
 
 
 class CollabServer:
-    """Owns the ws server lifecycle and the idle-snapshot sweeper task."""
+    """Владеет жизненным циклом ws-сервера и задачей снапшот-свипера."""
 
     def __init__(self) -> None:
         self.ws = CollabWebsocketServer(rooms_ready=True, auto_clean_rooms=True, log=log)
         self._sweeper: asyncio.Task[None] | None = None
-        self._stop = asyncio.Event()
 
-    async def __aenter__(self) -> "CollabServer":
-        await self.ws.__aenter__()
-        self._stop = asyncio.Event()
-        self._sweeper = asyncio.create_task(self._sweep_idle_rooms())
-        return self
-
-    async def __aexit__(self, *exc: object) -> None:
-        self._stop.set()
-        if self._sweeper is not None:
-            self._sweeper.cancel()
-            try:
-                await self._sweeper
-            except (asyncio.CancelledError, Exception):  # noqa: BLE001
-                pass
-            self._sweeper = None
-        # Persist every live room before shutdown.
-        for name, room in list(self.ws.rooms.items()):
-            try:
-                save_snapshot(name, room.ydoc)
-            except Exception:  # noqa: BLE001 — best-effort snapshot
-                log.exception("collab: shutdown snapshot failed for %s", name)
-        await self.ws.__aexit__(*exc)  # type: ignore[arg-type]
+    @asynccontextmanager
+    async def start(self):
+        """Запустить ws-сервер + свипер на время жизни приложения."""
+        try:
+            async with self.ws:
+                self._sweeper = asyncio.create_task(self._sweep_idle_rooms())
+                try:
+                    yield
+                finally:
+                    self._sweeper.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await self._sweeper
+                    self._sweeper = None
+                    # Сохраняем все живые комнаты перед остановкой процесса.
+                    for room_name, room in list(self.ws.rooms.items()):
+                        try:
+                            _save_snapshot(room_name, room.ydoc)
+                        except Exception:  # noqa: BLE001
+                            log.exception("collab: shutdown-снапшот %s не записан", room_name)
+                    # Чистим словарь в потоке event-loop: YDoc прибивается в своём потоке.
+                    self.ws.rooms.clear()
+        finally:
+            # YRoom/YDoc содержат циклы ссылок; без явного gc.collect() их
+            # финализаторы позже пойдут в произвольном потоке (например, в
+            # pytest), и y_py падает «YDoc is unsendable, but is dropped on
+            # another thread». Собираем циклы здесь, в потоке event-loop'а,
+            # уже после разматывания task group'ов ws-сервера.
+            gc.collect()
 
     async def _sweep_idle_rooms(self) -> None:
-        interval = max(5.0, settings.collab_snapshot_interval_seconds)
-        while not self._stop.is_set():
-            try:
-                await asyncio.wait_for(self._stop.wait(), timeout=interval)
-                break  # stop set
-            except asyncio.TimeoutError:
-                pass
-            for name, room in list(self.ws.rooms.items()):
+        """Раз в интервал: активные комнаты снапшотим, пустые — выгружаем."""
+        interval = max(1.0, float(config.settings.collab_snapshot_interval_seconds))
+        while True:
+            await asyncio.sleep(interval)
+            for room_name, room in list(self.ws.rooms.items()):
                 try:
-                    save_snapshot(name, room.ydoc)
+                    if room.clients:
+                        _save_snapshot(room_name, room.ydoc)
+                    else:
+                        self.ws.delete_room(name=room_name)  # снапшот внутри
                 except Exception:  # noqa: BLE001
-                    log.exception("collab: snapshot failed for %s", name)
+                    log.exception("collab: idle-sweep не обработал %s", room_name)
 
 
-# === ASGI wiring (ws auth + room ACL) ===
+# === ASGI-обвязка: auth + ACL на ws-хендшейке ===
+
+_WS_MOUNT = "/collab/ws"
 
 
+class CollabWSApp:
+    """ASGI-гейт: JWT-auth + ACL комнаты, затем ypy-websocket-сервер.
 
-def _room_from_scope_path(path: str) -> str | None:
-    """Extract the room name from the mounted scope path.
-
-    The app is mounted at ``/collab/ws`` so scope['path'] inside the sub-app
-    is the remainder, e.g. ``/pair:F1:abc``. Absolute-form paths
-    (``/collab/ws/pair:F1:abc``) are accepted too for robustness.
+    Решение принимается в ``ASGIServer.on_connect`` (True = «не принято»).
+    Обычный on_connect-отказ просто возвращается без accept/close — реальный
+    сервер закрывает соединение на транспортном уровне, но starlette TestClient
+    ждал бы вечно, поэтому после отклонённого хендшейка дополнительно
+    отправляется явный ``websocket.close``.
     """
-    prefix = "/collab/ws/"
-    raw = path.lstrip("/")
-    if raw.startswith("collab/ws/"):
-        raw = raw[len(prefix) - 1 :]
-    room = raw.strip("/")
-    return room or None
 
+    def __init__(self, ws_server: CollabWebsocketServer) -> None:
+        self._ws_server = ws_server
 
-def make_ws_asgi(collab: CollabServer):
-    """Build the ASGI callable with auth+ACL on the connect handshake.
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "websocket":
+            await PlainTextResponse("collab: websocket endpoint", status_code=404)(
+                scope, receive, send
+            )
+            return
+        room = _room_from_scope(scope)  # type: ignore[arg-type]
+        # Ключ комнаты в WebsocketServer = websocket.path = голое имя комнаты,
+        # чтобы ключи совпадали с именами снапшотов и REST-эндпоинтов.
+        inner_scope = {**scope, "path": room or ""}
+        accepted = False
 
-    Rejection sends an explicit ``websocket.close`` (4400-4499: terminal for
-    y-websocket v3, so clients do not reconnect-loop on auth failures).
-    """
-    from ypy_websocket.asgi_server import ASGIWebsocket
+        async def _send(message: dict) -> None:
+            nonlocal accepted
+            if message.get("type") == "websocket.accept":
+                accepted = True
+            await send(message)  # type: ignore[arg-type]
 
-    class _PathWebsocket(ASGIWebsocket):
-        """ASGIWebsocket reporting the room name (not the mount path) as path."""
+        async def _on_connect(msg: dict, inner: dict) -> bool:
+            # True = отклонить (контракт ASGIServer.on_connect).
+            return not self._handshake_allowed(inner, room)
 
-        def __init__(self, receive, send, path: str):
-            super().__init__(receive, send, path)
+        await ASGIServer(self._ws_server, on_connect=_on_connect)(
+            inner_scope,
+            receive,
+            _send,  # type: ignore[arg-type]
+        )
+        if not accepted:
+            await send(  # type: ignore[func-returns-value]
+                {"type": "websocket.close", "code": 1008, "reason": "collab: rejected"}
+            )
 
-
-    def _check(msg: dict, scope: dict) -> tuple[bool, int, str]:
-        """Return (reject?, close_code, reason)."""
-        query = scope.get("query_string", b"").decode("utf-8", "replace")
-        params = dict(part.split("=", 1) for part in query.split("&") if "=" in part)
-        from urllib.parse import unquote
-
-        token = unquote(params.get("token", ""))
-        user = _ws_user(token)
+    def _handshake_allowed(self, scope: dict, room: str | None) -> bool:
+        """Authn + грамматика комнаты + существование задачи + scenario ACL."""
+        if not room:
+            log.warning("collab ws: отказ (нет комнаты в path)")
+            return False
+        user = _ws_user(_token_from_scope(scope))
         if user is None:
-            return (True, 4401, "auth required")
-        room_name = _room_from_scope_path(scope.get("path", ""))
-        if not room_name:
-            return (True, 4400, "no room")
+            log.warning("collab ws: отказ (auth) room=%s", room)
+            return False
         try:
-            spec = parse_room(room_name)
+            spec = parse_room(room)
         except ValueError:
-            log.warning("collab ws: rejected (room) %r", room_name)
-            return (True, 4400, "bad room")
+            log.warning("collab ws: отказ (имя комнаты) %r", room)
+            return False
         if not _task_exists(spec.task_id):
-            log.warning("collab ws: rejected (unknown task) %r", spec.task_id)
-            return (True, 4404, "unknown task")
+            log.warning("collab ws: отказ (нет задачи) %r", spec.task_id)
+            return False
         if not room_allowed(user, spec):
             log.info(
-                "collab ws: rejected (acl) room=%s user=%s role=%s",
-                room_name,
+                "collab ws: отказ (acl) room=%s user=%s role=%s",
+                room,
                 user.get("username"),
                 user.get("role"),
             )
-            return (True, 4403, "forbidden room")
-        return (False, 0, "")
-
-    async def app(scope: dict, receive, send):
-        msg = await receive()
-        if msg["type"] != "websocket.connect":
-            return
-        reject, code, reason = _check(msg, scope)
-        if reject:
-            await send({"type": "websocket.close", "code": code, "reason": reason})
-            return
-        await send({"type": "websocket.accept"})
-        # WebsocketServer keys rooms by websocket.path — strip the mount
-        # prefix so rooms match the canonical 'scenario:taskId:fileKey' names
-        # used by snapshots and the REST API.
-        room_name = _room_from_scope_path(scope.get("path", "")) or scope.get("path", "")
-        websocket = _PathWebsocket(receive, send, room_name)
-        await collab.ws.serve(websocket)
-
-    return app
+            return False
+        return True
 
 
-# === REST endpoints ===
+# === REST-эндпоинты ===
 
 
 class CollabResetRequest(BaseModel):
-    content: str = Field(default="", max_length=4_000_000)
+    content: str
 
 
-def create_collab_router(collab: CollabServer) -> APIRouter:
+def create_collab_router() -> APIRouter:
+    """Роутер коллаба: чтение снапшота и сброс комнаты."""
     router = APIRouter()
 
     @router.get("/collab/rooms/{room}/snapshot")
     async def room_snapshot(room: str, user: CurrentUser) -> dict:
+        """Текущий текст комнаты: живая in-memory, иначе снапшот из SQLite."""
         try:
             spec = parse_room(room)
         except ValueError as e:
-            raise HTTPException(status_code=422, detail=str(e))
+            raise HTTPException(status_code=422, detail=str(e)) from e
+        # ACL как у ws: studio-файлы скрывают решение от студентов.
         if not room_allowed(user, spec):
             raise HTTPException(status_code=403, detail="No access to this room")
-        live = collab.ws.rooms.get(room)
+        live = get_collab_server().ws.rooms.get(room)
         if live is not None:
-            text = str(live.ydoc.get_text("content"))
-            return {"room": room, "text": text, "updated_at": _now_iso(), "live": True}
-        snapshot = load_snapshot(room)
+            return {
+                "room": room,
+                "text": str(live.ydoc.get_text("content")),
+                "updated_at": _now_iso(),
+            }
+        snapshot = _load_snapshot(room)
         if snapshot is None:
-            raise HTTPException(status_code=404, detail="Room has no snapshot yet")
-        _, text = snapshot
-        return {"room": room, "text": text, "updated_at": None, "live": False}
+            raise HTTPException(status_code=404, detail="No snapshot for this room yet")
+        _ystate, text, updated_at = snapshot
+        return {"room": room, "text": text, "updated_at": updated_at}
 
     @router.post(
         "/collab/rooms/{room}/reset",
         dependencies=[Depends(require_role("mentor", "admin"))],
     )
     async def room_reset(room: str, body: CollabResetRequest) -> dict:
+        """Сбросить комнату в ``content``: остановить живую, записать свежий YDoc."""
         try:
             parse_room(room)
         except ValueError as e:
-            raise HTTPException(status_code=422, detail=str(e))
-        if len(body.content.encode("utf-8")) > settings.collab_max_room_text_bytes:
-            raise HTTPException(status_code=413, detail="Content exceeds the collab size limit")
-        # Kill the live room so late clients hydrate from the new snapshot.
+            raise HTTPException(status_code=422, detail=str(e)) from e
+        if len(body.content.encode("utf-8")) > config.settings.collab_max_room_text_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail="Content exceeds the collab room size limit",
+            )
+        collab = get_collab_server()
         if room in collab.ws.rooms:
             try:
-                collab.ws.delete_room(name=room)
+                collab.ws.delete_room(name=room)  # снапшот + снятие гидратации
             except Exception:  # noqa: BLE001
-                log.exception("collab: reset could not stop live room %s", room)
-            collab.ws._hydrated.discard(room)  # noqa: SLF001 — allow re-hydration
-        ydoc = _doc_from_text(body.content)
-        save_snapshot(room, ydoc)
-        return {"ok": True, "room": room}
+                log.exception("collab: reset не остановил живую комнату %s", room)
+        try:
+            _save_snapshot(room, _doc_from_text(body.content))
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=500, detail=f"Snapshot write failed: {e}") from e
+        return {"ok": True}
 
     return router
 
 
-# === App wiring ===
+# === Подключение к приложению ===
 
 
-def setup_collab(app: FastAPI, collab: CollabServer) -> None:
-    """Register REST routes and mount the ws ASGI sub-app."""
-    app.include_router(create_collab_router(collab), tags=["collab"])
-    app.mount("/collab/ws", make_ws_asgi(collab))
+def mount_collab(app: FastAPI) -> None:
+    """Зарегистрировать REST-роутер и смонтировать ws ASGI sub-app."""
+    app.include_router(create_collab_router(), tags=["collab"])
+    app.mount(_WS_MOUNT, CollabWSApp(get_collab_server().ws), name="collab-ws")
+
+
+_collab_server: CollabServer | None = None
 
 
 def get_collab_server() -> CollabServer:
-    """Process-wide singleton (survives test reloads of ego_server.main)."""
-    import ego_server.collab as _self
-
-    if getattr(_self, "_collab_server", None) is None:
-        _self._collab_server = CollabServer()
-    return _self._collab_server
+    """Синглтон уровня модуля: комнаты живут в памяти процесса."""
+    global _collab_server
+    if _collab_server is None:
+        _collab_server = CollabServer()
+    return _collab_server
