@@ -226,3 +226,12 @@ CREATE TABLE IF NOT EXISTS admin_chat_proposals (
 );
 CREATE INDEX IF NOT EXISTS idx_folders_project ON folders(project_id);
 CREATE INDEX IF NOT EXISTS idx_sync_log_started ON sync_log(started_at);
+
+-- === Collaborative editing (ADR-0017) ===
+-- Idle-room snapshots of Yjs docs (draft layer; canonical content stays in git).
+CREATE TABLE IF NOT EXISTS collab_snapshots (
+  room       TEXT PRIMARY KEY,           -- 'scenario:taskId:fileKey'
+  ystate     BLOB NOT NULL,              -- Y.encode_state_as_update
+  text       TEXT NOT NULL DEFAULT '',   -- plain text mirror (debug/API)
+  updated_at TEXT NOT NULL
+);

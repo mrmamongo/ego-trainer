@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     mcp_forgejo_client_secret: str = Field(default="", repr=False)
     mcp_signing_key: str = Field(default="", repr=False)
     mcp_storage_path: Path = Path(".ego-server/mcp-auth")
+    collab_enabled: bool = False
+    collab_snapshot_interval_seconds: float = 30.0
+    collab_max_room_text_bytes: int = 1_000_000
 
 
 _INSECURE_JWT_SECRETS = {

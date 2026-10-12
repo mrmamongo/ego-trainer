@@ -21,6 +21,12 @@
     type AuthProviders,
   } from './api';
   import { workspaceStore } from './workspace';
+  import {
+    IdeCollabSession,
+    collabRoomFor,
+    type CollabStatus,
+    type Peer,
+  } from './collab';
 
   type Screen = 'boot' | 'login' | 'ready';
 
@@ -121,6 +127,15 @@
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
   let autosaveTimer: ReturnType<typeof setTimeout> | undefined;
 
+  // --- Совместное редактирование (ADR-0017, P1) ---
+  let collabEnabled = $state(true);
+  let collabStatus = $state<CollabStatus>('off');
+  let collabDetail = $state('');
+  let peers = $state<Peer[]>([]);
+  let collabPopoverOpen = $state(false);
+  let collabSession: IdeCollabSession | null = null;
+  let collabRoom = $state('');
+
   const filteredTasks = $derived.by(() => {
     const query = taskSearchDebounced.trim().toLowerCase();
     if (!query) return tasks;
@@ -156,6 +171,22 @@
     if (!savedAt) return 'Готово к работе';
     return `Сохранено ${savedAt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
   });
+
+  const collabStatusLabel = $derived.by(() => {
+    if (collabStatus === 'connecting') return 'Подключаюсь…';
+    if (collabStatus === 'syncing') return 'Синхронизация…';
+    if (collabStatus === 'live') return `Онлайн · ${peers.length + 1}`;
+    if (collabStatus === 'error') return 'Ошибка связи';
+    return 'Совм. режим выключен';
+  });
+
+  const collabParticipants = $derived(peers.length + 1);
+
+  function initials(name: string): string {
+    const parts = name.trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return '?';
+    return parts.slice(0, 2).map((part) => part[0]).join('').toUpperCase();
+  }
 
   function sanitizeName(value: string): string {
     return value
@@ -236,14 +267,8 @@
     }
   }
 
-  function onEditorContentChange() {
-    dirty = true;
-    storeNotice = '';
+  function scheduleAutosave(fileId: string, content: string) {
     if (autosaveTimer) clearTimeout(autosaveTimer);
-    const fileId = activeFileId;
-    if (!fileId || !editor) return;
-    // Захватываем содержимое сразу: за 400 мс активный файл мог бы смениться.
-    const content = editor.getValue();
     autosaveTimer = setTimeout(() => {
       autosaveTimer = undefined;
       if (disposed) return;
@@ -251,11 +276,24 @@
     }, AUTOSAVE_DEBOUNCE_MS);
   }
 
+  function onEditorContentChange() {
+    dirty = true;
+    storeNotice = '';
+    const fileId = activeFileId;
+    if (!fileId || !editor) return;
+    // При живой коллаб-сессии источник истины — Y.Doc, а не модель Monaco:
+    // MonacoBinding уже применил правку к ytext, персистим именно его.
+    const content = collabSession?.isAttached() ? collabSession.getDocText() : editor.getValue();
+    // Захватываем содержимое сразу: за 400 мс активный файл мог бы смениться.
+    scheduleAutosave(fileId, content);
+  }
+
   function saveNow() {
     const fileId = activeFileId;
     if (!fileId || !editor) return;
     if (autosaveTimer) { clearTimeout(autosaveTimer); autosaveTimer = undefined; }
-    void persistContent(fileId, editor.getValue());
+    const content = collabSession?.isAttached() ? collabSession.getDocText() : editor.getValue();
+    void persistContent(fileId, content);
   }
 
   function openFile(id: string) {
@@ -557,6 +595,7 @@
   }
 
   function resetWorkspaceState() {
+    stopCollabSession();
     files = [];
     activeFileId = null;
     checkResult = null;
@@ -586,6 +625,12 @@
     logout();
     loginError = 'Сессия истекла. Войди снова.';
   }
+
+  // Коллаб-сессия живёт, пока экран ready и файл с задачей активен: при unmount
+  // останавливаем её явно, чтобы не держать открытым websocket после ухода.
+  $effect(() => {
+    if (screen !== 'ready') stopCollabSession();
+  });
 
   function createEditor(): () => void {
     const previousEnvironment = (window as typeof window & {
@@ -706,6 +751,76 @@
       monaco.editor.setModelLanguage(model, file.language);
     }
     swapModel(file);
+    // Модель смонтирована — теперь безопасно привязывать коллаб-сессию
+    // (эффект сессии стартует раньше и мог не найти модель).
+    if (collabSession && collabSession.room === collabRoom) {
+      collabSession.attachEditor(editor, model, file.content ?? '');
+    }
+  });
+
+  // --- Совместное редактирование: сессия живёт, пока активен файл с задачей ---
+
+  function stopCollabSession() {
+    collabSession?.stop();
+    collabSession = null;
+    collabRoom = '';
+    collabStatus = 'off';
+    collabDetail = '';
+    peers = [];
+    collabPopoverOpen = false;
+  }
+
+  function continueSolo() {
+    // Пользователь явно отказался от коллаба для этой сессии.
+    collabEnabled = false;
+    stopCollabSession();
+  }
+
+  $effect(() => {
+    const file = activeFile;
+    const taskId = file?.task_id ?? null;
+    const fileId = file?.id ?? null;
+    const ready = screen === 'ready' && editorReady;
+    if (!ready || !taskId || !fileId || !collabEnabled) {
+      stopCollabSession();
+      return;
+    }
+    const room = collabRoomFor(taskId, fileId);
+    if (collabSession && collabSession.room === room) return; // файл не менялся
+    stopCollabSession();
+    collabRoom = room;
+    const session = new IdeCollabSession({
+      room,
+      getToken: getIdeToken,
+      userName: username || 'anon',
+      userRole: '',
+      onStatus: (status, detail) => {
+        if (disposed) return;
+        collabStatus = status;
+        collabDetail = status === 'error' ? detail ?? '' : '';
+      },
+      onPeers: (list) => {
+        if (disposed) return;
+        peers = list;
+      },
+    });
+    session.onTextChange((text) => {
+      // Удалённые правки тоже попадают в автосейв — Y.Doc общий для всех.
+      if (disposed) return;
+      const currentId = activeFileId;
+      if (!currentId) return;
+      dirty = true;
+      scheduleAutosave(currentId, text);
+    });
+    collabSession = session;
+    session.start();
+    // Привязка модели происходит в эффекте синхронизации модели (он владеет
+    // swapModel и гарантирует актуальную модель); здесь только если модель
+    // уже смонтирована этим же файлом.
+    if (editor) {
+      const model = editor.getModel();
+      if (model) session.attachEditor(editor, model, file?.content ?? '');
+    }
   });
 
   onMount(() => {
@@ -722,6 +837,7 @@
     return () => {
       disposed = true;
       cancelForgejo();
+      stopCollabSession();
       if (searchTimer) clearTimeout(searchTimer);
       if (autosaveTimer) clearTimeout(autosaveTimer);
       searchTimer = undefined;
@@ -775,6 +891,39 @@
       <div class="brand">
         <img src="/static/branding/cogito-mark.svg" alt="" width="30" height="30" />
         <div><strong>Cogito Workspace</strong><small>Учебная среда</small></div>
+      </div>
+      <div class="topbar-collab">
+        <button
+          class="collab-chip {collabStatus}"
+          onclick={() => (collabPopoverOpen = !collabPopoverOpen)}
+          aria-expanded={collabPopoverOpen}
+          title={collabStatusLabel}
+        >
+          <span class="collab-dot {collabStatus}"></span>
+          <span class="collab-label">{collabStatusLabel}</span>
+          {#if collabStatus === 'live'}
+            <span class="collab-avatars">
+              {#each peers as peer (peer.clientID)}
+                <span class="peer-avatar" style="background:{peer.color}" title="{peer.name}{peer.role ? ' · ' + peer.role : ''}">{initials(peer.name)}</span>
+              {/each}
+            </span>
+          {/if}
+        </button>
+        {#if collabPopoverOpen}
+          <div class="collab-popover">
+            {#if collabRoom}
+              <div class="collab-room" title={collabRoom}>Комната: {collabRoom}</div>
+            {:else}
+              <div class="collab-room muted">Совместный режим не активен</div>
+            {/if}
+            <ul class="collab-peer-list">
+              <li><span class="peer-avatar self" style="background:var(--primary)">{initials(username || 'anon')}</span><span class="peer-name">{username || 'anon'} (вы)</span></li>
+              {#each peers as peer (peer.clientID)}
+                <li><span class="peer-avatar" style="background:{peer.color}">{initials(peer.name)}</span><span class="peer-name">{peer.name}{peer.role ? ` · ${peer.role}` : ''}</span></li>
+              {/each}
+            </ul>
+          </div>
+        {/if}
       </div>
       <div class="account">
         {#if username}<span class="account-name">{username}</span>{/if}
@@ -853,6 +1002,7 @@
         {#if activeFile}
           <div class="editor-tabs">
             <span class="editor-tab active"><span class="tab-name">{activeFile.name}</span>{#if dirty}<span class="tab-dirty" title="Есть несохранённые изменения">•</span>{/if}</span>
+            {#if !activeFile.task_id}<span class="tab-collab-hint" title="Совместное редактирование доступно только для файлов, привязанных к задаче">Привяжи задачу, чтобы включить совместный режим</span>{/if}
           </div>
         {/if}
         <div class="editor-stack">
@@ -873,6 +1023,15 @@
         </div>
         {#if testsOpen}
           <div class="tests-body">
+            {#if collabStatus === 'error'}
+              <div class="collab-error-banner" role="alert">
+                <span>Совместное редактирование недоступно: {collabDetail || 'нет соединения'}</span>
+                <button class="mini-btn" onclick={continueSolo}>Продолжить одному</button>
+              </div>
+            {/if}
+            {#if collabStatus === 'live'}
+              <p class="collab-live-hint">Совместное редактирование: {collabParticipants} участник{collabParticipants === 1 ? '' : collabParticipants < 5 ? 'а' : 'ов'}</p>
+            {/if}
             {#if !activeFile}
               <p class="side-empty">Открой файл, чтобы работать с тестами.</p>
             {:else if activeFile.task_id}
@@ -1053,6 +1212,31 @@
   .bind-hint { margin: 0; color: var(--muted-foreground); font-size: 12px; }
   .bind-row { display: flex; gap: 8px; }
   .bind-row select { flex: 1; min-width: 0; padding: 8px 10px; font-size: 12px; }
+
+  /* ---------- Совместное редактирование ---------- */
+  .topbar-collab { position: relative; display: flex; align-items: center; }
+  .collab-chip { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--secondary); color: var(--foreground); font-size: 12px; font-weight: 500; cursor: pointer; }
+  .collab-chip:hover { border-color: color-mix(in srgb, var(--primary) 45%, var(--border)); }
+  .collab-dot { width: 8px; height: 8px; border-radius: 999px; background: var(--muted-foreground); flex-shrink: 0; }
+  .collab-dot.connecting { background: var(--warning); animation: collab-pulse 1.2s ease-in-out infinite; }
+  .collab-dot.syncing { background: var(--warning); }
+  .collab-dot.live { background: var(--success); }
+  .collab-dot.error { background: var(--destructive); }
+  @keyframes collab-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+  .collab-label { white-space: nowrap; }
+  .collab-avatars { display: inline-flex; margin-left: 2px; }
+  .peer-avatar { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 999px; color: #0b0b0d; font-size: 10px; font-weight: 700; border: 2px solid var(--card); margin-left: -6px; }
+  .peer-avatar.self { border-color: var(--border); }
+  .collab-popover { position: absolute; top: calc(100% + 8px); left: 0; z-index: 40; min-width: 240px; padding: 12px; display: grid; gap: 10px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 30px rgb(0 0 0 / .35); }
+  .collab-room { color: var(--muted-foreground); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .collab-peer-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .collab-peer-list li { display: flex; align-items: center; gap: 8px; }
+  .collab-peer-list .peer-avatar { margin-left: 0; }
+  .peer-name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .collab-error-banner { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 9px 11px; border: 1px solid color-mix(in srgb, var(--destructive) 45%, var(--border)); border-radius: 8px; background: color-mix(in srgb, var(--destructive) 10%, transparent); color: var(--destructive); font-size: 12px; }
+  .collab-error-banner .mini-btn { flex-shrink: 0; }
+  .collab-live-hint { margin: 0; color: var(--muted-foreground); font-size: 11px; }
+  .tab-collab-hint { display: inline-flex; align-items: center; padding: 0 12px; color: var(--muted-foreground); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   /* ---------- Статусная строка ---------- */
   .status-line { display: flex; align-items: center; gap: 16px; padding: 6px 16px; background: var(--card); border-top: 1px solid var(--border); color: var(--muted-foreground); font-size: 11px; }
