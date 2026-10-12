@@ -953,8 +953,9 @@
     }
     // Активная share-комната перекрывает pair-комнату для СВОЕЙ задачи;
     // файл другой задачи уходит в обычный pair-режим.
+    // Грамматика сервера: share:<roomId>:<fileKey> — fileKey обязательный.
     const inSharedRoom = sharedRoomId !== null && sharedRoomTaskId === taskId;
-    const room = inSharedRoom ? `share:${sharedRoomId}` : collabRoomFor(taskId, fileId);
+    const room = inSharedRoom ? `share:${sharedRoomId}:main` : collabRoomFor(taskId, fileId);
     if (collabSession && collabSession.room === room) return; // файл не менялся
     stopCollabSession();
     collabRoom = room;

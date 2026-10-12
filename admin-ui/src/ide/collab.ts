@@ -316,21 +316,28 @@ export class IdeCollabSession {
 		// event === null — соединение закрыли мы сами (stop/watchdog).
 		if (this.#stopped || !event || !this.#provider) return;
 		if (event.code === COLLAB_TOKEN_CLOSE_CODE) {
-			this.#expire();
+			this.#fail(event.reason || 'Сессия истекла');
 			return;
 		}
-		// wsUnsuccessfulReconnects сбрасывается сам при успешной синхронизации.
-		if (this.#provider.wsUnsuccessfulReconnects >= COLLAB_MAX_RETRIES) this.#expire();
+		// Счётчик провайдер увеличивает уже ПОСЛЕ этого события, поэтому +1 —
+		// текущий разрыв тоже считается неудачной попыткой.
+		if (this.#provider.wsUnsuccessfulReconnects + 1 >= COLLAB_MAX_RETRIES) {
+			this.#fail('Соединение потеряно');
+		}
 	};
 
 	/** Сервер закрыл соединение «насовсем» (диапазон 4400-4499). */
-	#onClosed = (): void => {
+	#onClosed = (event?: { code?: number; reason?: string }): void => {
 		if (this.#stopped) return;
-		this.#expire();
+		this.#fail(event?.reason || 'Соединение закрыто сервером');
 	};
 
-	#expire(): void {
-		this.#emitStatus('error', 'Сессия истекла');
+	/**
+	 * Финальная ошибка сессии: показываем причину из close-фрейма сервера
+	 * (аудит/закрытая комната/истёкший токен), останавливаемся.
+	 */
+	#fail(detail: string): void {
+		this.#emitStatus('error', detail);
 		this.stop();
 	}
 

@@ -392,6 +392,8 @@ class CollabWSApp:
         # чтобы ключи совпадали с именами снапшотов и REST-эндпоинтов.
         inner_scope = {**scope, "path": room or ""}
         accepted = False
+        reject_code = 0
+        reject_reason = ""
 
         async def _send(message: dict) -> None:
             nonlocal accepted
@@ -401,7 +403,12 @@ class CollabWSApp:
 
         async def _on_connect(msg: dict, inner: dict) -> bool:
             # True = отклонить (контракт ASGIServer.on_connect).
-            return not self._handshake_allowed(inner, room)
+            nonlocal reject_code, reject_reason
+            code, reason = self._handshake_reject(inner, room)
+            if code:
+                reject_code, reject_reason = code, reason
+                return True
+            return False
 
         await ASGIServer(self._ws_server, on_connect=_on_connect)(
             inner_scope,
@@ -409,33 +416,41 @@ class CollabWSApp:
             _send,  # type: ignore[arg-type]
         )
         if not accepted:
+            # uvicorn превращает close-до-accept в HTTP 403 для ws-клиентов;
+            # код/reason доживают до настоящих ws-клиентов (y-websocket v3
+            # трактует 4400-4499 как терминальные — без reconnect-loop).
             await send(  # type: ignore[func-returns-value]
-                {"type": "websocket.close", "code": 1008, "reason": "collab: rejected"}
+                {
+                    "type": "websocket.close",
+                    "code": reject_code or 4400,
+                    "reason": reject_reason or "collab: rejected",
+                }
             )
 
-    def _handshake_allowed(self, scope: dict, room: str | None) -> bool:
-        """Authn + грамматика комнаты + задача/ share-комната + scenario ACL."""
+    def _handshake_reject(self, scope: dict, room: str | None) -> tuple[int, str]:
+        """Причина отказа (код, текст) или (0, '') если вход разрешён.
+
+        Коды 4400-4499: y-websocket v3 считает их терминальными.
+        """
         if not room:
-            log.warning("collab ws: отказ (нет комнаты в path)")
-            return False
+            return (4400, "Некорректный адрес комнаты")
         user = _ws_user(_token_from_scope(scope))
         if user is None:
-            log.warning("collab ws: отказ (auth) room=%s", room)
-            return False
+            return (4401, "Требуется вход в аккаунт")
         try:
             spec = parse_room(room)
         except ValueError:
             log.warning("collab ws: отказ (имя комнаты) %r", room)
-            return False
+            return (4400, "Некорректное имя комнаты")
         if spec.scenario == "share":
             # Ссылка = capability: имя комнаты угадать нельзя, список комнат
             # не отдаётся; вход только с валидным активным id.
             if share_room_row(spec.task_id) is None:
                 log.info("collab ws: отказ (share-комната закрыта/не найдена) %s", spec.task_id)
-                return False
+                return (4404, "Комната не найдена или закрыта")
         elif not _task_exists(spec.task_id):
             log.warning("collab ws: отказ (нет задачи) %r", spec.task_id)
-            return False
+            return (4404, "Задача не найдена")
         if not room_allowed(user, spec):
             log.info(
                 "collab ws: отказ (acl) room=%s user=%s role=%s",
@@ -443,8 +458,12 @@ class CollabWSApp:
                 user.get("username"),
                 user.get("role"),
             )
-            return False
-        return True
+            return (4403, "Нет доступа к этой комнате")
+        return (0, "")
+
+    def _handshake_allowed(self, scope: dict, room: str | None) -> bool:
+        """Разрешён ли вход (обёртка над _handshake_reject для совместимости)."""
+        return self._handshake_reject(scope, room)[0] == 0
 
 
 # === REST-эндпоинты ===
