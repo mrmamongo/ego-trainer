@@ -156,7 +156,7 @@ test('session constants: retries, token close code and debounce', () => {
 // --- collabServerUrl ----------------------------------------------------------
 
 test('collabServerUrl derives ws/wss from the page origin', () => {
-	assert.equal(collabServerUrl({ protocol: 'https:', host: 'cogito.example' }), 'wss://cogito.example');
-	assert.equal(collabServerUrl({ protocol: 'http:', host: 'localhost:8000' }), 'ws://localhost:8000');
-	assert.equal(collabServerUrl({ protocol: 'file:', host: 'x' }), 'ws://x');
+	assert.equal(collabServerUrl({ protocol: 'https:', host: 'cogito.example' }), 'wss://cogito.example/collab/ws');
+	assert.equal(collabServerUrl({ protocol: 'http:', host: 'localhost:8000' }), 'ws://localhost:8000/collab/ws');
+	assert.equal(collabServerUrl({ protocol: 'file:', host: 'x' }), 'ws://x/collab/ws');
 });

@@ -106,8 +106,8 @@ export function fallbackPeerName(clientID: number): string {
  */
 export function collabServerUrl(locationLike?: { protocol: string; host: string }): string {
 	const loc = locationLike ?? (typeof window !== 'undefined' ? window.location : undefined);
-	if (!loc) return 'ws://localhost';
-	return (loc.protocol === 'https:' ? 'wss' : 'ws') + '://' + loc.host;
+	if (!loc) return 'ws://localhost/collab/ws';
+	return (loc.protocol === 'https:' ? 'wss' : 'ws') + '://' + loc.host + '/collab/ws';
 }
 
 /**
