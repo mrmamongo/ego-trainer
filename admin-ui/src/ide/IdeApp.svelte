@@ -15,6 +15,10 @@
     setIdeToken,
     getIdeToken,
     clearIdeToken,
+    authProviders,
+    startForgejo,
+    exchangeForgejo,
+    type AuthProviders,
   } from './api';
   import { workspaceStore } from './workspace';
 
@@ -41,19 +45,18 @@
   type TaskFull = TaskMeta & { stub_py?: string | null };
 
   type TestItem = {
-    name?: string;
     description?: string;
-    expected?: string;
-    actual?: string;
-    error?: string | null;
     passed?: boolean;
+    expected_repr?: string | null;
+    actual_repr?: string | null;
+    error?: string | null;
   };
 
   type CheckResult = {
     status?: string;
     passed_tests?: number;
     total_tests?: number;
-    tests?: TestItem[];
+    results?: TestItem[];
     error?: string | null;
     message?: string;
   };
@@ -62,7 +65,6 @@
 
   const SEARCH_DEBOUNCE_MS = 300;
   const AUTOSAVE_DEBOUNCE_MS = 400;
-  const LAST_OPENED_META_KEY = 'ego.ide.lastOpened';
 
   let screen = $state<Screen>('boot');
   let username = $state('');
@@ -70,6 +72,11 @@
   let passwordValue = $state('');
   let loginError = $state('');
   let loginBusy = $state(false);
+  let providers = $state<AuthProviders | null>(null);
+  let forgejoBusy = $state(false);
+  let forgejoAttempt = 0;
+  let forgejoPopup: Window | null = null;
+  let forgejoChannel: BroadcastChannel | null = null;
 
   let files = $state<WorkspaceFile[]>([]);
   let filesError = $state('');
@@ -218,7 +225,9 @@
       await workspaceStore.updateFile(fileId, { content });
       if (disposed) return;
       files = files.map((item) => (item.id === fileId ? { ...item, content } : item));
-      dirty = editor ? editor.getValue() !== content : false;
+      // «Грязь» пересчитываем только для активного файла: фоновый автосейв другого файла
+      // не должен помечать текущий.
+      if (activeFileId === fileId) dirty = editor ? editor.getValue() !== content : false;
       savedAt = new Date();
       storeNotice = '';
     } catch (e) {
@@ -259,18 +268,16 @@
   }
 
   function writeMeta(id: string) {
-    try { localStorage.setItem(LAST_OPENED_META_KEY, id); } catch { /* localStorage недоступен — пропускаем */ }
-    const storeApi = workspaceStore as unknown as { readMeta?: unknown; writeMeta?: (id: string) => void };
-    if (typeof storeApi.writeMeta === 'function') storeApi.writeMeta(id);
+    void workspaceStore.writeMeta({ lastOpenedFileId: id }).catch(() => { /* мета необязательна */ });
   }
 
-  function readMeta(): string | null {
-    const storeApi = workspaceStore as unknown as { readMeta?: () => string | null };
-    if (typeof storeApi.readMeta === 'function') {
-      const value = storeApi.readMeta();
-      if (typeof value === 'string' && value) return value;
+  async function readMetaLastOpened(): Promise<string | null> {
+    try {
+      const meta = await workspaceStore.readMeta();
+      return meta?.lastOpenedFileId ?? null;
+    } catch {
+      return null;
     }
-    try { return localStorage.getItem(LAST_OPENED_META_KEY); } catch { return null; }
   }
 
   async function refreshFiles(): Promise<WorkspaceFile[]> {
@@ -280,8 +287,8 @@
     return list;
   }
 
-  function pickActiveFile(list: WorkspaceFile[]): WorkspaceFile | null {
-    const last = readMeta();
+  async function pickActiveFile(list: WorkspaceFile[]): Promise<WorkspaceFile | null> {
+    const last = await readMetaLastOpened();
     if (last) {
       const restored = list.find((file) => file.id === last);
       if (restored) return restored;
@@ -353,7 +360,8 @@
       const list = await refreshFiles();
       if (disposed) return;
       if (wasActive) {
-        const next = pickActiveFile(list);
+        const next = await pickActiveFile(list);
+        if (disposed) return;
         activeFileId = next?.id ?? null;
         if (next && editorReady && editor) swapModel(next);
       }
@@ -380,7 +388,7 @@
       if (disposed) return;
       await refreshFiles();
       if (disposed) return;
-      openFile(created.id);
+      if (created && typeof created.id === 'string') openFile(created.id);
     } catch (e) {
       if (!disposed) exportError = (e as Error).message;
     } finally {
@@ -440,6 +448,77 @@
     }
   }
 
+  function cancelForgejo() {
+    forgejoAttempt++;
+    forgejoPopup?.close();
+    forgejoChannel?.close();
+    forgejoPopup = null;
+    forgejoChannel = null;
+    forgejoBusy = false;
+  }
+
+  async function forgejoLogin() {
+    const current = ++forgejoAttempt;
+    loginError = '';
+    forgejoBusy = true;
+    forgejoPopup = window.open('about:blank', '_blank');
+    if (!forgejoPopup) {
+      forgejoBusy = false;
+      loginError = 'Разреши открытие новой вкладки для входа через Forgejo.';
+      return;
+    }
+    forgejoPopup.opener = null;
+    const encode = (bytes: Uint8Array) =>
+      btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    try {
+      const verifier = encode(crypto.getRandomValues(new Uint8Array(32)));
+      const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+      const flow = await startForgejo(encode(new Uint8Array(digest)));
+      if (current !== forgejoAttempt) return;
+      if (new URL(flow.authorization_url).origin !== location.origin) {
+        throw new Error('Адрес входа не совпадает с адресом сервиса. Проверь EGO_PUBLIC_URL.');
+      }
+      let ticket = '';
+      let failed = false;
+      forgejoChannel = new BroadcastChannel('ego-forgejo-' + flow.state);
+      forgejoChannel.onmessage = (event: MessageEvent) => {
+        if ((event.data as { error?: string })?.error === 'login_failed') failed = true;
+        const value = (event.data as { ticket?: string })?.ticket;
+        if (typeof value === 'string' && /^[A-Za-z0-9_-]{43}$/.test(value)) ticket = value;
+      };
+      forgejoPopup.location.href = flow.authorization_url;
+      const deadline = Date.now() + flow.expires_in * 1000;
+      while (current === forgejoAttempt && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        if (current !== forgejoAttempt) return;
+        if (failed) throw new Error('Вход не завершён или регистрация закрыта. Попробуй снова или обратись к наставнику.');
+        if (!ticket) continue;
+        const result = await exchangeForgejo(flow.state, verifier, ticket);
+        if (current !== forgejoAttempt) return;
+        if (!result.pending) {
+          cancelForgejo();
+          if (disposed) return;
+          setIdeToken(result.access_token!);
+          await enterWorkspace();
+          return;
+        }
+      }
+      if (current === forgejoAttempt) throw new Error('Время входа истекло. Попробуй ещё раз.');
+    } catch (e) {
+      if (current === forgejoAttempt) {
+        loginError = (e as Error).message;
+        forgejoPopup?.close();
+        forgejoPopup = null;
+      }
+    } finally {
+      if (current === forgejoAttempt) {
+        forgejoChannel?.close();
+        forgejoChannel = null;
+        forgejoBusy = false;
+      }
+    }
+  }
+
   async function loadTasksOnce() {
     if (tasks.length > 0) return;
     try {
@@ -468,12 +547,13 @@
     try {
       const list = await refreshFiles();
       if (disposed) return;
-      const target = pickActiveFile(list);
+      const target = await pickActiveFile(list);
+      if (disposed) return;
       activeFileId = target?.id ?? null;
-      await loadTasksOnce();
     } catch (e) {
       if (!disposed) filesError = `Не удалось загрузить файлы: ${(e as Error).message}`;
     }
+    await loadTasksOnce();
   }
 
   function resetWorkspaceState() {
@@ -498,14 +578,13 @@
     clearIdeToken();
     username = '';
     resetWorkspaceState();
-    loginError = '';
     screen = 'login';
   }
 
   function handleSessionExpired() {
     if (screen !== 'ready') return;
-    loginError = 'Сессия истекла. Войди снова.';
     logout();
+    loginError = 'Сессия истекла. Войди снова.';
   }
 
   function createEditor(): () => void {
@@ -550,7 +629,9 @@
       },
     });
 
-    editor = monaco.editor.create(editorHost, {
+    const host = editorHost;
+    if (!host) return () => {};
+    editor = monaco.editor.create(host, {
       model: null,
       theme: 'cogito-dark',
       automaticLayout: true,
@@ -607,6 +688,13 @@
     return () => { if (searchTimer) { clearTimeout(searchTimer); searchTimer = undefined; } };
   });
 
+  // Результаты тестов относятся к файлу, для которого их запустили: при смене файла сбрасываем.
+  $effect(() => {
+    void activeFileId;
+    checkResult = null;
+    checkError = '';
+  });
+
   // Синхронизация модели Monaco с активным файлом. Модель — источник истины после создания,
   // поэтому содержимое из стора в неё не перезаписываем (иначе затираем правки пользователя).
   $effect(() => {
@@ -623,6 +711,9 @@
   onMount(() => {
     const onSessionExpired = () => handleSessionExpired();
     window.addEventListener('ego:ide-session-expired', onSessionExpired);
+    void authProviders()
+      .then((value) => { if (!disposed) providers = value; })
+      .catch(() => { if (!disposed) loginError = 'Не удалось получить способы входа. Обнови страницу.'; });
     if (getIdeToken()) {
       void enterWorkspace();
     } else {
@@ -630,6 +721,7 @@
     }
     return () => {
       disposed = true;
+      cancelForgejo();
       if (searchTimer) clearTimeout(searchTimer);
       if (autosaveTimer) clearTimeout(autosaveTimer);
       searchTimer = undefined;
@@ -654,10 +746,26 @@
         <div class="login-icon" aria-hidden="true"><span class="login-glyph">&lt;/&gt;</span></div>
         <h1>Cogito Workspace</h1>
         <p class="sub">Пиши код, запускай тесты и следи за прогрессом — в одном окне.</p>
-        <label class="admin-field">Логин<input type="text" bind:value={loginValue} placeholder="Имя пользователя" autocomplete="username" required disabled={loginBusy} /></label>
-        <label class="admin-field">Пароль<input type="password" bind:value={passwordValue} placeholder="Твой пароль" autocomplete="current-password" required disabled={loginBusy} /></label>
+        {#if providers?.forgejo}
+          <button class="login-submit forgejo" type="button" onclick={() => void forgejoLogin()} disabled={forgejoBusy || loginBusy}>
+            {forgejoBusy ? 'Ожидаю вход в Forgejo…' : 'Войти через Forgejo'}
+          </button>
+          {#if forgejoBusy}
+            <button class="login-submit ghost" type="button" onclick={cancelForgejo}>Отменить вход</button>
+          {/if}
+        {/if}
+        {#if providers?.forgejo && providers?.local}
+          <div class="login-divider"><span>или по логину</span></div>
+        {/if}
+        {#if providers?.local !== false}
+          <label class="admin-field">Логин<input type="text" bind:value={loginValue} placeholder="Имя пользователя" autocomplete="username" required disabled={loginBusy || forgejoBusy} /></label>
+          <label class="admin-field">Пароль<input type="password" bind:value={passwordValue} placeholder="Твой пароль" autocomplete="current-password" required disabled={loginBusy || forgejoBusy} /></label>
+          <button class="login-submit" type="submit" disabled={loginBusy || forgejoBusy}>{loginBusy ? 'Вхожу…' : 'Войти'}</button>
+        {/if}
+        {#if providers && !providers.forgejo && !providers.local}
+          <p class="sub">Вход пока не настроен. Обратись к наставнику.</p>
+        {/if}
         {#if loginError}<div class="login-error" role="alert">{loginError}</div>{/if}
-        <button class="login-submit" type="submit" disabled={loginBusy}>{loginBusy ? 'Вхожу…' : 'Войти'}</button>
       </form>
     </div>
   </div>
@@ -781,18 +889,18 @@
                   {/if}
                 </div>
                 {#if checkResult.error}<pre class="check-error">{checkResult.error}</pre>{/if}
-                {#if Array.isArray(checkResult.tests) && checkResult.tests.length > 0}
+                {#if Array.isArray(checkResult.results) && checkResult.results.length > 0}
                   <ul class="test-list">
-                    {#each checkResult.tests as test, index (index)}
+                    {#each checkResult.results as test, index (index)}
                       <li class="test-item">
                         <div class="test-item-head">
                           <span class="test-dot" class:passed={test.passed !== false} class:failed={test.passed === false}></span>
-                          <span class="test-desc">{test.description ?? test.name ?? `Тест ${index + 1}`}</span>
+                          <span class="test-desc">{test.description ?? `Тест ${index + 1}`}</span>
                         </div>
-                        {#if test.expected !== undefined || test.actual !== undefined}
+                        {#if test.expected_repr != null || test.actual_repr != null}
                           <div class="test-diff">
-                            {#if test.expected !== undefined}<div><small>Ожидалось</small><pre>{test.expected}</pre></div>{/if}
-                            {#if test.actual !== undefined}<div><small>Получено</small><pre>{test.actual}</pre></div>{/if}
+                            {#if test.expected_repr != null}<div><small>Ожидалось</small><pre>{test.expected_repr}</pre></div>{/if}
+                            {#if test.actual_repr != null}<div><small>Получено</small><pre>{test.actual_repr}</pre></div>{/if}
                           </div>
                         {/if}
                         {#if test.error}<pre class="check-error">{test.error}</pre>{/if}
@@ -844,6 +952,9 @@
   .login-submit { padding: 11px 16px; border: 1px solid transparent; border-radius: 8px; background: var(--primary); color: var(--primary-foreground); font-size: 14px; font-weight: 600; cursor: pointer; }
   .login-submit:hover:not(:disabled) { filter: brightness(1.08); }
   .login-submit:disabled { opacity: .55; cursor: default; }
+  .login-submit.ghost { background: transparent; border-color: var(--border); color: var(--foreground); font-weight: 500; }
+  .login-divider { display: flex; align-items: center; gap: 14px; color: var(--muted-foreground); font-size: 11px; }
+  .login-divider::before, .login-divider::after { content: ''; height: 1px; flex: 1; background: var(--border); }
   .login-error { padding: 10px 12px; border: 1px solid var(--destructive); border-radius: 8px; background: color-mix(in srgb, var(--destructive) 12%, transparent); color: var(--destructive); font-size: 13px; }
   @media (max-width: 600px) { .login-topbar { padding: 0 20px; } .login-content { padding: 28px 16px; } }
 
@@ -859,6 +970,7 @@
   .logout-btn:hover { background: var(--secondary); }
 
   .ide-body { display: grid; grid-template-columns: 300px minmax(0, 1fr) 340px; min-height: 0; }
+  .ide-body:has(> .tests-panel.collapsed) { grid-template-columns: 300px minmax(0, 1fr) auto; }
 
   /* ---------- Сайдбар ---------- */
   .sidebar { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; background: var(--card); border-right: 1px solid var(--border); }

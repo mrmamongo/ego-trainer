@@ -62,6 +62,22 @@ export interface MeResponse {
 	role: string;
 }
 
+export interface AuthProviders {
+	forgejo: boolean;
+	local: boolean;
+	registration: boolean;
+}
+
+export interface ForgejoFlow {
+	state: string;
+	authorization_url: string;
+	expires_in: number;
+}
+
+export interface ForgejoExchangeResult extends Partial<LoginResponse> {
+	pending?: boolean;
+}
+
 // === Client ===
 
 /** Typed view of the client returned by createIdeApi (runtime lives in apiCore.js). */
@@ -70,7 +86,10 @@ export interface IdeApi {
 	getToken(): string | null;
 	clearToken(): void;
 	request<T>(method: string, path: string, body?: unknown): Promise<T>;
+	authProviders(): Promise<AuthProviders>;
 	login(username: string, password: string): Promise<LoginResponse>;
+	startForgejo(codeChallenge: string): Promise<ForgejoFlow>;
+	exchangeForgejo(state: string, codeVerifier: string, ticket: string): Promise<ForgejoExchangeResult>;
 	me(): Promise<MeResponse>;
 	listTasks(): Promise<TaskMeta[]>;
 	getTask(taskId: string): Promise<TaskFull>;
@@ -129,9 +148,31 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 // === Endpoints ===
 
+/** GET /auth/providers — which login methods the server offers. */
+export async function authProviders(): Promise<AuthProviders> {
+	return request<AuthProviders>('GET', '/auth/providers');
+}
+
 /** POST /auth/login — also stores the returned access token for later calls. */
 export async function ideLogin(username: string, password: string): Promise<LoginResponse> {
 	return browserApi().login(username, password);
+}
+
+/** POST /auth/forgejo/start {client:'browser', code_challenge} — begin PKCE flow. */
+export async function startForgejo(codeChallenge: string): Promise<ForgejoFlow> {
+	return browserApi().startForgejo(codeChallenge);
+}
+
+/**
+ * POST /auth/forgejo/exchange — finish the PKCE flow; stores the token on
+ * success. A `{pending: true}` result means approval is still required.
+ */
+export async function exchangeForgejo(
+	state: string,
+	codeVerifier: string,
+	ticket: string,
+): Promise<ForgejoExchangeResult> {
+	return browserApi().exchangeForgejo(state, codeVerifier, ticket);
 }
 
 /** GET /auth/me */

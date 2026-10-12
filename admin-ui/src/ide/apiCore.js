@@ -83,9 +83,37 @@ export function createIdeApi(baseUrl, storage, fetchFn, eventTarget = null) {
     clearToken,
     request,
 
+    /** GET /auth/providers — which login methods the server offers. */
+    authProviders() {
+      return request('GET', '/auth/providers');
+    },
+
     /** POST /auth/login {username, password} — stores the access token. */
     async login(username, password) {
       const res = await request('POST', '/auth/login', { username, password });
+      if (res && res.access_token) setToken(res.access_token);
+      return res;
+    },
+
+    /** POST /auth/forgejo/start {client, code_challenge} — begin PKCE flow. */
+    startForgejo(codeChallenge) {
+      return request('POST', '/auth/forgejo/start', {
+        client: 'browser',
+        code_challenge: codeChallenge,
+      });
+    },
+
+    /**
+     * POST /auth/forgejo/exchange {state, code_verifier, ticket} — finish the
+     * PKCE flow; a `pending: true` result means registration approval is
+     * still required, keep polling with the same triplet.
+     */
+    async exchangeForgejo(state, codeVerifier, ticket) {
+      const res = await request('POST', '/auth/forgejo/exchange', {
+        state,
+        code_verifier: codeVerifier,
+        ticket,
+      });
       if (res && res.access_token) setToken(res.access_token);
       return res;
     },
