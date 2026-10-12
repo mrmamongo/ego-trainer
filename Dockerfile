@@ -31,7 +31,7 @@ COPY ego_tui/ ego_tui/
 
 # Build the application and all runtime dependencies as wheels. Development
 # tools and canonical task solutions are deliberately absent from the image.
-RUN pip wheel --wheel-dir /wheels ".[server,mcp]"
+RUN pip wheel --wheel-dir /wheels ".[server,mcp,collab]"
 
 FROM python:3.11-slim AS runtime
 
@@ -44,7 +44,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     EGO_TASKS_REPO_URL=/content \
     EGO_BIND_HOST=0.0.0.0 \
     EGO_BIND_PORT=8000 \
-    EGO_UVICORN_WORKERS=1
+    EGO_UVICORN_WORKERS=1 \
+    EGO_COLLAB_ENABLED=true
 
 RUN groupadd --gid 10001 ego \
     && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin ego \
@@ -52,7 +53,7 @@ RUN groupadd --gid 10001 ego \
     && chown -R ego:ego /var/lib/ego /content
 
 COPY --from=builder /wheels /wheels
-RUN pip install --no-index --find-links=/wheels "ego-trainer[server,mcp]" \
+RUN pip install --no-index --find-links=/wheels "ego-trainer[server,mcp,collab]" \
     && rm -rf /wheels
 
 # Expose the FastAPI port.
