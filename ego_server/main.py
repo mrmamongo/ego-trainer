@@ -17,6 +17,7 @@ from ego_server.db import init_db
 from ego_server.routers import ai as ai_router
 from ego_server.routers import admin as admin_router
 from ego_server.routers import (
+    admin_assistant,
     admin_settings,
     auth,
     check,
@@ -64,6 +65,7 @@ app.include_router(ai_router.router, prefix="/ai", tags=["ai"])
 app.include_router(ai_router.admin_router, prefix="/admin/ai", tags=["ai-admin"])
 app.include_router(admin_router.router, prefix="/admin", tags=["admin"])
 app.include_router(admin_settings.router, prefix="/admin", tags=["admin-settings"])
+app.include_router(admin_assistant.router, prefix="/admin", tags=["admin-assistant"])
 
 
 @app.exception_handler(RequestValidationError)
