@@ -3,8 +3,14 @@
   import * as monaco from 'monaco-editor/esm/vs/editor/editor.api';
   import 'monaco-editor/esm/vs/basic-languages/markdown/markdown.contribution';
   import 'monaco-editor/esm/vs/basic-languages/python/python.contribution';
+  // В IIFE-бандле ленивый loader() из contribution не исполняется — грамматика
+  // и конфиг python регистрируются вручную (модуль импортирован статически).
+  import { conf as pyConf, language as pyLang } from 'monaco-editor/esm/vs/basic-languages/python/python.js';
   import 'monaco-editor/esm/vs/editor/contrib/find/browser/findController';
   import 'monaco-editor/esm/vs/editor/contrib/folding/browser/folding';
+  import 'monaco-editor/esm/vs/editor/contrib/suggest/browser/suggestController';
+  import 'monaco-editor/esm/vs/editor/contrib/bracketMatching/browser/bracketMatching';
+  import 'monaco-editor/esm/vs/editor/contrib/hover/browser/hover';
   import 'monaco-editor/min/vs/editor/editor.main.css';
   import {
     ideLogin,
@@ -23,6 +29,7 @@
   import { workspaceStore } from './workspace';
   import { readIdeRoute, findIdeFileForTask, findIdeTaskForId, ideRoomUrl } from './route.js';
   import { getShareRoom, createShareRoom } from './api';
+  import { registerPythonCompletion } from './pyCompleteRun';
   import {
     IdeCollabSession,
     collabRoomFor,
@@ -836,6 +843,11 @@
     };
     environmentWindow.MonacoEnvironment = editorEnvironment;
 
+    // Ручная регистрация грамматики python (IIFE-бандл не исполняет ленивый
+    // loader из contribution). Идемпотентно: повторный вызов перезаписывает.
+    monaco.languages.setLanguageConfiguration('python', pyConf);
+    monaco.languages.setMonarchTokensProvider('python', pyLang);
+
     monaco.editor.defineTheme('cogito-dark', {
       base: 'vs-dark',
       inherit: true,
@@ -885,6 +897,8 @@
       if (!disposed) onEditorContentChange();
     });
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => saveNow());
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => void runTests());
+    registerPythonCompletion(monaco, editor);
     activeModelId = undefined;
     editorReady = true;
 
