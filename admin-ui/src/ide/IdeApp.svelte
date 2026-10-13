@@ -28,7 +28,17 @@
   } from './api';
   import { workspaceStore } from './workspace';
   import { readIdeRoute, findIdeFileForTask, findIdeTaskForId, ideRoomUrl } from './route.js';
-  import { getShareRoom, createShareRoom, runCode, type RunCodeResponse } from './api';
+  import {
+    getShareRoom,
+    createShareRoom,
+    runCode,
+    aiAccount,
+    aiCreateSession,
+    aiSendMessage,
+    type RunCodeResponse,
+    type AiAccount,
+    type AiSessionView,
+  } from './api';
   import { registerPythonCompletion } from './pyCompleteRun';
   import { buildWorkspaceZip, parseWorkspaceZip, languageForName } from './wsZip';
   import QuickPalette from './QuickPalette.svelte';
@@ -128,6 +138,19 @@
   let runRunning = $state(false);
   let runResult = $state<RunCodeResponse | null>(null);
   let runError = $state('');
+  // AI-разбор ошибки (только для файлов с задачей).
+  let aiHelpBusy = $state(false);
+  let aiHelpError = $state('');
+  let aiHelpSession = $state<AiSessionView | null>(null);
+  let aiHelpQuestion = $state('');
+  let aiAccountState = $state<AiAccount | null>(null);
+  /** Есть ли что разбирать: упавшие тесты или ошибка запуска. */
+  const hasFailureContext = $derived.by(() => {
+    if (checkResult && Array.isArray(checkResult.results) && checkResult.results.some((t) => t.passed === false)) return true;
+    if (runResult && (runResult.returncode !== 0 || runResult.timed_out)) return true;
+    if (checkResult && typeof checkResult.passed_tests === 'number' && checkResult.total_tests > 0 && checkResult.passed_tests < checkResult.total_tests) return true;
+    return false;
+  });
 
   let dirty = $state(false);
   let savedAt = $state<Date | null>(null);
@@ -765,6 +788,77 @@
     }
   }
 
+  // --- AI-разбор ошибки: кнопка у упавших тестов / ошибок запуска ---
+
+  const aiHelpAvailable = $derived(aiAccountState?.enabled === true);
+
+  async function loadAiAccountOnce() {
+    if (aiAccountState !== null) return;
+    try {
+      aiAccountState = await aiAccount();
+    } catch {
+      aiAccountState = { enabled: false, defense_required: false, available: false, reason: '', balance_usd: '0', reserved_usd: '0', spent_usd: '0' };
+    }
+  }
+
+  /** Первое сообщение в разбор: контекст ошибки + просьба объяснить. */
+  function buildAiPrompt(): string {
+    const parts: string[] = [];
+    if (checkResult && Array.isArray(checkResult.results)) {
+      for (const t of checkResult.results.filter((x) => x.passed === false).slice(0, 3)) {
+        parts.push(
+          `Упал тест «${t.description ?? ''}»: ожидалось ${t.expected_repr ?? '?'}, получено ${t.actual_repr ?? '?'}` +
+          (t.error ? `, ошибка: ${String(t.error).slice(0, 300)}` : ''),
+        );
+      }
+    }
+    if (runResult && (runResult.returncode !== 0 || runResult.timed_out)) {
+      parts.push(`Ошибка запуска${runResult.timed_out ? ' (таймаут)' : ''}: ${runResult.stderr.slice(0, 500)}`);
+    }
+    const base = parts.length > 0 ? parts.join('\n') : 'Не понимаю, почему решение не работает.';
+    return `${base}\nОбъясни, в чём проблема, и намекни направление исправления (без готового решения).`;
+  }
+
+  async function startAiHelp() {
+    const file = activeFile;
+    if (!file?.task_id || aiHelpBusy) return;
+    aiHelpBusy = true;
+    aiHelpError = '';
+    try {
+      if (!aiHelpSession || aiHelpSession.task_id !== file.task_id) {
+        aiHelpSession = await aiCreateSession(file.task_id, editorValue());
+      }
+      if (disposed) return;
+      aiHelpSession = await aiSendMessage(aiHelpSession.id, buildAiPrompt(), editorValue());
+    } catch (e) {
+      if (!disposed) aiHelpError = (e as Error).message;
+    } finally {
+      if (!disposed) aiHelpBusy = false;
+    }
+  }
+
+  async function sendAiQuestion() {
+    const file = activeFile;
+    const text = aiHelpQuestion.trim();
+    if (!file?.task_id || !aiHelpSession || !text || aiHelpBusy) return;
+    aiHelpBusy = true;
+    aiHelpError = '';
+    aiHelpQuestion = '';
+    try {
+      aiHelpSession = await aiSendMessage(aiHelpSession.id, text, editorValue());
+    } catch (e) {
+      if (!disposed) aiHelpError = (e as Error).message;
+    } finally {
+      if (!disposed) aiHelpBusy = false;
+    }
+  }
+
+  function closeAiHelp() {
+    aiHelpSession = null;
+    aiHelpError = '';
+    aiHelpQuestion = '';
+  }
+
   async function submitLogin(event: SubmitEvent) {
     event.preventDefault();
     if (!loginValue.trim() || !passwordValue) {
@@ -891,6 +985,7 @@
       if (!disposed) filesError = `Не удалось загрузить файлы: ${(e as Error).message}`;
     }
     await loadTasksOnce();
+    void loadAiAccountOnce();
     // Файлы и задачи загружены — можно разрешить ссылки /ide/task и /ide/room.
     const deepRoomId = pendingRoomId;
     if (deepRoomId && screen === 'ready') {
@@ -1433,6 +1528,35 @@
                   {#if !runResult.stdout && !runResult.stderr && !runResult.timed_out}<p class="run-note">Готово (без вывода)</p>{/if}
                 </div>
               {/if}
+              {#if aiHelpSession}
+                <div class="ai-help-card">
+                  <div class="ai-help-head">
+                    <strong>Разбор с ассистентом</strong>
+                    <button class="icon-btn" onclick={closeAiHelp} title="Закрыть разбор" aria-label="Закрыть разбор">×</button>
+                  </div>
+                  <div class="ai-help-messages">
+                    {#each aiHelpSession.messages as msg, i (i)}
+                      <p class="ai-msg {msg.role}">{msg.content}</p>
+                    {/each}
+                    {#if aiHelpBusy}<p class="ai-msg assistant pending">Думаю…</p>{/if}
+                  </div>
+                  <div class="ai-help-row">
+                    <input
+                      type="text"
+                      bind:value={aiHelpQuestion}
+                      placeholder="Спроси ещё…"
+                      onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void sendAiQuestion(); } }}
+                      disabled={aiHelpBusy}
+                    />
+                    <button class="mini-btn primary" onclick={() => void sendAiQuestion()} disabled={aiHelpBusy || !aiHelpQuestion.trim()}>Спросить</button>
+                  </div>
+                </div>
+              {:else if activeFile.task_id && hasFailureContext}
+                <button class="mini-btn ai-btn" onclick={() => void startAiHelp()} disabled={aiHelpBusy || !aiHelpAvailable} title={aiHelpAvailable ? 'Открыть разбор с AI-ассистентом' : (aiAccountState?.reason || 'Ассистент недоступен')}>
+                  {aiHelpBusy ? 'Спрашиваю…' : '🤖 Объяснить ошибку'}
+                </button>
+              {/if}
+              {#if aiHelpError}<p class="side-error" role="alert">{aiHelpError}</p>{/if}
               {#if activeFile.task_id}
                 {#if checkError}<p class="side-error" role="alert">{checkError}</p>{/if}
                 {#if checkResult}
@@ -1626,6 +1750,18 @@
   .run-output pre + pre { margin-top: 8px; }
   .ws-io { display: flex; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--border); }
   .ws-io .mini-btn { flex: 1; }
+  .ai-btn { margin-top: 10px; width: 100%; border-color: var(--primary); color: var(--primary); background: transparent; }
+  .ai-btn:disabled { opacity: .5; }
+  .ai-help-card { margin-top: 10px; display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--primary); border-radius: 8px; background: var(--card); }
+  .ai-help-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .ai-help-head strong { font-size: 12px; }
+  .ai-help-messages { display: grid; gap: 8px; max-height: 32dvh; overflow-y: auto; }
+  .ai-msg { margin: 0; padding: 8px 10px; border-radius: 8px; font-size: 12px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+  .ai-msg.assistant { background: var(--secondary); color: var(--foreground); }
+  .ai-msg.user { background: transparent; border: 1px solid var(--border); color: var(--muted-foreground); }
+  .ai-msg.pending { color: var(--muted-foreground); font-style: italic; }
+  .ai-help-row { display: flex; gap: 6px; }
+  .ai-help-row input { flex: 1; min-width: 0; padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--background); color: var(--foreground); font-size: 12px; font-family: inherit; }
   .run-btn:hover:not(:disabled) { filter: brightness(1.08); }
   .run-btn:disabled { opacity: .55; cursor: default; }
   .task-ref { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground); font-size: 11px; }

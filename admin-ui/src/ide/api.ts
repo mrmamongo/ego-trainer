@@ -219,6 +219,65 @@ export async function runCode(code: string): Promise<RunCodeResponse> {
 	return request<RunCodeResponse>('POST', '/run', { code });
 }
 
+// === AI tutor (server-side tutoring circuit) ===
+
+export interface AiAccount {
+	enabled: boolean;
+	defense_required: boolean;
+	available: boolean;
+	reason: string;
+	balance_usd: string;
+	reserved_usd: string;
+	spent_usd: string;
+}
+
+export interface AiSessionMessage {
+	role: string;
+	content: string;
+}
+
+export interface AiSessionView {
+	id: string;
+	task_id: string;
+	mode: string;
+	status: string;
+	stage: string;
+	messages: AiSessionMessage[];
+	account: AiAccount;
+}
+
+/** GET /ai/me — is the tutor available for the current user. */
+export async function aiAccount(): Promise<AiAccount> {
+	return request<AiAccount>('GET', '/ai/me');
+}
+
+/**
+ * POST /ai/sessions {task_id, mode:'explain', student_code} — открыть
+ * диалог-разбор; первый вопрос прилетает отдельным сообщением.
+ */
+export async function aiCreateSession(
+	taskId: string,
+	studentCode: string,
+): Promise<AiSessionView> {
+	return request<AiSessionView>('POST', '/ai/sessions', {
+		task_id: taskId,
+		mode: 'explain',
+		student_code: studentCode,
+	});
+}
+
+/** POST /ai/sessions/{id}/messages {text, student_code} — спросить ассистента. */
+export async function aiSendMessage(
+	sessionId: string,
+	text: string,
+	studentCode: string | null,
+): Promise<AiSessionView> {
+	return request<AiSessionView>('POST', `/ai/sessions/${sessionId}/messages`, {
+		text,
+		student_code: studentCode,
+	});
+}
+
 // === Collab share rooms (link-capability rooms) ===
 
 /** POST /collab/share {task_id, title} — mentor/admin creates a share room. */
