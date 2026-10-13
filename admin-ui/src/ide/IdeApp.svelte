@@ -129,6 +129,8 @@
   let sharedRoomId = $state<string | null>(null);
   let sharedRoomTaskId = $state<string | null>(null);
   let sharedRoomTitle = $state('');
+  // Мобильная раскладка: какая панель развёрнута на весь экран ('code' | 'files' | 'tests').
+  let mobilePane = $state<'code' | 'files' | 'tests'>('code');
 
   let editorHost = $state<HTMLDivElement>();
   let editor: monaco.editor.IStandaloneCodeEditor | undefined;
@@ -1063,7 +1065,7 @@
     </div>
   </div>
 {:else}
-  <main class="ide">
+  <main class="ide mobile-pane-{mobilePane}">
     <header class="ide-topbar">
       <div class="brand">
         <img src="/static/branding/cogito-mark.svg" alt="" width="30" height="30" />
@@ -1287,6 +1289,12 @@
       <span class:warn={dirty}>{autosaveLabel}</span>
       {#if storeNotice}<span class="side-error" role="alert">{storeNotice}</span>{/if}
     </footer>
+
+    <nav class="mobile-tabbar" aria-label="Разделы рабочей области">
+      <button class:active={mobilePane === 'files'} onclick={() => (mobilePane = 'files')}>Файлы</button>
+      <button class:active={mobilePane === 'code'} onclick={() => (mobilePane = 'code')}>Код</button>
+      <button class:active={mobilePane === 'tests'} onclick={() => (mobilePane = 'tests')}>Тесты</button>
+    </nav>
   </main>
 {/if}
 
@@ -1315,9 +1323,12 @@
   @media (max-width: 600px) { .login-topbar { padding: 0 20px; } .login-content { padding: 28px 16px; } }
 
   /* ---------- Каркас IDE ---------- */
-  .ide { height: 100dvh; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; background: var(--background); overflow: hidden; }
-  .ide-topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 16px; background: var(--card); border-bottom: 1px solid var(--border); }
-  .brand { display: flex; align-items: center; gap: 11px; }
+  .ide { height: 100dvh; display: flex; flex-direction: column; background: var(--background); overflow: hidden; }
+  .ide-body { flex: 1 1 auto; min-height: 0; min-width: 0; display: grid; grid-template-columns: 300px minmax(0, 1fr) 340px; }
+  .ide-topbar { flex-shrink: 0; }
+  .status-line { flex-shrink: 0; }
+  .mobile-tabbar { flex-shrink: 0; display: none; justify-content: stretch; background: var(--card); border-top: 1px solid var(--border); }
+  .ide-topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 16px; background: var(--card); border-bottom: 1px solid var(--border); }  .brand { display: flex; align-items: center; gap: 11px; }
   .brand strong { display: block; font-size: 15px; letter-spacing: -.03em; }
   .brand small { display: block; color: var(--muted-foreground); font-size: 11px; }
   .account { display: flex; align-items: center; gap: 12px; }
@@ -1325,7 +1336,6 @@
   .logout-btn { padding: 7px 14px; border: 1px solid var(--border); border-radius: 8px; background: transparent; color: var(--foreground); font-size: 12px; font-weight: 500; cursor: pointer; }
   .logout-btn:hover { background: var(--secondary); }
 
-  .ide-body { display: grid; grid-template-columns: 300px minmax(0, 1fr) 340px; min-height: 0; min-width: 0; }
   .ide-body:has(> .tests-panel.collapsed) { grid-template-columns: 300px minmax(0, 1fr) auto; }
 
   /* ---------- Сайдбар ---------- */
@@ -1451,19 +1461,40 @@
   @media (max-width: 1100px) {
     .ide-body { grid-template-columns: 260px minmax(0, 1fr) 300px; }
   }
-  /* Узкие экраны: один столбец, каждая панель ограничена и скроллит себя,
-     страница целиком не скроллится (иначе сайдбар «вылезает» на всю высоту). */
+  /* Узкие экраны: одна панель на весь экран, переключение нижним навбаром.
+     Каждая панель занимает ровно свой слой (position absolute), страница
+     не скроллится вовсе. */
   @media (max-width: 900px) {
-    .ide { height: 100dvh; overflow: hidden; }
-    .ide-topbar { flex-wrap: wrap; row-gap: 6px; padding: 8px 12px; min-width: 0; }
-    .brand { min-width: 0; }
-    .topbar-collab { min-width: 0; }
-    .topbar-collab button { max-width: 100%; }
-    .account { min-width: 0; }
-    .account-name { max-width: 26vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .ide-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto auto; }
-    .sidebar { grid-column: 1; grid-row: 2; max-height: 34dvh; min-height: 0; border-right: 0; border-top: 1px solid var(--border); overflow-y: auto; }
-    .editor-pane { grid-column: 1; grid-row: 1; min-height: 0; }
-    .tests-panel, .tests-panel.collapsed { grid-column: 1; grid-row: 3; border-left: 0; border-top: 1px solid var(--border); max-height: 26dvh; }
+    .ide { height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+    .ide-body {
+      position: relative;
+      flex: 1 1 auto;
+      min-height: 0;
+      display: block;
+    }
+    .sidebar, .editor-pane, .tests-panel {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      max-width: none;
+      max-height: none;
+      min-width: 0;
+      min-height: 0;
+      border-left: 0;
+      border-right: 0;
+      border-top: 0;
+      overflow-y: auto;
+      visibility: hidden;
+      pointer-events: none;
+    }
+    /* Видима только выбранная навбаром панель. */
+    .mobile-pane-files .sidebar { visibility: visible; pointer-events: auto; }
+    .mobile-pane-code .editor-pane { visibility: visible; pointer-events: auto; }
+    .mobile-pane-tests .tests-panel { visibility: visible; pointer-events: auto; }
+    .mobile-tabbar { display: flex; }
+    /* Баннер ссылки и hint по-прежнему живут в editor-pane. */
+    .account-name { max-width: 30vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   }
+  .mobile-tabbar button { flex: 1; padding: 11px 8px 12px; background: transparent; border: 0; border-top: 2px solid transparent; color: var(--muted-foreground); font-size: 12px; font-weight: 600; cursor: pointer; }
+  .mobile-tabbar button.active { color: var(--foreground); border-top-color: var(--primary); background: var(--secondary); }
 </style>
