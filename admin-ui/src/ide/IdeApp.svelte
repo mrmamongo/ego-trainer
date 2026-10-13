@@ -1315,7 +1315,7 @@
   @media (max-width: 600px) { .login-topbar { padding: 0 20px; } .login-content { padding: 28px 16px; } }
 
   /* ---------- Каркас IDE ---------- */
-  .ide { height: 100dvh; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; background: var(--background); }
+  .ide { height: 100dvh; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; background: var(--background); overflow: hidden; }
   .ide-topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 10px 16px; background: var(--card); border-bottom: 1px solid var(--border); }
   .brand { display: flex; align-items: center; gap: 11px; }
   .brand strong { display: block; font-size: 15px; letter-spacing: -.03em; }
@@ -1325,11 +1325,11 @@
   .logout-btn { padding: 7px 14px; border: 1px solid var(--border); border-radius: 8px; background: transparent; color: var(--foreground); font-size: 12px; font-weight: 500; cursor: pointer; }
   .logout-btn:hover { background: var(--secondary); }
 
-  .ide-body { display: grid; grid-template-columns: 300px minmax(0, 1fr) 340px; min-height: 0; }
+  .ide-body { display: grid; grid-template-columns: 300px minmax(0, 1fr) 340px; min-height: 0; min-width: 0; }
   .ide-body:has(> .tests-panel.collapsed) { grid-template-columns: 300px minmax(0, 1fr) auto; }
 
   /* ---------- Сайдбар ---------- */
-  .sidebar { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; background: var(--card); border-right: 1px solid var(--border); }
+  .sidebar { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow-y: auto; background: var(--card); border-right: 1px solid var(--border); }
   .side-section { display: flex; flex-direction: column; min-height: 0; padding: 14px 12px 16px; }
   .side-section.grow { flex: 1; }
   .side-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
@@ -1382,7 +1382,7 @@
   .editor-empty .hint { font-size: 12px; }
 
   /* ---------- Тесты ---------- */
-  .tests-panel { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; background: var(--card); border-left: 1px solid var(--border); }
+  .tests-panel { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow-y: auto; background: var(--card); border-left: 1px solid var(--border); }
   .tests-panel.collapsed { overflow: hidden; }
   .tests-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 14px; position: sticky; top: 0; background: var(--card); border-bottom: 1px solid var(--border); }
   .tests-head h2 { margin: 0; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted-foreground); }
@@ -1451,10 +1451,19 @@
   @media (max-width: 1100px) {
     .ide-body { grid-template-columns: 260px minmax(0, 1fr) 300px; }
   }
+  /* Узкие экраны: один столбец, каждая панель ограничена и скроллит себя,
+     страница целиком не скроллится (иначе сайдбар «вылезает» на всю высоту). */
   @media (max-width: 900px) {
-    .ide-body { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
-    .sidebar { grid-row: 1 / 3; border-right: 1px solid var(--border); }
-    .editor-pane { grid-column: 2; grid-row: 1; }
-    .tests-panel, .tests-panel.collapsed { grid-column: 2; grid-row: 2; border-left: 0; border-top: 1px solid var(--border); max-height: 42dvh; }
+    .ide { height: 100dvh; overflow: hidden; }
+    .ide-topbar { flex-wrap: wrap; row-gap: 6px; padding: 8px 12px; min-width: 0; }
+    .brand { min-width: 0; }
+    .topbar-collab { min-width: 0; }
+    .topbar-collab button { max-width: 100%; }
+    .account { min-width: 0; }
+    .account-name { max-width: 26vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ide-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto auto; }
+    .sidebar { grid-column: 1; grid-row: 2; max-height: 34dvh; min-height: 0; border-right: 0; border-top: 1px solid var(--border); overflow-y: auto; }
+    .editor-pane { grid-column: 1; grid-row: 1; min-height: 0; }
+    .tests-panel, .tests-panel.collapsed { grid-column: 1; grid-row: 3; border-left: 0; border-top: 1px solid var(--border); max-height: 26dvh; }
   }
 </style>
