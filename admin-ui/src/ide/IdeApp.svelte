@@ -1367,15 +1367,15 @@
   .task-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 
   /* ---------- Редактор ---------- */
-  .editor-pane { display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; min-height: 0; }
-  .editor-pane:has(> .route-banner) { grid-template-rows: auto auto minmax(0, 1fr); }
+  .editor-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .editor-stack { position: relative; flex: 1 1 auto; min-height: 0; }
+  .route-banner, .editor-tabs { flex-shrink: 0; }
   .route-banner { padding: 6px 14px; background: var(--card); border-bottom: 1px solid var(--border); color: var(--muted-foreground); font-size: 12px; overflow-wrap: anywhere; }
   .route-banner.error { color: var(--destructive); }
   .editor-tabs { display: flex; align-items: stretch; background: var(--card); border-bottom: 1px solid var(--border); }
   .editor-tab { display: flex; align-items: center; gap: 7px; padding: 8px 14px; font-size: 12px; color: var(--muted-foreground); border-right: 1px solid var(--border); background: var(--card); }
   .editor-tab.active { color: var(--foreground); box-shadow: inset 0 -2px var(--primary); }
   .tab-dirty { color: var(--warning); }
-  .editor-stack { position: relative; min-height: 0; }
   .monaco-host { position: absolute; inset: 0; overflow: hidden; }
   .editor-empty { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 8px; padding: 40px; background: var(--background); color: var(--muted-foreground); text-align: center; }
   .editor-empty p { margin: 0; font-size: 15px; }
