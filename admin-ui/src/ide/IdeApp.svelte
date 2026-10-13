@@ -131,6 +131,27 @@
   let sharedRoomTitle = $state('');
   // Мобильная раскладка: какая панель развёрнута на весь экран ('code' | 'files' | 'tests').
   let mobilePane = $state<'code' | 'files' | 'tests'>('code');
+  // Ширина сайдбара (resizable через перетаскивание разделителя), px.
+  const SIDEBAR_WIDTH_KEY = 'ego.ide.sidebarWidth';
+  let sidebarWidth = $state<number>(Number(localStorage.getItem(SIDEBAR_WIDTH_KEY)) || 300);
+  let resizingSidebar = $state(false);
+
+  function startSidebarResize(event: PointerEvent) {
+    event.preventDefault();
+    resizingSidebar = true;
+    const move = (e: PointerEvent) => {
+      const w = Math.min(560, Math.max(200, e.clientX));
+      sidebarWidth = Math.round(w);
+    };
+    const up = () => {
+      resizingSidebar = false;
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth)); } catch { /* приватный режим */ }
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }
 
   let editorHost = $state<HTMLDivElement>();
   let editor: monaco.editor.IStandaloneCodeEditor | undefined;
@@ -1065,7 +1086,7 @@
     </div>
   </div>
 {:else}
-  <main class="ide mobile-pane-{mobilePane}">
+  <main class="ide mobile-pane-{mobilePane}" style="--sidebar-w: {sidebarWidth}px">
     <header class="ide-topbar">
       <div class="brand">
         <img src="/static/branding/cogito-mark.svg" alt="" width="30" height="30" />
@@ -1176,6 +1197,15 @@
           {/if}
         </section>
       </aside>
+
+      <div
+        class="sidebar-resizer"
+        class:active={resizingSidebar}
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Изменить ширину панели файлов"
+        onpointerdown={startSidebarResize}
+      ></div>
 
       <section class="editor-pane">
         {#if routeNotice || routeError}
@@ -1299,6 +1329,14 @@
 {/if}
 
 <style>
+  /* ---------- Тонкие скроллбары ---------- */
+  .ide :global(*) { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+  .ide :global(*::-webkit-scrollbar) { width: 8px; height: 8px; }
+  .ide :global(*::-webkit-scrollbar-track) { background: transparent; }
+  .ide :global(*::-webkit-scrollbar-thumb) { background: var(--border); border-radius: 4px; }
+  .ide :global(*::-webkit-scrollbar-thumb:hover) { background: var(--muted-foreground); }
+  .ide :global(*::-webkit-scrollbar-corner) { background: transparent; }
+
   .ide-boot { min-height: 100dvh; display: grid; place-items: center; color: var(--muted-foreground); }
 
   /* ---------- Вход ---------- */
@@ -1324,7 +1362,10 @@
 
   /* ---------- Каркас IDE ---------- */
   .ide { height: 100dvh; display: flex; flex-direction: column; background: var(--background); overflow: hidden; }
-  .ide-body { flex: 1 1 auto; min-height: 0; min-width: 0; display: grid; grid-template-columns: 300px minmax(0, 1fr) 340px; }
+  .ide-body { flex: 1 1 auto; min-height: 0; min-width: 0; display: grid; grid-template-columns: minmax(200px, var(--sidebar-w, 300px)) minmax(0, 1fr) 340px; position: relative; }
+  .sidebar-resizer { position: absolute; left: calc(var(--sidebar-w, 300px) - 3px); top: 0; bottom: 0; width: 6px; z-index: 5; cursor: col-resize; touch-action: none; }
+  .sidebar-resizer::after { content: ''; display: block; width: 2px; height: 100%; margin: 0 auto; background: transparent; transition: background .15s; }
+  .sidebar-resizer:hover::after, .sidebar-resizer.active::after { background: var(--primary); }
   .ide-topbar { flex-shrink: 0; }
   .status-line { flex-shrink: 0; }
   .mobile-tabbar { flex-shrink: 0; display: none; justify-content: stretch; background: var(--card); border-top: 1px solid var(--border); }
@@ -1336,7 +1377,8 @@
   .logout-btn { padding: 7px 14px; border: 1px solid var(--border); border-radius: 8px; background: transparent; color: var(--foreground); font-size: 12px; font-weight: 500; cursor: pointer; }
   .logout-btn:hover { background: var(--secondary); }
 
-  .ide-body:has(> .tests-panel.collapsed) { grid-template-columns: 300px minmax(0, 1fr) auto; }
+  .ide-body:has(> .tests-panel.collapsed) { grid-template-columns: minmax(200px, var(--sidebar-w, 300px)) minmax(0, 1fr) auto; }
+  @media (max-width: 900px) { .sidebar-resizer { display: none; } }
 
   /* ---------- Сайдбар ---------- */
   .sidebar { display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow-y: auto; background: var(--card); border-right: 1px solid var(--border); }
@@ -1459,7 +1501,7 @@
   .status-line .warn { color: var(--warning); }
 
   @media (max-width: 1100px) {
-    .ide-body { grid-template-columns: 260px minmax(0, 1fr) 300px; }
+    .ide-body { grid-template-columns: minmax(200px, calc(var(--sidebar-w, 300px) * 0.87)) minmax(0, 1fr) 300px; }
   }
   /* Узкие экраны: одна панель на весь экран, переключение нижним навбаром.
      Каждая панель занимает ровно свой слой (position absolute), страница
