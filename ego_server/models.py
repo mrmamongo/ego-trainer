@@ -87,6 +87,22 @@ class CheckRequest(BaseModel):
     student_code: str
 
 
+class RunCodeRequest(BaseModel):
+    """Request body for POST /run — execute code in the sandbox (IDE Run)."""
+
+    code: str
+
+
+class RunCodeResponse(BaseModel):
+    """Response from POST /run — raw sandbox output."""
+
+    stdout: str
+    stderr: str
+    returncode: int
+    timed_out: bool = False
+    blocked_import: str | None = None
+
+
 class TestResultDTO(BaseModel):
     """One test result in a CheckResponse."""
 

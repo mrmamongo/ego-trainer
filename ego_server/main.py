@@ -23,6 +23,7 @@ from ego_server.routers import (
     check,
     forgejo_auth,
     progress,
+    run as run_router,
     tasks,
 )
 
@@ -65,6 +66,7 @@ app.include_router(forgejo_auth.router, prefix="/auth", tags=["auth"])
 app.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
 app.include_router(progress.router, prefix="/progress", tags=["progress"])
 app.include_router(check.router, prefix="/check", tags=["check"])
+app.include_router(run_router.router, prefix="/run", tags=["run"])
 app.include_router(ai_router.router, prefix="/ai", tags=["ai"])
 app.include_router(ai_router.admin_router, prefix="/admin/ai", tags=["ai-admin"])
 app.include_router(admin_router.router, prefix="/admin", tags=["admin"])

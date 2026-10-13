@@ -206,6 +206,19 @@ export async function runCheck(taskId: string, studentCode: string): Promise<Che
 	});
 }
 
+export interface RunCodeResponse {
+	stdout: string;
+	stderr: string;
+	returncode: number;
+	timed_out: boolean;
+	blocked_import: string | null;
+}
+
+/** POST /run {code} — execute Python in the sandbox (IDE Run button). */
+export async function runCode(code: string): Promise<RunCodeResponse> {
+	return request<RunCodeResponse>('POST', '/run', { code });
+}
+
 // === Collab share rooms (link-capability rooms) ===
 
 /** POST /collab/share {task_id, title} — mentor/admin creates a share room. */

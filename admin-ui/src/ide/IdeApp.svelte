@@ -28,8 +28,11 @@
   } from './api';
   import { workspaceStore } from './workspace';
   import { readIdeRoute, findIdeFileForTask, findIdeTaskForId, ideRoomUrl } from './route.js';
-  import { getShareRoom, createShareRoom } from './api';
+  import { getShareRoom, createShareRoom, runCode, type RunCodeResponse } from './api';
   import { registerPythonCompletion } from './pyCompleteRun';
+  import { buildWorkspaceZip, parseWorkspaceZip, languageForName } from './wsZip';
+  import QuickPalette from './QuickPalette.svelte';
+  import { buildPaletteItems, type PaletteItem } from './paletteItems';
   import {
     IdeCollabSession,
     collabRoomFor,
@@ -121,6 +124,10 @@
   let checkResult = $state<CheckResult | null>(null);
   let checkError = $state('');
   let bindTaskId = $state('');
+  // Запуск кода (Run): вывод песочницы под редактором.
+  let runRunning = $state(false);
+  let runResult = $state<RunCodeResponse | null>(null);
+  let runError = $state('');
 
   let dirty = $state(false);
   let savedAt = $state<Date | null>(null);
@@ -158,6 +165,104 @@
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+  }
+
+  // --- Экспорт/импорт воркспейса (zip) ---
+  let wsBusy = $state<'export' | 'import' | null>(null);
+  let wsIoError = $state('');
+  let importInput = $state<HTMLInputElement | undefined>(undefined);
+
+  async function exportWorkspace() {
+    if (wsBusy || files.length === 0) return;
+    wsBusy = 'export';
+    wsIoError = '';
+    try {
+      const bytes = buildWorkspaceZip(files.map((f) => ({ name: f.name, language: f.language, content: f.content ?? '' })));
+      const blob = new Blob([bytes], { type: 'application/zip' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'cogito-workspace.zip';
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      if (!disposed) wsIoError = `Экспорт не удался: ${(e as Error).message}`;
+    } finally {
+      if (!disposed) wsBusy = null;
+    }
+  }
+
+  async function importWorkspace(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file || wsBusy) return;
+    wsBusy = 'import';
+    wsIoError = '';
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const records = parseWorkspaceZip(bytes);
+      let imported = 0;
+      for (const rec of records) {
+        try {
+          await workspaceStore.createFile({ name: rec.name, language: rec.language, content: rec.content });
+          imported += 1;
+        } catch { /* дубль имени — пропускаем, идём дальше */ }
+      }
+      await refreshFiles();
+      if (disposed) return;
+      showRouteNotice(imported > 0 ? `Импортировано файлов: ${imported}` : 'Новых файлов нет (имена уже заняты)');
+    } catch (e) {
+      if (!disposed) wsIoError = `Импорт не удался: ${(e as Error).message}`;
+    } finally {
+      if (!disposed) wsBusy = null;
+    }
+  }
+
+  // --- Ctrl+P: быстрая палитра ---
+  let paletteOpen = $state(false);
+  let paletteQuery = $state('');
+  const paletteCommands = $derived.by(() => {
+    const cmds = [
+      { id: 'run', label: 'Запустить код' },
+      { id: 'tests', label: 'Запустить тесты' },
+      { id: 'export', label: 'Экспорт воркспейса (zip)' },
+      { id: 'import', label: 'Импорт воркспейса (zip)' },
+      { id: 'newfile', label: 'Новый файл' },
+    ];
+    if (activeFile?.task_id) cmds.push({ id: 'room', label: 'Создать комнату со ссылкой' });
+    return cmds;
+  });
+  const paletteItems = $derived(
+    buildPaletteItems({
+      query: paletteQuery,
+      files: files.map((f) => ({ id: f.id, name: f.name })),
+      tasks: tasks.map((t) => ({ task_id: t.task_id, title: t.title, block: t.block })),
+      commands: paletteCommands,
+    }),
+  );
+
+  function openPalette() {
+    paletteQuery = '';
+    paletteOpen = true;
+  }
+
+  function onPaletteSelect(item: PaletteItem) {
+    paletteOpen = false;
+    if (item.kind === 'file') {
+      openFile(item.id.slice('file:'.length));
+    } else if (item.kind === 'task') {
+      const task = findIdeTaskForId(tasks, item.id.slice('task:'.length));
+      if (task) void exportTask(task);
+    } else {
+      const cmd = item.id.slice('cmd:'.length);
+      if (cmd === 'run') void runCodeNow();
+      else if (cmd === 'tests') void runTests();
+      else if (cmd === 'export') void exportWorkspace();
+      else if (cmd === 'import') importInput?.click();
+      else if (cmd === 'newfile') startCreate();
+      else if (cmd === 'room') void createRoomForActiveTask();
+    }
   }
 
   let editorHost = $state<HTMLDivElement>();
@@ -642,6 +747,24 @@
     }
   }
 
+  /** Запуск произвольного кода в песочнице (Ctrl+Enter) — вывод под редактором. */
+  async function runCodeNow() {
+    const file = activeFile;
+    if (!file || runRunning) return;
+    runRunning = true;
+    runError = '';
+    runResult = null;
+    try {
+      const result = await runCode(editorValue());
+      if (disposed) return;
+      runResult = result;
+    } catch (e) {
+      if (!disposed) runError = (e as Error).message;
+    } finally {
+      if (!disposed) runRunning = false;
+    }
+  }
+
   async function submitLogin(event: SubmitEvent) {
     event.preventDefault();
     if (!loginValue.trim() || !passwordValue) {
@@ -897,7 +1020,7 @@
       if (!disposed) onEditorContentChange();
     });
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => saveNow());
-    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => void runTests());
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => void runCodeNow());
     registerPythonCompletion(monaco, editor);
     activeModelId = undefined;
     editorReady = true;
@@ -1033,6 +1156,14 @@
   onMount(() => {
     const onSessionExpired = () => handleSessionExpired();
     window.addEventListener('ego:ide-session-expired', onSessionExpired);
+    // Ctrl+P — быстрая палитра (только в готовом воркспейсе).
+    const onKeydown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p' && screen === 'ready') {
+        e.preventDefault();
+        openPalette();
+      }
+    };
+    window.addEventListener('keydown', onKeydown);
     void authProviders()
       .then((value) => { if (!disposed) providers = value; })
       .catch(() => { if (!disposed) loginError = 'Не удалось получить способы входа. Обнови страницу.'; });
@@ -1057,6 +1188,7 @@
       autosaveTimer = undefined;
       routeNoticeTimer = undefined;
       window.removeEventListener('ego:ide-session-expired', onSessionExpired);
+      window.removeEventListener('keydown', onKeydown);
     };
   });
 </script>
@@ -1187,6 +1319,12 @@
               {/each}
             </ul>
           {/if}
+          <div class="ws-io">
+            <button class="mini-btn" onclick={() => void exportWorkspace()} disabled={files.length === 0 || !!wsBusy}>{wsBusy === 'export' ? 'Экспортирую…' : 'Экспорт zip'}</button>
+            <button class="mini-btn" onclick={() => importInput?.click()} disabled={!!wsBusy}>{wsBusy === 'import' ? 'Импортирую…' : 'Импорт zip'}</button>
+            <input type="file" accept=".zip,application/zip" hidden bind:this={importInput} onchange={(e) => void importWorkspace(e)} />
+          </div>
+          {#if wsIoError}<p class="side-error" role="alert">{wsIoError}</p>{/if}
         </section>
 
         <section class="side-section grow">
@@ -1277,52 +1415,67 @@
             {/if}
             {#if !activeFile}
               <p class="side-empty">Открой файл, чтобы работать с тестами.</p>
-            {:else if activeFile.task_id}
-              <div class="test-run-row">
-                <button class="run-btn" onclick={() => void runTests()} disabled={checkRunning}>{checkRunning ? 'Запускаю…' : 'Запустить тесты'}</button>
-                <span class="task-ref" title={activeFile.task_id}>{activeFile.task_id}</span>
-              </div>
-              {#if checkError}<p class="side-error" role="alert">{checkError}</p>{/if}
-              {#if checkResult}
-                <div class="check-summary">
-                  {#if statusTone}<span class="status-badge {statusTone}">{statusLabel}</span>{/if}
-                  {#if typeof checkResult.passed_tests === 'number'}
-                    <span class="check-score">{checkResult.passed_tests}/{checkResult.total_tests} тестов пройдено</span>
-                  {/if}
-                </div>
-                {#if checkResult.error}<pre class="check-error">{checkResult.error}</pre>{/if}
-                {#if Array.isArray(checkResult.results) && checkResult.results.length > 0}
-                  <ul class="test-list">
-                    {#each checkResult.results as test, index (index)}
-                      <li class="test-item">
-                        <div class="test-item-head">
-                          <span class="test-dot" class:passed={test.passed !== false} class:failed={test.passed === false}></span>
-                          <span class="test-desc">{test.description ?? `Тест ${index + 1}`}</span>
-                        </div>
-                        {#if test.expected_repr != null || test.actual_repr != null}
-                          <div class="test-diff">
-                            {#if test.expected_repr != null}<div><small>Ожидалось</small><pre>{test.expected_repr}</pre></div>{/if}
-                            {#if test.actual_repr != null}<div><small>Получено</small><pre>{test.actual_repr}</pre></div>{/if}
-                          </div>
-                        {/if}
-                        {#if test.error}<pre class="check-error">{test.error}</pre>{/if}
-                      </li>
-                    {/each}
-                  </ul>
-                {/if}
-              {/if}
             {:else}
-              <p class="bind-hint">Файл не привязан к задаче</p>
-              <div class="bind-row">
-                <select bind:value={bindTaskId} aria-label="Выбрать задачу">
-                  <option value="">— выбери задачу —</option>
-                  {#each filteredTasks as task (task.task_id)}
-                    <option value={task.task_id}>{[task.block, task.title ?? task.task_id].filter(Boolean).join(' · ')}</option>
-                  {/each}
-                </select>
-                <button class="mini-btn primary" onclick={() => void submitBind()} disabled={!bindTaskId}>Привязать</button>
+              <div class="test-run-row">
+                <button class="run-btn" onclick={() => void runCodeNow()} disabled={runRunning} title="Ctrl+Enter">{runRunning ? 'Выполняю…' : '▶ Запустить'}</button>
+                {#if activeFile.task_id}
+                  <button class="run-btn secondary" onclick={() => void runTests()} disabled={checkRunning}>{checkRunning ? 'Запускаю…' : 'Тесты'}</button>
+                  <span class="task-ref" title={activeFile.task_id}>{activeFile.task_id}</span>
+                {/if}
               </div>
-              {#if checkError}<p class="side-error" role="alert">{checkError}</p>{/if}
+              {#if runError}<p class="side-error" role="alert">{runError}</p>{/if}
+              {#if runResult}
+                <div class="run-output" class:err={runResult.returncode !== 0 || runResult.timed_out}>
+                  {#if runResult.timed_out}<p class="run-note">Превышено время выполнения</p>{/if}
+                  {#if runResult.blocked_import}<p class="run-note">Ограниченный импорт: {runResult.blocked_import}</p>{/if}
+                  {#if runResult.stdout}<pre class="run-stdout">{runResult.stdout}</pre>{/if}
+                  {#if runResult.stderr}<pre class="run-stderr">{runResult.stderr}</pre>{/if}
+                  {#if !runResult.stdout && !runResult.stderr && !runResult.timed_out}<p class="run-note">Готово (без вывода)</p>{/if}
+                </div>
+              {/if}
+              {#if activeFile.task_id}
+                {#if checkError}<p class="side-error" role="alert">{checkError}</p>{/if}
+                {#if checkResult}
+                  <div class="check-summary">
+                    {#if statusTone}<span class="status-badge {statusTone}">{statusLabel}</span>{/if}
+                    {#if typeof checkResult.passed_tests === 'number'}
+                      <span class="check-score">{checkResult.passed_tests}/{checkResult.total_tests} тестов пройдено</span>
+                    {/if}
+                  </div>
+                  {#if checkResult.error}<pre class="check-error">{checkResult.error}</pre>{/if}
+                  {#if Array.isArray(checkResult.results) && checkResult.results.length > 0}
+                    <ul class="test-list">
+                      {#each checkResult.results as test, index (index)}
+                        <li class="test-item">
+                          <div class="test-item-head">
+                            <span class="test-dot" class:passed={test.passed !== false} class:failed={test.passed === false}></span>
+                            <span class="test-desc">{test.description ?? `Тест ${index + 1}`}</span>
+                          </div>
+                          {#if test.expected_repr != null || test.actual_repr != null}
+                            <div class="test-diff">
+                              {#if test.expected_repr != null}<div><small>Ожидалось</small><pre>{test.expected_repr}</pre></div>{/if}
+                              {#if test.actual_repr != null}<div><small>Получено</small><pre>{test.actual_repr}</pre></div>{/if}
+                            </div>
+                          {/if}
+                          {#if test.error}<pre class="check-error">{test.error}</pre>{/if}
+                        </li>
+                      {/each}
+                    </ul>
+                  {/if}
+                {/if}
+              {:else}
+                <p class="bind-hint">Файл не привязан к задаче</p>
+                <div class="bind-row">
+                  <select bind:value={bindTaskId} aria-label="Выбрать задачу">
+                    <option value="">— выбери задачу —</option>
+                    {#each filteredTasks as task (task.task_id)}
+                      <option value={task.task_id}>{[task.block, task.title ?? task.task_id].filter(Boolean).join(' · ')}</option>
+                    {/each}
+                  </select>
+                  <button class="mini-btn primary" onclick={() => void submitBind()} disabled={!bindTaskId}>Привязать</button>
+                </div>
+                {#if checkError}<p class="side-error" role="alert">{checkError}</p>{/if}
+              {/if}
             {/if}
           </div>
         {/if}
@@ -1340,6 +1493,14 @@
       <button class:active={mobilePane === 'tests'} onclick={() => (mobilePane = 'tests')}>Тесты</button>
     </nav>
   </main>
+
+  <QuickPalette
+    open={paletteOpen && screen === 'ready'}
+    items={paletteItems}
+    onSelect={onPaletteSelect}
+    onClose={() => (paletteOpen = false)}
+    onQuery={(q) => (paletteQuery = q)}
+  />
 {/if}
 
 <style>
@@ -1455,6 +1616,16 @@
   .tests-body { display: flex; flex-direction: column; gap: 12px; padding: 12px 14px 16px; }
   .test-run-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .run-btn { padding: 9px 16px; border: 1px solid transparent; border-radius: 8px; background: var(--primary); color: var(--primary-foreground); font-size: 13px; font-weight: 600; cursor: pointer; }
+  .run-btn.secondary { background: transparent; border-color: var(--border); color: var(--foreground); font-weight: 500; }
+  .run-output { margin: 10px 0 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--background); max-height: 40dvh; overflow: auto; }
+  .run-output.err { border-color: var(--destructive); }
+  .run-output pre { margin: 0; font-family: Consolas, 'Cascadia Code', 'Courier New', monospace; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+  .run-stdout { color: var(--foreground); }
+  .run-stderr { color: var(--destructive); }
+  .run-note { margin: 0 0 6px; color: var(--muted-foreground); font-size: 11px; }
+  .run-output pre + pre { margin-top: 8px; }
+  .ws-io { display: flex; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--border); }
+  .ws-io .mini-btn { flex: 1; }
   .run-btn:hover:not(:disabled) { filter: brightness(1.08); }
   .run-btn:disabled { opacity: .55; cursor: default; }
   .task-ref { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground); font-size: 11px; }
