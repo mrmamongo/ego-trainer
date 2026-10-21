@@ -35,6 +35,7 @@ class TestCase:
     check_inputs_unchanged: bool = False
     check_result_isolated: bool = False
     input_aliases: tuple = ()
+    hide_expected: bool = False
 
 
 @dataclass
@@ -59,6 +60,7 @@ def case(
     check_inputs_unchanged: bool = False,
     check_result_isolated: bool = False,
     input_aliases: tuple = (),
+    hide_expected: bool = False,
 ) -> Callable[[Callable], Callable]:
     """Register a test case on a ``task_*`` function.
 
@@ -98,6 +100,7 @@ def case(
                 check_inputs_unchanged=check_inputs_unchanged,
                 check_result_isolated=check_result_isolated,
                 input_aliases=tuple(aliases),
+                hide_expected=hide_expected,
             ),
         )
         return func

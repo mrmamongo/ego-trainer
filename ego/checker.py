@@ -47,6 +47,10 @@ class TestCase:
     check_inputs_unchanged: bool = False
     check_result_isolated: bool = False
     input_aliases: tuple = ()
+    hide_expected: bool = False
+
+
+HIDDEN_EXPECTED = "<скрыто>"
 
 
 @dataclasses.dataclass
@@ -140,6 +144,8 @@ def run_check(
 
     for tc in test_cases:
         expected_repr = tc.expected_repr
+        # Trace exercises must not leak the answer through a failed result.
+        shown_expected = HIDDEN_EXPECTED if tc.hide_expected else expected_repr
         ctx: dict = {}
         if before_hook is not None:
             try:
@@ -151,7 +157,7 @@ def run_check(
                     TestResult(
                         description=tc.description,
                         passed=False,
-                        expected_repr=expected_repr,
+                        expected_repr=shown_expected,
                         actual_repr=None,
                         error=f"@before failed: {exc}",
                         level=tc.level,
@@ -175,7 +181,7 @@ def run_check(
             tr = TestResult(
                 description=tc.description,
                 passed=False,
-                expected_repr=expected_repr,
+                expected_repr=shown_expected,
                 actual_repr=None,
                 error="TIMEOUT",
                 level=tc.level,
@@ -191,7 +197,7 @@ def run_check(
             tr = TestResult(
                 description=tc.description,
                 passed=False,
-                expected_repr=expected_repr,
+                expected_repr=shown_expected,
                 actual_repr=None,
                 error=err_msg,
                 level=tc.level,
@@ -206,7 +212,7 @@ def run_check(
             tr = TestResult(
                 description=tc.description,
                 passed=False,
-                expected_repr=expected_repr,
+                expected_repr=shown_expected,
                 actual_repr=None,
                 error="no return value (function returned None?)",
                 level=tc.level,
@@ -228,7 +234,7 @@ def run_check(
         tr = TestResult(
             description=tc.description,
             passed=passed,
-            expected_repr=expected_repr,
+            expected_repr=shown_expected,
             actual_repr=actual_repr,
             level=tc.level,
         )
@@ -389,6 +395,7 @@ def _extract_test_cases(
                     check_inputs_unchanged=ec.check_inputs_unchanged,
                     check_result_isolated=ec.check_result_isolated,
                     input_aliases=ec.input_aliases,
+                    hide_expected=ec.hide_expected,
                 )
             )
         return out

@@ -84,3 +84,14 @@ def test_case_matches_filter():
     assert not case_matches_filter("smoke", "full")
     assert case_matches_filter("smoke", "all")
     assert case_matches_filter("full", "all")
+
+
+def test_case_hide_expected_flag():
+    @case(args=(1,), expected=2, description="hidden", hide_expected=True)
+    @case(args=(2,), expected=3, description="visible")
+    def task_x(n):
+        return n + 1
+
+    hidden, visible = task_x._ego_cases
+    assert hidden.hide_expected is True
+    assert visible.hide_expected is False

@@ -375,3 +375,44 @@ def task_x(n):
     assert spec and spec.loader
     # module was already executed by checker under another name; just assert pass
     assert result.passed_tests == 1
+
+
+def _hide_expected_task(tmp_path: Path, hide: bool) -> Task:
+    tests = tmp_path / "task_x.tests.py"
+    tests.write_text(
+        f"""
+from ego.testing import case
+
+@case(args=(1,), expected=2, description="c", level="smoke", hide_expected={hide})
+def task_x(n):
+    ...
+""",
+        encoding="utf-8",
+    )
+    task = _make_task(solution_py="def task_x(n):\n    return n * 2\n")
+    task.tests_file = tests
+    return task
+
+
+def test_run_check_hide_expected_masks_repr(tmp_path: Path):
+    task = _hide_expected_task(tmp_path, hide=True)
+
+    failing = run_check(task, "def task_x(n):\n    return n + 5\n", level="smoke")
+    assert failing.status == "failed"
+    assert not failing.results[0].passed
+    assert failing.results[0].expected_repr == "<скрыто>"
+    assert "6" in failing.results[0].actual_repr
+
+    passing = run_check(task, "def task_x(n):\n    return n * 2\n", level="smoke")
+    assert passing.status == "passed"
+    assert passing.results[0].passed
+    assert passing.results[0].expected_repr == "<скрыто>"
+
+
+def test_run_check_default_case_shows_expected_repr(tmp_path: Path):
+    task = _hide_expected_task(tmp_path, hide=False)
+
+    failing = run_check(task, "def task_x(n):\n    return n + 5\n", level="smoke")
+    assert failing.results[0].expected_repr == "2"
+    passing = run_check(task, "def task_x(n):\n    return n * 2\n", level="smoke")
+    assert passing.results[0].expected_repr == "2"
