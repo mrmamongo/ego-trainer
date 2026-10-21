@@ -32,6 +32,7 @@ def task_signature(source: str) -> tuple[str, str]:
 EXPECTED_IDS = {
     "01_variables": [f"V{n:02}" for n in range(1, 14)],
     "02_functions": [f"FN{n:02}" for n in range(1, 23)],
+    "03_loops": [f"L{n:02}" for n in range(1, 25)],
 }
 
 
