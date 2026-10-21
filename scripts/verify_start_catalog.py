@@ -29,41 +29,59 @@ def task_signature(source: str) -> tuple[str, str]:
     return functions[0].name, ast.dump(functions[0].args, include_attributes=False)
 
 
+EXPECTED_IDS = {
+    "01_variables": [f"V{n:02}" for n in range(1, 14)],
+    "02_functions": [f"FN{n:02}" for n in range(1, 23)],
+}
+
+
 def verify(catalog_root: Path, timeout: float = 5.0) -> list[dict]:
     catalog = discover_repo(catalog_root)
     assert not catalog.is_legacy
     assert [project.project.id for project in catalog.projects] == ["python-start"]
     folders = {folder.folder.id: folder for folder in catalog.projects[0].folders}
-    assert "01_variables" in folders, sorted(folders)
-    discovered = folders["01_variables"].tasks
-    ids = [item.frontmatter.id for item in discovered]
-    assert ids == [f"V{number:02}" for number in range(1, 14)], ids
+    assert sorted(folders) == sorted(EXPECTED_IDS), sorted(folders)
 
     rows = []
-    for item in discovered:
-        task = parse_task_file(item.md_path)
-        starter_path = item.md_path.with_suffix(".student.py")
-        assert task.stub_py == starter_path.read_text(encoding="utf-8"), task.id
-        assert task.tests_file is not None and task.tests_file.is_file(), task.id
-        assert task_signature(task.stub_py) == task_signature(task.solution_py), task.id
-
-        reference = run_check(task, task.solution_py, level="all", timeout=timeout)
-        assert reference.all_passed, (task.id, reference.status, reference.results)
-        starter = run_check(task, task.stub_py, level="all", timeout=timeout)
-        assert not starter.all_passed, f"{task.id} starter is already solved"
-        assert starter.status not in {"no_tests", "timeout"}, (task.id, starter.status)
-        for result in reference.results + starter.results:
-            assert result.expected_repr == HIDDEN, (task.id, result.expected_repr)
-
-        row = {
-            "id": task.id,
-            "reference": f"{reference.passed_tests}/{reference.total_tests}",
-            "starter": f"{starter.passed_tests}/{starter.total_tests}",
-            "starter_status": starter.status,
-        }
-        rows.append(row)
-        print(json.dumps(row, ensure_ascii=False), flush=True)
+    for folder_id, expected_ids in EXPECTED_IDS.items():
+        discovered = folders[folder_id].tasks
+        ids = [item.frontmatter.id for item in discovered]
+        assert ids == expected_ids, (folder_id, ids)
+        for item in discovered:
+            rows.append(verify_task(item, timeout))
     return rows
+
+
+def verify_task(item, timeout: float) -> dict:
+    task = parse_task_file(item.md_path)
+    starter_path = item.md_path.with_suffix(".student.py")
+    assert task.stub_py == starter_path.read_text(encoding="utf-8"), task.id
+    assert task.tests_file is not None and task.tests_file.is_file(), task.id
+    assert task_signature(task.stub_py) == task_signature(task.solution_py), task.id
+
+    is_trace = "trace" in item.frontmatter.tags
+    reference = run_check(task, task.solution_py, level="all", timeout=timeout)
+    assert reference.all_passed, (task.id, reference.status, reference.results)
+    starter = run_check(task, task.stub_py, level="all", timeout=timeout)
+    assert not starter.all_passed, f"{task.id} starter is already solved"
+    assert starter.status not in {"no_tests", "timeout"}, (task.id, starter.status)
+    for result in reference.results + starter.results:
+        assert (result.expected_repr == HIDDEN) == is_trace, (task.id, result.expected_repr)
+
+    if not is_trace:
+        smoke = run_check(task, task.stub_py, level="smoke", timeout=timeout)
+        assert not smoke.all_passed, f"{task.id} starter passes smoke"
+        assert smoke.total_tests >= 3, (task.id, smoke.total_tests)
+        assert reference.total_tests > smoke.total_tests, f"{task.id} has no full cases"
+
+    row = {
+        "id": task.id,
+        "reference": f"{reference.passed_tests}/{reference.total_tests}",
+        "starter": f"{starter.passed_tests}/{starter.total_tests}",
+        "starter_status": starter.status,
+    }
+    print(json.dumps(row, ensure_ascii=False), flush=True)
+    return row
 
 
 def main() -> None:

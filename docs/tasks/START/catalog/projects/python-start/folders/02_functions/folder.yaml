@@ -1,0 +1,6 @@
+id: 02_functions
+code: FN
+name: "Функции"
+description: "Определение и вызов функции, параметры, return, ветвления внутри функций. Одна новая идея на задачу."
+order: 2
+level: easy
