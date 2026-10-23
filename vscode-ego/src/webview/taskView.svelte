@@ -4,6 +4,8 @@
     import { postToHost } from './shared/api';
     import { shouldSuggestTheory } from '../theoryLogic';
     import ResultsBody from './ResultsBody.svelte';
+    import TraceTrainer from './TraceTrainer.svelte';
+    import ParsonsTrainer from './ParsonsTrainer.svelte';
     import type { TaskHint, CheckResult } from './shared/types';
     let revealedLevels = $state<number[]>([]);
     let tab = $state<'theory' | 'statement' | 'results'>('statement');
@@ -84,6 +86,10 @@
             </section>
         {:else if activeTab === 'statement'}
             <section class="statement" aria-label="Условие">{@html data.statement_html}</section>
+            {#key data.id}
+                {#if data.trainer === 'trace'}<TraceTrainer kind="trace" taskId={data.id} />
+                {:else if data.trainer === 'parsons'}<ParsonsTrainer kind="parsons" taskId={data.id} />{/if}
+            {/key}
             {#if data.hints.length}
                 <details class="hints"><summary>Подсказки <span>Открывай постепенно</span></summary>
                     <div class="hint-actions">

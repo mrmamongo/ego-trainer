@@ -13,6 +13,7 @@ import {
 import { readEgoConfig } from './egoWorkspace';
 import { parseRunSummary, sortRecentRuns, type TaskRunSummary } from './runHistory';
 import { resolveTheory, type LessonReadState, type TheoryItem } from './theoryLogic';
+import { handleTrainerMessage, isTrainerMessage, trainerKindFromTags, type TrainerContext } from './trainerHost';
 
 export interface TaskViewHint {
     level: number;
@@ -37,6 +38,8 @@ export interface TaskViewData {
     /** Linked theory lessons of a task, in order (server mode only). */
     theory?: TheoryViewItem[];
     lesson?: { id: string; content_hash: string; read: boolean };
+    /** Interactive trainer for tasks tagged `trace` / `parsons`. */
+    trainer?: 'trace' | 'parsons';
 }
 
 export type TheoryViewItem = Pick<TheoryItem, 'id' | 'title' | 'html'>;
@@ -135,6 +138,10 @@ export class TaskViewPanel {
     private static async onMessage(msg: { type?: string; taskId?: string; read?: boolean }): Promise<void> {
         const cur = this.current, deps = this.deps;
         if (!deps) return;
+        if (isTrainerMessage(msg)) {
+            const trainer = await this.trainer();
+            if (trainer && await handleTrainerMessage(msg as Parameters<typeof handleTrainerMessage>[0], trainer)) return;
+        }
         if (msg.type !== 'ready' && msg.type !== 'taskView.refresh' && msg.taskId !== cur?.id) return;
         switch (msg.type) {
             case 'ready': this.ready = true; await this.pushData(); break;
@@ -144,6 +151,35 @@ export class TaskViewPanel {
             case 'taskView.toggleRead': await this.toggleRead(msg.read === true); break;
             case 'taskView.assistant': if (cur) await vscode.commands.executeCommand('ego.assistant', cur.id); break;
         }
+    }
+
+    /** Context for the trace/Parsons trainers: the student's local .py file of the current task. */
+    private static async trainer(): Promise<TrainerContext | undefined> {
+        const cur = this.current, panel = this.panel, deps = this.deps;
+        if (!cur || !panel || !deps || cur.kind === 'lesson') return undefined;
+        let pyUri = await findLocalPy(cur);
+        if (!pyUri) {
+            // Server mode before the first open: let the normal flow pull the starter.
+            await deps.openPy(cur.id, cur.slug, cur.md_path);
+            pyUri = await findLocalPy(cur);
+        }
+        if (!pyUri) return undefined;
+        const uri = pyUri;
+        return {
+            pyUri: uri,
+            // Read through the open document so unsaved edits are kept.
+            readFile: async () => vscode.workspace.textDocuments.find((d) => d.uri.toString() === uri.toString())?.getText()
+                ?? Buffer.from(await vscode.workspace.fs.readFile(uri)).toString('utf-8'),
+            writeFile: async (text: string) => {
+                const doc = await vscode.workspace.openTextDocument(uri);
+                const edit = new vscode.WorkspaceEdit();
+                edit.replace(doc.uri, new vscode.Range(doc.positionAt(0), doc.positionAt(doc.getText().length)), text);
+                await vscode.workspace.applyEdit(edit);
+                await doc.save();
+            },
+            runCheck: () => deps.checkTask(cur.id),
+            post: (message: unknown) => void panel.webview.postMessage(message),
+        } as TrainerContext;
     }
 
     private static async toggleRead(read: boolean): Promise<void> {
@@ -237,6 +273,7 @@ async function loadTaskViewData(api: EgoApi, ref: TaskRef, theoryCache: Map<stri
                 mode: 'server',
                 ai_available: access?.available || false,
                 theory: theory.map(({ id, title, html }) => ({ id, title, html })),
+                trainer: trainerKindFromTags(full.tags),
             };
         } catch {
             // fall through to local files
@@ -343,8 +380,19 @@ async function readLocalMarkdown(ref: TaskRef): Promise<string> {
 }
 
 async function readLocalStub(ref: TaskRef): Promise<string> {
+    const uri = await findLocalPy(ref, false);
+    if (!uri) return '';
+    try {
+        return Buffer.from(await vscode.workspace.fs.readFile(uri)).toString('utf-8');
+    } catch {
+        return '';
+    }
+}
+
+/** The student's task .py: tasks/<slug>/, next to md_path, then (optionally) a workspace search. */
+async function findLocalPy(ref: TaskRef, search = true): Promise<vscode.Uri | undefined> {
     const root = vscode.workspace.workspaceFolders?.[0]?.uri;
-    if (!root) return '';
+    if (!root) return undefined;
     const normalized = ref.id.replace(/\./g, '_').toLowerCase();
     const filename = `task_${normalized}.py`;
     const candidates: vscode.Uri[] = [];
@@ -356,13 +404,19 @@ async function readLocalStub(ref: TaskRef): Promise<string> {
     }
     for (const uri of candidates) {
         try {
-            const buf = await vscode.workspace.fs.readFile(uri);
-            return Buffer.from(buf).toString('utf-8');
+            await vscode.workspace.fs.stat(uri);
+            return uri;
         } catch {
             // next
         }
     }
-    return '';
+    if (!search) return undefined;
+    const found = await vscode.workspace.findFiles(
+        new vscode.RelativePattern(root, `**/${filename}`),
+        '**/node_modules/**',
+        1
+    );
+    return found[0];
 }
 
 function escapeHtml(s: string): string {

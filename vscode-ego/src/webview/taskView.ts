@@ -1,7 +1,7 @@
 import { get } from 'svelte/store';
 import { mount } from 'svelte';
 import TaskView from './taskView.svelte';
-import { taskViewData, checkResult } from './shared/store';
+import { taskViewData, checkResult, trainerState } from './shared/store';
 import { onHostMessage, postToHost } from './shared/api';
 
 const target = document.getElementById('app');
@@ -15,6 +15,7 @@ onHostMessage((msg) => {
 		// Preserve the latest result when refreshing the same task.
 		if (previousId !== msg.payload.id) checkResult.set(null);
 	}
+	if (msg.type === 'trainer.state') trainerState.set(msg.payload.state);
 	if (msg.type === 'taskView.setLessonRead') {
 		taskViewData.update((data) =>
 			data?.lesson && data.id === msg.taskId

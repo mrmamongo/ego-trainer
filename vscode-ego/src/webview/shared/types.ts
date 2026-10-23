@@ -148,6 +148,8 @@ export interface TaskViewData {
     /** Linked theory lessons (pre-rendered HTML), in the task's order. */
     theory?: TheoryItem[];
     lesson?: { id: string; content_hash: string; read: boolean };
+    /** Interactive trainer for tasks tagged `trace` / `parsons` (see ../../trainer). */
+    trainer?: TrainerKind;
 }
 
 export interface TheoryItem {
@@ -155,3 +157,47 @@ export interface TheoryItem {
 	title: string;
 	html: string;
 }
+
+// === Trainers (mirror of src/trainer.ts; that module must not be imported by the webview) ===
+
+export type TrainerKind = 'trace' | 'parsons';
+
+export interface TraceLine {
+	label: string; // "1", "A2"
+	code: string; // code with its Python indentation
+}
+
+export interface TraceAnswer {
+	name: string;
+	label: string; // «a после строки 3», «x в конце»
+	value: string; // prefilled literal, '' when None
+	line: string | null; // referenced trace line for highlighting
+}
+
+export interface TraceState {
+	kind: 'trace';
+	supported: true;
+	intro: string;
+	lines: TraceLine[];
+	answers: TraceAnswer[];
+}
+
+export interface ParsonsLine {
+	id: number;
+	text: string;
+	level: number;
+}
+
+export interface ParsonsState {
+	kind: 'parsons';
+	supported: true;
+	defLine: string;
+	intro: string;
+	lines: ParsonsLine[];
+	assembled: boolean;
+}
+
+export type TrainerState =
+	| TraceState
+	| ParsonsState
+	| { kind: TrainerKind | null; supported: false; reason: string };

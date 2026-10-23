@@ -25,7 +25,9 @@ export type ExtMessage =
 	| { type: 'taskView.check'; taskId: string }
 	| { type: 'taskView.openPy'; taskId: string }
 	| { type: 'taskView.refresh' }
-	| { type: 'taskView.toggleRead'; taskId: string; read: boolean };
+	| { type: 'taskView.toggleRead'; taskId: string; read: boolean }
+	| { type: 'trainer.load'; kind: 'trace' | 'parsons'; taskId: string }
+	| { type: 'trainer.submit'; taskId: string; answers?: Record<string, string>; lines?: { id: number; level: number }[] };
 
 export type HostMessage =
 	| { type: 'assistant.data'; payload: import('../../aiTypes').AssistantData }
@@ -34,6 +36,8 @@ export type HostMessage =
 	| { type: 'taskView.setData'; payload: import('./types').TaskViewData }
 	| { type: 'taskView.setResult'; payload: import('./types').CheckResult }
 	| { type: 'taskView.setLessonRead'; taskId: string; read: boolean }
+	| { type: 'trainer.state'; payload: { state: import('./types').TrainerState } }
+	| { type: 'trainer.submitted'; payload: { ok: boolean; error?: string } }
 	| { type: 'noop' };
 
 declare function acquireVsCodeApi(): {
