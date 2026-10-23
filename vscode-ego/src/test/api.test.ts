@@ -100,3 +100,25 @@ test('register serializes the student role', async () => {
         role: 'student',
     });
 });
+
+test('listLessons maps a 404 from an old server to no lessons, other errors propagate', async () => {
+    mockFetch(404, {});
+    assert.deepEqual(await new EgoApi('http://localhost:8000').listLessons(), []);
+    mockFetch(500, {});
+    await assert.rejects(new EgoApi('http://localhost:8000').listLessons(), (e: unknown) => e instanceof EgoApiError && e.status === 500);
+});
+
+test('listLessons filters by folder and getLesson URL-encodes the id', async () => {
+    const urls: string[] = [];
+    globalThis.fetch = (async (url: string) => {
+        urls.push(url);
+        return { ok: true, status: 200, json: async () => [] };
+    }) as unknown as typeof fetch;
+    const api = new EgoApi('http://localhost:8000/');
+    await api.listLessons('f 1');
+    await api.getLesson('roles/acc');
+    assert.deepEqual(urls, [
+        'http://localhost:8000/lessons?folder_id=f%201',
+        'http://localhost:8000/lessons/roles%2Facc',
+    ]);
+});

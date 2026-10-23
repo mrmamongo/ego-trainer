@@ -7,8 +7,9 @@
  */
 
 import * as vscode from 'vscode';
-import { EgoApi, CheckResponse, TaskMeta } from './api';
-import { EgoTaskTreeProvider, TaskItem } from './treeProvider';
+import { EgoApi, CheckResponse, LessonMeta, TaskMeta } from './api';
+import { EgoTaskTreeProvider, LessonItem, TaskItem } from './treeProvider';
+import { createReadState } from './theoryLogic';
 import { TestResultsPanel } from './resultsPanel';
 import { WelcomeView } from './welcomeView';
 import { runOfflineInit, runServerInit } from './initWizard';
@@ -68,7 +69,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     api = new EgoApi(serverUrl, session.apiToken);
 
     // Tree view.
-    treeProvider = new EgoTaskTreeProvider(api);
+    // Lesson read flags live in globalState; the tree redraws when they change.
+    const readState = createReadState(context.globalState);
+    treeProvider = new EgoTaskTreeProvider(api, readState);
 
     DashboardView.configure(context.extensionUri, {
         getApi: () => api,
@@ -84,6 +87,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         getApi: () => api,
         checkTask: (taskId) => cmdCheckTask(taskId),
         openPy: (taskId, slug, mdPath) => openTaskPy(taskId, slug, mdPath).then(() => undefined),
+        readState,
     });
     TaskViewPanel.register(context);
     const treeView = vscode.window.createTreeView('egoTaskTree', {
@@ -207,6 +211,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     return;
                 }
                 return cmdOpenTask(task);
+            })
+        ),
+        vscode.commands.registerCommand('ego.openLesson', (arg?: LessonMeta | LessonItem) =>
+            withReady(() => {
+                const lesson = arg instanceof LessonItem ? arg.lesson : arg;
+                if (!lesson?.id) {
+                    vscode.window.showWarningMessage('Ego: No lesson selected.');
+                    return;
+                }
+                return TaskViewPanel.showLesson(lesson);
             })
         ),
         vscode.commands.registerCommand('ego.switchMode', () =>

@@ -1,11 +1,12 @@
 /** TreeDataProvider for Ego Tasks sidebar.
  *
- * Shows blocks → tasks with status icons. Clicking a task opens it.
+ * Shows Project → Folder → lessons, then tasks with status icons. Clicking a task opens it.
  * Offline: reads `.ego/manifest.yaml` + `.ego/progress.json` (8bv.9.7).
  */
 
 import * as vscode from 'vscode';
-import { EgoApi, TaskMeta, ProgressRow } from './api';
+import { EgoApi, TaskMeta, LessonMeta, ProgressRow } from './api';
+import { buildCatalog, type Catalog, type CatalogFolder, type CatalogProject, type LessonReadState } from './theoryLogic';
 import { egoDir, readEgoConfig } from './egoWorkspace';
 
 export class TaskItem extends vscode.TreeItem {
@@ -73,18 +74,43 @@ export class TaskItem extends vscode.TreeItem {
     }
 }
 
+export class ProjectItem extends vscode.TreeItem {
+    constructor(public readonly project: CatalogProject, collapsibleState: vscode.TreeItemCollapsibleState) {
+        super(project.name, collapsibleState);
+        this.id = `project:${project.key}`;
+        this.description = `${project.folders.reduce((n, f) => n + f.tasks.length, 0)}`;
+        this.contextValue = 'project';
+        this.iconPath = new vscode.ThemeIcon('repo');
+    }
+}
+
+/** A catalog folder (formerly "Блок <block>"): lessons first, then tasks. */
 export class BlockItem extends vscode.TreeItem {
     constructor(
-        public readonly block: string,
-        public readonly taskCount: number,
+        public readonly folder: CatalogFolder,
         collapsibleState: vscode.TreeItemCollapsibleState
     ) {
-        super(`Блок ${block}`, collapsibleState);
-        this.description = `${taskCount}`;
+        super(folder.name, collapsibleState);
+        this.id = `folder:${folder.key}`;
+        this.description = `${folder.tasks.length}`;
+        if (folder.lessons.length) this.tooltip = `${folder.name}: теория ${folder.lessons.length}, задач ${folder.tasks.length}`;
         this.contextValue = 'block';
         this.iconPath = new vscode.ThemeIcon('folder');
     }
 }
+
+export class LessonItem extends vscode.TreeItem {
+    constructor(public readonly lesson: LessonMeta, public readonly read: boolean) {
+        super(lesson.title || lesson.id, vscode.TreeItemCollapsibleState.None);
+        this.description = read ? '✓' : '';
+        this.tooltip = `Теория: ${lesson.title || lesson.id}${read ? ' (прочитано)' : ''}`;
+        this.contextValue = 'lesson';
+        this.iconPath = new vscode.ThemeIcon('book', read ? new vscode.ThemeColor('testing.iconPassed') : undefined);
+        this.command = { command: 'ego.openLesson', title: 'Open Lesson', arguments: [lesson] };
+    }
+}
+
+type TreeNode = ProjectItem | BlockItem | LessonItem | TaskItem;
 
 interface ManifestFile {
     tasks: Array<{
@@ -108,16 +134,20 @@ interface ProgressFile {
     }>;
 }
 
-export class EgoTaskTreeProvider implements vscode.TreeDataProvider<BlockItem | TaskItem> {
+export class EgoTaskTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     private _onDidChange = new vscode.EventEmitter<void>();
     readonly onDidChangeTreeData = this._onDidChange.event;
 
     private api: EgoApi;
+    private readState: LessonReadState | undefined;
     private progressMap: Map<string, ProgressRow> = new Map();
     private offlineTasks: TaskMeta[] | undefined;
+    private catalog: Promise<Catalog> | undefined;
 
-    constructor(api: EgoApi) {
+    constructor(api: EgoApi, readState?: LessonReadState) {
         this.api = api;
+        this.readState = readState;
+        readState?.onDidChange(() => this.refresh());
     }
 
     updateApi(newApi: EgoApi): void {
@@ -129,62 +159,84 @@ export class EgoTaskTreeProvider implements vscode.TreeDataProvider<BlockItem | 
 
     refresh(): void {
         this.offlineTasks = undefined;
+        this.catalog = undefined;
         this._onDidChange.fire();
     }
 
-    getTreeItem(element: BlockItem | TaskItem): vscode.TreeItem {
+    getTreeItem(element: TreeNode): vscode.TreeItem {
         return element;
     }
 
-    async getChildren(element?: BlockItem | TaskItem): Promise<(BlockItem | TaskItem)[]> {
+    async getChildren(element?: TreeNode): Promise<TreeNode[]> {
         if (!element) {
             try {
-                const tasks = await this.loadTasks();
-                const blocks = new Map<string, TaskMeta[]>();
-                for (const t of tasks) {
-                    if (!blocks.has(t.block)) blocks.set(t.block, []);
-                    blocks.get(t.block)!.push(t);
-                }
-                return Array.from(blocks.entries())
-                    .sort((a, b) => a[0].localeCompare(b[0]))
-                    .map(
-                        ([block, list]) =>
-                            new BlockItem(
-                                block,
-                                list.length,
-                                vscode.TreeItemCollapsibleState.Collapsed
-                            )
+                const catalog = await this.loadCatalog();
+                if (catalog.showProjects) {
+                    return catalog.projects.map(
+                        (p) => new ProjectItem(p, vscode.TreeItemCollapsibleState.Collapsed)
                     );
+                }
+                return catalog.projects.flatMap((p) => this.folderItems(p));
             } catch {
-                return [new BlockItem('Error', 0, vscode.TreeItemCollapsibleState.None)];
+                return [new BlockItem(errorFolder(), vscode.TreeItemCollapsibleState.None)];
             }
         }
 
+        if (element instanceof ProjectItem) {
+            return this.folderItems(element.project);
+        }
+
         if (element instanceof BlockItem) {
-            try {
-                const tasks = (await this.loadTasks()).filter((t) => t.block === element.block);
-                return tasks
-                    .sort((a, b) => a.task_id.localeCompare(b.task_id))
-                    .map(
-                        (t) =>
-                            new TaskItem(
-                                t,
-                                this.progressMap.get(t.task_id),
-                                vscode.TreeItemCollapsibleState.None
-                            )
-                    );
-            } catch {
-                return [];
-            }
+            const { lessons, tasks } = element.folder;
+            return [
+                ...lessons.map((l) => new LessonItem(l, this.readState?.isRead(l.id, l.content_hash) ?? false)),
+                ...tasks.map(
+                    (t) =>
+                        new TaskItem(
+                            t,
+                            this.progressMap.get(t.task_id),
+                            vscode.TreeItemCollapsibleState.None
+                        )
+                ),
+            ];
         }
 
         return [];
     }
 
-    private async loadTasks(): Promise<TaskMeta[]> {
+    private folderItems(project: CatalogProject): BlockItem[] {
+        return project.folders.map(
+            (f) => new BlockItem(f, vscode.TreeItemCollapsibleState.Collapsed)
+        );
+    }
+
+    private loadCatalog(): Promise<Catalog> {
+        if (!this.catalog) {
+            const pending = this.buildCatalogNow();
+            this.catalog = pending;
+            // Do not cache failures: the next expand retries.
+            pending.catch(() => { if (this.catalog === pending) this.catalog = undefined; });
+        }
+        return this.catalog;
+    }
+
+    private async buildCatalogNow(): Promise<Catalog> {
+        const { tasks, online } = await this.loadTasks();
+        let lessons: LessonMeta[] = [];
+        if (online) {
+            try {
+                lessons = await this.api.listLessons();
+            } catch {
+                // Lessons are optional: old server or transient error.
+            }
+        }
+        return buildCatalog(tasks, lessons);
+    }
+
+    private async loadTasks(): Promise<{ tasks: TaskMeta[]; online: boolean }> {
         const cfg = await readEgoConfig();
         if (cfg?.mode === 'offline') {
-            return this.loadOffline();
+            return { tasks: await this.loadOffline(), online: false };
         }
         try {
             const tasks = await this.api.listTasks();
@@ -195,10 +247,10 @@ export class EgoTaskTreeProvider implements vscode.TreeDataProvider<BlockItem | 
             } catch {
                 // Progress optional.
             }
-            return tasks;
+            return { tasks, online: true };
         } catch {
             // Server unreachable → offline fallback when .ego/ exists.
-            return this.loadOffline();
+            return { tasks: await this.loadOffline(), online: false };
         }
     }
 
@@ -243,6 +295,10 @@ export class EgoTaskTreeProvider implements vscode.TreeDataProvider<BlockItem | 
         }));
         return this.offlineTasks;
     }
+}
+
+function errorFolder(): CatalogFolder {
+    return { key: 'error', name: 'Блок Error', order: 0, block: 'Error', projectKey: '', lessons: [], tasks: [] };
 }
 
 async function readJsonUri<T>(uri: vscode.Uri): Promise<T | undefined> {

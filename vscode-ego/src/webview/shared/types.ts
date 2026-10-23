@@ -79,4 +79,15 @@ export interface TaskViewData {
 	mode: EgoMode;
     ai_available?: boolean;
     loading?: boolean;
+    /** 'lesson' = theory card (no check, read toggle). Default 'task'. */
+    kind?: 'task' | 'lesson';
+    /** Linked theory lessons (pre-rendered HTML), in the task's order. */
+    theory?: TheoryItem[];
+    lesson?: { id: string; content_hash: string; read: boolean };
+}
+
+export interface TheoryItem {
+	id: string;
+	title: string;
+	html: string;
 }

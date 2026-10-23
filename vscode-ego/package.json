@@ -104,6 +104,11 @@
         "category": "Ego"
       },
       {
+        "command": "ego.openLesson",
+        "title": "Ego: Open Lesson",
+        "category": "Ego"
+      },
+      {
         "command": "ego.showWelcome",
         "title": "Ego: Show Welcome",
         "category": "Ego"

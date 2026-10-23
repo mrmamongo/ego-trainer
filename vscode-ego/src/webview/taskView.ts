@@ -15,6 +15,13 @@ onHostMessage((msg) => {
 		// Preserve the latest result when refreshing the same task.
 		if (previousId !== msg.payload.id) checkResult.set(null);
 	}
+	if (msg.type === 'taskView.setLessonRead') {
+		taskViewData.update((data) =>
+			data?.lesson && data.id === msg.taskId
+				? { ...data, lesson: { ...data.lesson, read: msg.read } }
+				: data
+		);
+	}
 	if (msg.type === 'taskView.setResult' || msg.type === 'setResult') {
 		checkResult.set(msg.payload);
 		// Keep header status badge in sync with latest check.
