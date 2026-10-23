@@ -1,10 +1,12 @@
 <script lang="ts">
     import { taskViewData, checkResult } from './shared/store';
+    import { tick } from 'svelte';
     import { postToHost } from './shared/api';
+    import { shouldSuggestTheory } from '../theoryLogic';
     import ResultsBody from './ResultsBody.svelte';
     import type { TaskHint, CheckResult } from './shared/types';
     let revealedLevels = $state<number[]>([]);
-    let tab = $state<'statement' | 'results'>('statement');
+    let tab = $state<'theory' | 'statement' | 'results'>('statement');
     let previousId = '', previousResult: CheckResult | null = null;
     $effect(() => {
         const id = $taskViewData?.id || '';
@@ -23,6 +25,13 @@
             .every(previous => revealedLevels.includes(previous));
     }
     function revealHint(level: number) { if (!revealedLevels.includes(level)) revealedLevels = [...revealedLevels, level]; }
+    /** «Повтори теорию»: jump to the Теория tab and scroll to that lesson. */
+    async function openTheory(lessonId: string) {
+        tab = 'theory';
+        await tick();
+        const cards = Array.from(document.querySelectorAll<HTMLElement>('[data-lesson]'));
+        cards.find(card => card.dataset.lesson === lessonId)?.scrollIntoView({ block: 'start' });
+    }
     function statusLabel(status: string) {
         return ({new:'Не начато',passed:'Пройдено',partial:'Частично',failed:'Есть ошибки',error:'Ошибка',timeout:'Таймаут'} as Record<string,string>)[status] || status;
     }
@@ -38,21 +47,42 @@
             <p>Открой задачу в списке выше или её Python файл. Здесь появятся условие, подсказки и результаты.</p></div>
     {:else}
         {@const data = $taskViewData}
+        {@const isLesson = data.kind === 'lesson'}
+        {@const theory = data.theory ?? []}
+        {@const activeTab = tab === 'theory' && !theory.length ? 'statement' : tab}
         <header>
-            <div class="meta"><span class="task-id">{data.id}</span><span class="status" data-status={data.status}>{statusLabel(data.status)}</span>
+            <div class="meta"><span class="task-id">{data.id}</span>
+                {#if isLesson}<span class="status">Теория{data.lesson?.read ? ' · прочитано' : ''}</span>{:else}<span class="status" data-status={data.status}>{statusLabel(data.status)}</span>{/if}
                 {#if data.mode === 'offline' && !data.loading}<span class="offline" title="Локальная проверка">Локально</span>{/if}</div>
             <h1>{taskTitle(data.id, data.title)}</h1>
+            {#if isLesson}
+                <div class="toolbar"><button class:revealed={data.lesson?.read} disabled={data.loading || !data.lesson} aria-pressed={data.lesson?.read ?? false}
+                    onclick={() => postToHost({type:'taskView.toggleRead',taskId:data.id,read:!data.lesson?.read})}>
+                    {data.lesson?.read ? '✓ Прочитано' : 'Отметить прочитанным'}</button></div>
+            {:else}
             <div class="toolbar"><button class="primary" disabled={data.loading} onclick={() => postToHost({type:'taskView.check',taskId:data.id})}>▶ Проверить</button>
                 <button onclick={() => postToHost({type:'taskView.openPy',taskId:data.id})}>Открыть код</button>
                 {#if data.ai_available}<button title="Обсудить решение справа" onclick={() => postToHost({type:'taskView.assistant',taskId:data.id})}>✦ Чат</button>{/if}
             </div>
-            <nav aria-label="Раздел задания"><button class:active={tab === 'statement'} aria-pressed={tab === 'statement'} onclick={() => tab='statement'}>Условие</button>
-                <button class:active={tab === 'results'} aria-pressed={tab === 'results'} onclick={() => tab='results'}>Проверка
+            <nav aria-label="Раздел задания">
+                {#if theory.length}<button class:active={activeTab === 'theory'} aria-pressed={activeTab === 'theory'} onclick={() => tab='theory'}>Теория</button>{/if}
+                <button class:active={activeTab === 'statement'} aria-pressed={activeTab === 'statement'} onclick={() => tab='statement'}>Условие</button>
+                <button class:active={activeTab === 'results'} aria-pressed={activeTab === 'results'} onclick={() => tab='results'}>Проверка
                     {#if $checkResult}<span class="score">{$checkResult.passed_tests}/{$checkResult.total_tests}</span>{/if}</button>
             </nav>
+            {/if}
         </header>
         {#if data.loading}<p class="loading" aria-live="polite">Загружаю {data.id}…</p>
-        {:else if tab === 'statement'}
+        {:else if isLesson}
+            <section class="statement" aria-label="Теория">{@html data.statement_html}</section>
+            <p class="version">Версия {data.version} · {data.id}</p>
+        {:else if activeTab === 'theory'}
+            <section aria-label="Теория">
+                {#each theory as lesson (lesson.id)}
+                    <article class="lesson" data-lesson={lesson.id}><h2>{lesson.title}</h2><div class="statement">{@html lesson.html}</div></article>
+                {/each}
+            </section>
+        {:else if activeTab === 'statement'}
             <section class="statement" aria-label="Условие">{@html data.statement_html}</section>
             {#if data.hints.length}
                 <details class="hints"><summary>Подсказки <span>Открывай постепенно</span></summary>
@@ -76,6 +106,11 @@
             <p class="version">Версия {data.version} · {data.id}</p>
         {:else}
             <section class="results" aria-label="Результаты проверки">
+                {#if shouldSuggestTheory($checkResult, theory)}
+                    <div class="revisit"><span>Повтори теорию:</span>
+                        {#each theory as lesson (lesson.id)}<button onclick={() => openTheory(lesson.id)}>{lesson.title}</button>{/each}
+                    </div>
+                {/if}
                 <ResultsBody result={$checkResult} history={data.history} emptyMessage="Нажми «Проверить», чтобы увидеть результаты." />
             </section>
         {/if}
@@ -108,6 +143,10 @@
     .hints { border-top:1px solid var(--vscode-panel-border,#333); padding-top:12px; margin-top:18px; } summary { cursor:pointer; font-size:12px; font-weight:600; } summary>span { display:block; font-weight:400; font-size:10px; color:var(--vscode-descriptionForeground); margin:3px 0 0 14px; }
     .hint-actions { display:flex; flex-wrap:wrap; gap:6px; margin:12px 0; } .hint-actions button { font-size:10px; } .hint-actions .revealed { border-color:var(--vscode-focusBorder); }
     .hint { border-left:2px solid var(--vscode-focusBorder); padding:1px 0 1px 12px; margin:12px 0; } .hint h3 { font-size:12px; margin:8px 0; } .hint .statement { margin:0; }
+    .lesson { border-top:1px solid var(--vscode-panel-border,#333); padding-top:6px; margin-top:18px; } .lesson:first-child { border-top:0; margin-top:0; }
+    .lesson h2 { font-size:15px; margin:10px 0 0; line-height:1.35; }
+    .revisit { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-bottom:14px; font-size:12px; } .revisit>span { color:var(--vscode-descriptionForeground); }
+    .toolbar button.revealed { border-color:var(--vscode-focusBorder); }
     .version { font-size:10px; color:var(--vscode-descriptionForeground); margin-top:20px; } .results { margin:16px 0; } .loading { color:var(--vscode-descriptionForeground); }
     .empty { padding-top:30px; } .empty>span { color:var(--vscode-textLink-foreground); font-size:28px; } .empty p { font-size:12px; color:var(--vscode-descriptionForeground); }
     @media(max-width:280px) { .task-view { padding-left:10px; padding-right:10px; } .toolbar button { flex-grow:1; } }

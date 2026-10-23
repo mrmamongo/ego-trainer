@@ -1,7 +1,7 @@
 /** Task view webview host (ADR-0015 / 8bv.9.6). */
 
 import * as vscode from 'vscode';
-import { EgoApi, CheckResponse, TaskMeta } from './api';
+import { EgoApi, CheckResponse, LessonMeta, TaskMeta } from './api';
 import { webviewHtml, webviewLocalRoots } from './webviewHost';
 import {
     extractSection,
@@ -12,6 +12,7 @@ import {
 } from './markdown';
 import { readEgoConfig } from './egoWorkspace';
 import { parseRunSummary, sortRecentRuns, type TaskRunSummary } from './runHistory';
+import { resolveTheory, type LessonReadState, type TheoryItem } from './theoryLogic';
 
 export interface TaskViewHint {
     level: number;
@@ -31,12 +32,20 @@ export interface TaskViewData {
     mode: 'server' | 'offline';
     ai_available?: boolean;
     loading?: boolean;
+    /** 'lesson' renders a theory card (no check, read toggle). Default 'task'. */
+    kind?: 'task' | 'lesson';
+    /** Linked theory lessons of a task, in order (server mode only). */
+    theory?: TheoryViewItem[];
+    lesson?: { id: string; content_hash: string; read: boolean };
 }
+
+export type TheoryViewItem = Pick<TheoryItem, 'id' | 'title' | 'html'>;
 
 export interface TaskViewDeps {
     getApi: () => EgoApi;
     checkTask: (taskId: string) => Promise<void>;
     openPy: (taskId: string, slug?: string, mdPath?: string) => Promise<void>;
+    readState: LessonReadState;
 }
 
 interface TaskRef {
@@ -46,6 +55,9 @@ interface TaskRef {
     version: string;
     status: string;
     md_path?: string;
+    kind?: 'task' | 'lesson';
+    /** Lesson version the read flag belongs to (known after the body loads). */
+    content_hash?: string;
 }
 
 export class TaskViewPanel {
@@ -56,6 +68,7 @@ export class TaskViewPanel {
     private static current: TaskRef | undefined;
     private static generation = 0;
     private static results = new Map<string, CheckResponse>();
+    private static theoryCache = new Map<string, TheoryItem>();
 
     static configure(extensionUri: vscode.Uri, deps: TaskViewDeps): void {
         this.extensionUri = extensionUri;
@@ -102,6 +115,11 @@ export class TaskViewPanel {
             version: task.version, status, md_path: task.md_path || undefined });
     }
 
+    static showLesson(lesson: LessonMeta): Promise<void> {
+        return this.show({ id: lesson.id, title: lesson.title, slug: '', version: lesson.version,
+            status: 'new', kind: 'lesson', content_hash: lesson.content_hash });
+    }
+
     /** Keep results attached to their task, even if the editor changed meanwhile. */
     static postResult(result: CheckResponse): boolean {
         this.results.set(result.task_id.toLowerCase(), result);
@@ -114,7 +132,7 @@ export class TaskViewPanel {
         return true;
     }
 
-    private static async onMessage(msg: { type?: string; taskId?: string }): Promise<void> {
+    private static async onMessage(msg: { type?: string; taskId?: string; read?: boolean }): Promise<void> {
         const cur = this.current, deps = this.deps;
         if (!deps) return;
         if (msg.type !== 'ready' && msg.type !== 'taskView.refresh' && msg.taskId !== cur?.id) return;
@@ -123,7 +141,17 @@ export class TaskViewPanel {
             case 'taskView.check': if (cur) await deps.checkTask(cur.id); break;
             case 'taskView.openPy': if (cur) await deps.openPy(cur.id, cur.slug, cur.md_path); break;
             case 'taskView.refresh': await this.pushData(); break;
+            case 'taskView.toggleRead': await this.toggleRead(msg.read === true); break;
             case 'taskView.assistant': if (cur) await vscode.commands.executeCommand('ego.assistant', cur.id); break;
+        }
+    }
+
+    private static async toggleRead(read: boolean): Promise<void> {
+        const cur = this.current, deps = this.deps;
+        if (!cur || cur.kind !== 'lesson' || !cur.content_hash || !deps) return;
+        await deps.readState.setRead(cur.id, cur.content_hash, read);
+        if (this.ready && this.panel && this.current?.id === cur.id) {
+            void this.panel.webview.postMessage({ type: 'taskView.setLessonRead', taskId: cur.id, read });
         }
     }
 
@@ -132,13 +160,16 @@ export class TaskViewPanel {
         if (!deps || !cur || !panel || !this.ready) return;
         void panel.webview.postMessage({ type: 'taskView.setData', payload: {
             id: cur.id, title: cur.title, status: cur.status, version: cur.version,
-            statement_html: '', hints: [], history: [], mode: 'offline', loading: true,
+            statement_html: '', hints: [], history: [], mode: 'offline', loading: true, kind: cur.kind,
         } satisfies TaskViewData });
         const isCurrent = () => this.generation === generation && this.panel === panel;
         try {
-            const data = await loadTaskViewData(deps.getApi(), cur);
+            const data = cur.kind === 'lesson'
+                ? await loadLessonViewData(deps.getApi(), cur, deps.readState)
+                : await loadTaskViewData(deps.getApi(), cur, this.theoryCache);
             if (!isCurrent()) return;
-            const result = this.results.get(cur.id.toLowerCase());
+            if (data.lesson) this.current = { ...cur, content_hash: data.lesson.content_hash };
+            const result = cur.kind === 'lesson' ? undefined : this.results.get(cur.id.toLowerCase());
             if (result) data.status = result.status;
             void panel.webview.postMessage({ type: 'taskView.setData', payload: data });
             if (result) void panel.webview.postMessage({ type: 'taskView.setResult', payload: result });
@@ -147,13 +178,30 @@ export class TaskViewPanel {
             void panel.webview.postMessage({ type: 'taskView.setData', payload: {
                 id: cur.id, title: cur.title, status: cur.status, version: cur.version,
                 statement_html: '<p>' + escapeHtml((error as Error).message) + '</p>',
-                hints: [], history: [], mode: 'offline',
+                hints: [], history: [], mode: 'offline', kind: cur.kind,
             } satisfies TaskViewData });
         }
     }
 }
 
-async function loadTaskViewData(api: EgoApi, ref: TaskRef): Promise<TaskViewData> {
+/** Lesson mode: the card body rendered like a statement, plus its read flag. */
+async function loadLessonViewData(api: EgoApi, ref: TaskRef, readState: LessonReadState): Promise<TaskViewData> {
+    const lesson = await api.getLesson(ref.id);
+    return {
+        id: lesson.id,
+        title: lesson.title,
+        status: 'new',
+        version: lesson.version,
+        statement_html: renderStatementHtml(lesson.body_md),
+        hints: [],
+        history: [],
+        mode: 'server',
+        kind: 'lesson',
+        lesson: { id: lesson.id, content_hash: lesson.content_hash, read: readState.isRead(lesson.id, lesson.content_hash) },
+    };
+}
+
+async function loadTaskViewData(api: EgoApi, ref: TaskRef, theoryCache: Map<string, TheoryItem>): Promise<TaskViewData> {
     const cfg = await readEgoConfig();
     const mode = cfg?.mode === 'offline' ? 'offline' : 'server';
     const history = await readLocalRunHistory(ref.id);
@@ -173,6 +221,11 @@ async function loadTaskViewData(api: EgoApi, ref: TaskRef): Promise<TaskViewData
             } catch {
                 hints = hintsFromMarkdown(full.statement_md, full.stub_py);
             }
+            const theory = await resolveTheory(full.theory ?? [], {
+                listLessons: () => api.listLessons(),
+                getLesson: (id) => api.getLesson(id),
+                render: renderStatementHtml,
+            }, theoryCache);
             return {
                 id: full.id,
                 title: full.title,
@@ -183,6 +236,7 @@ async function loadTaskViewData(api: EgoApi, ref: TaskRef): Promise<TaskViewData
                 history,
                 mode: 'server',
                 ai_available: access?.available || false,
+                theory: theory.map(({ id, title, html }) => ({ id, title, html })),
             };
         } catch {
             // fall through to local files

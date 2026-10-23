@@ -20,7 +20,8 @@ export type ExtMessage =
 	| { type: 'dashboard.push' }
 	| { type: 'taskView.check'; taskId: string }
 	| { type: 'taskView.openPy'; taskId: string }
-	| { type: 'taskView.refresh' };
+	| { type: 'taskView.refresh' }
+	| { type: 'taskView.toggleRead'; taskId: string; read: boolean };
 
 export type HostMessage =
 	| { type: 'assistant.data'; payload: import('../../aiTypes').AssistantData }
@@ -28,6 +29,7 @@ export type HostMessage =
 	| { type: 'dashboard.setData'; payload: import('./types').DashboardData }
 	| { type: 'taskView.setData'; payload: import('./types').TaskViewData }
 	| { type: 'taskView.setResult'; payload: import('./types').CheckResult }
+	| { type: 'taskView.setLessonRead'; taskId: string; read: boolean }
 	| { type: 'noop' };
 
 declare function acquireVsCodeApi(): {

@@ -33,6 +33,31 @@ export interface TaskMeta {
     content_hash: string;
     breaking: boolean;
     md_path: string;
+    // Cogito catalog fields (absent on older servers).
+    project_id?: string | null;
+    project_name?: string | null;
+    project_order?: number;
+    folder_id?: string | null;
+    folder_name?: string | null;
+    folder_order?: number;
+    /** Ordered lesson ids linked to this task. */
+    theory?: string[];
+}
+
+export interface LessonMeta {
+    id: string;
+    project_id: string | null;
+    folder_id: string | null;
+    /** Folder code, same value as TaskMeta.block. */
+    block: string;
+    title: string;
+    order: number;
+    version: string;
+    content_hash: string;
+}
+
+export interface LessonFull extends LessonMeta {
+    body_md: string;
 }
 
 export interface TaskFull extends TaskMeta {
@@ -186,6 +211,23 @@ export class EgoApi {
     async getTask(taskId: string, includeSolution: boolean = false): Promise<TaskFull> {
         const query = includeSolution ? '?include_solution=true' : '';
         return this.request<TaskFull>('GET', `/tasks/${taskId}${query}`);
+    }
+
+    // === Lessons (theory cards) ===
+
+    /** Older servers have no /lessons: a 404 means "no lessons". */
+    async listLessons(folderId?: string): Promise<LessonMeta[]> {
+        const query = folderId ? `?folder_id=${encodeURIComponent(folderId)}` : '';
+        try {
+            return await this.request<LessonMeta[]>('GET', `/lessons${query}`);
+        } catch (error) {
+            if (error instanceof EgoApiError && error.status === 404) return [];
+            throw error;
+        }
+    }
+
+    async getLesson(lessonId: string): Promise<LessonFull> {
+        return this.request<LessonFull>('GET', `/lessons/${encodeURIComponent(lessonId)}`);
     }
 
     // === Check ===
