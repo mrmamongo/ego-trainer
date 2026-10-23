@@ -52,3 +52,16 @@ recreate only `cogito-server` with the existing Compose file. No schema migratio
 or data restoration is required for this change. Restoring the previous environment
 also restores password authentication, so prefer keeping the new auth flag when
 rolling back only the theme repair.
+
+## Repository handoff
+
+The repair issue `ego-trainer-hg8` is closed. Source, regression test and this
+report were pushed to `origin/codex/xl-a-cogito` in `98b537e`.
+Git pull with rebase refused the existing unrelated dirty working tree; a fetch
+confirmed the local and remote tips matched before committing, and push succeeded.
+The unrelated work was preserved.
+
+Beads has no Dolt remotes configured, so `bd dolt push` could not synchronize its
+database. Follow-up `ego-trainer-d4g` is open to configure the intended remote;
+no destination was guessed. This limitation does not affect the deployed repair
+or the successful Git push.
