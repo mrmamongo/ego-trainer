@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [functions, trace, return, print]
 breaking: false
+theory: [fn-return-print]
 ---
 
 # Задача FN04: return и print — разные вещи

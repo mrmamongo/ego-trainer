@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [variables, trace, recompute]
 breaking: false
+theory: [v-copy]
 ---
 
 # Задача V05: Переменная сама не пересчитывается

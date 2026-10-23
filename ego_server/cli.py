@@ -325,7 +325,9 @@ def _cmd_import_tasks(args) -> int:
         print(f"docs dir not found: {docs_dir.resolve()}", file=sys.stderr)
         return 1
 
-    md_files = sorted(docs_dir.rglob("*.md"))
+    md_files = sorted(
+        p for p in docs_dir.rglob("*.md") if not p.name.startswith("lesson_")  # theory cards
+    )
     if not md_files:
         print(f"no .md files under {docs_dir.resolve()}", file=sys.stderr)
         return 1

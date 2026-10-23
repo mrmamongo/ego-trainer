@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [loops, write, accumulator]
 breaking: false
+theory: [l-accumulator]
 ---
 
 # Задача L03: Сумма списка

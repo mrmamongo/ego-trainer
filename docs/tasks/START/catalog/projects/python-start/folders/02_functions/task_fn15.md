@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [functions, write, running-best]
 breaking: false
+theory: [fn-start-value, fn-logic]
 ---
 
 # Задача FN15: Большее из трёх

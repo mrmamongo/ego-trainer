@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [variables, trace, copy]
 breaking: false
+theory: [v-copy]
 ---
 
 # Задача V04: Копия значения, а не связь

@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [variables, trace, accumulator]
 breaking: false
+theory: [v-self-update]
 ---
 
 # Задача V03: Копим сумму по шагам

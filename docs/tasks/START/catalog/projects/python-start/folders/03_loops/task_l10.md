@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [loops, parsons, collector]
 breaking: false
+theory: [l-collector]
 ---
 
 # Задача L10: Собери фильтр чётных

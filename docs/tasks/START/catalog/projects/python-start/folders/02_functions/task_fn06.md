@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [functions, trace, arguments]
 breaking: false
+theory: [fn-arguments, fn-def-call]
 ---
 
 # Задача FN06: Аргументы по порядку

@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [functions, write, bool, abs]
 breaking: false
+theory: [fn-arithmetic, fn-logic]
 ---
 
 # Задача FN18: Ход коня

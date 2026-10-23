@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [variables, trace, types]
 breaking: false
+theory: [v-text-numbers]
 ---
 
 # Задача V07: Текст и числа

@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [loops, trace, roles]
 breaking: false
+theory: [l-roles]
 ---
 
 # Задача L23: Назови роли

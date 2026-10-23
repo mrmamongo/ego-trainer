@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [variables, trace, order]
 breaking: false
+theory: [v-assignment, v-self-update]
 ---
 
 # Задача V06: Порядок строк важен

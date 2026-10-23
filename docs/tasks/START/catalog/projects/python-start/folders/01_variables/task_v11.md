@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [variables, trace, branching]
 breaking: false
+theory: [v-branching]
 ---
 
 # Задача V11: Ветвление меняет переменную

@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [loops, bug, accumulator]
 breaking: false
+theory: [l-accumulator]
 ---
 
 # Задача L05: Сумма равна последнему числу

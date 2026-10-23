@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [functions, write, branching, compare]
 breaking: false
+theory: [fn-logic]
 ---
 
 # Задача FN21: Сравни версии

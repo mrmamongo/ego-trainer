@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [variables, assignment, trace]
 breaking: false
+theory: [v-assignment]
 ---
 
 # Задача V01: Что делает знак =

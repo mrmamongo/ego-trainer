@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [loops, trace, accumulator]
 breaking: false
+theory: [l-accumulator, l-list-for]
 ---
 
 # Задача L02: Накопитель

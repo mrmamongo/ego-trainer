@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [functions, parsons, if-else, variable-then-return]
 breaking: false
+theory: [fn-return-print, fn-logic]
 ---
 
 # Задача FN10: Собери функцию: большее из двух

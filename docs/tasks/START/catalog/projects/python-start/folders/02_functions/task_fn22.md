@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [functions, write, branching, coordinates]
 breaking: false
+theory: [fn-logic]
 ---
 
 # Задача FN22: Четверть на плоскости

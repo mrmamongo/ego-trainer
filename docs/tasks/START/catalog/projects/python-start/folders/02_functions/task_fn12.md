@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [functions, write, bool, branching]
 breaking: false
+theory: [fn-logic, fn-start-value]
 ---
 
 # Задача FN12: Цена со скидкой

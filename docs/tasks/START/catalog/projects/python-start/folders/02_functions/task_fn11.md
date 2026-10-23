@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [functions, write, branching]
 breaking: false
+theory: [fn-logic, fn-return-print]
 ---
 
 # Задача FN11: Оценка по баллам

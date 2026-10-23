@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [functions, write, branching, ranges]
 breaking: false
+theory: [fn-logic]
 ---
 
 # Задача FN17: Время суток

@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [variables, trace, name-error]
 breaking: false
+theory: [v-name-error]
 ---
 
 # Задача V12: Нельзя взять то, чего ещё нет

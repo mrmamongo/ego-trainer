@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [loops, write, best]
 breaking: false
+theory: [l-best]
 ---
 
 # Задача L20: Самое короткое слово

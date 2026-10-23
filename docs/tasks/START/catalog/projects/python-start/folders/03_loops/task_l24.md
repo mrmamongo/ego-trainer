@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [loops, write, counter]
 breaking: false
+theory: [l-counter, l-roles]
 ---
 
 # Задача L24: Сколько в диапазоне

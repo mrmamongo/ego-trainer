@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [loops, trace, early-return]
 breaking: false
+theory: [l-flag]
 ---
 
 # Задача L13: return внутри цикла

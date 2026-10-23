@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [functions, fill, initial-value]
 breaking: false
+theory: [fn-start-value]
 ---
 
 # Задача FN08: С чего начинается переменная

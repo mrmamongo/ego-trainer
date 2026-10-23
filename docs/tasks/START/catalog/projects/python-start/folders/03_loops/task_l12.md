@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [loops, write, collector]
 breaking: false
+theory: [l-collector]
 ---
 
 # Задача L12: Удвоить каждое

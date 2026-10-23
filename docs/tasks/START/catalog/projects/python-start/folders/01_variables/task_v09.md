@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [variables, trace, swap, temp]
 breaking: false
+theory: [v-copy]
 ---
 
 # Задача V09: Обмен через временную переменную

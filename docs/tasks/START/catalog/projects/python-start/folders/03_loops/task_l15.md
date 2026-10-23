@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [loops, write, flag]
 breaking: false
+theory: [l-flag]
 ---
 
 # Задача L15: Есть ли отрицательное

@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [variables, trace, swap]
 breaking: false
+theory: [v-copy]
 ---
 
 # Задача V08: Обмен, который теряет значение

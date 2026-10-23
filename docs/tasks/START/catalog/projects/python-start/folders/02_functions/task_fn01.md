@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [functions, trace, definition]
 breaking: false
+theory: [fn-def-call]
 ---
 
 # Задача FN01: Функция: определение и вызов

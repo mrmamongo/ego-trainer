@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [variables, trace, self-update]
 breaking: false
+theory: [v-self-update, v-assignment]
 ---
 
 # Задача V02: Правая часть считается первой

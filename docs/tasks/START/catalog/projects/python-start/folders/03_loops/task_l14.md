@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [loops, bug, flag]
 breaking: false
+theory: [l-flag]
 ---
 
 # Задача L14: Проверяет только первый элемент

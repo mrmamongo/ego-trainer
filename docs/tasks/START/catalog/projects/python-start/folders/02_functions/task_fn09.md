@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [functions, parsons, if-else, remainder]
 breaking: false
+theory: [fn-arithmetic, fn-logic]
 ---
 
 # Задача FN09: Собери функцию: чётное или нечётное

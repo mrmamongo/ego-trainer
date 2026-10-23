@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [functions, write, bool, and-or]
 breaking: false
+theory: [fn-logic]
 ---
 
 # Задача FN20: Вход в клуб

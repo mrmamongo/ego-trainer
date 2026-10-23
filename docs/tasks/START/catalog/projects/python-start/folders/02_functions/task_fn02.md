@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [functions, trace, scope]
 breaking: false
+theory: [fn-def-call]
 ---
 
 # Задача FN02: Параметр живёт только внутри вызова

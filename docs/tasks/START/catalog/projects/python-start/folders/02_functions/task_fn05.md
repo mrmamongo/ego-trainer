@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [functions, bug, return]
 breaking: false
+theory: [fn-return-print]
 ---
 
 # Задача FN05: Функция печатает вместо возврата

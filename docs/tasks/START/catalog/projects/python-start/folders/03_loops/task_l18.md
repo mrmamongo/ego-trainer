@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [loops, trace, best]
 breaking: false
+theory: [l-best]
 ---
 
 # Задача L18: Лучший на данный момент

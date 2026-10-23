@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [functions, fill, return]
 breaking: false
+theory: [fn-return-print, fn-start-value]
 ---
 
 # Задача FN07: Допиши return

@@ -71,6 +71,8 @@ def _list_offline() -> int:
 
     rows: list[tuple[str, str, str, str, str, str]] = []
     for md_path in sorted(tasks_dir.rglob("*.md")):
+        if md_path.name.startswith("lesson_"):  # theory cards are not tasks
+            continue
         # Filename stems look like: task_F1, task_1_5, task_a, task_h8.
         name = md_path.stem
         # block = parent dir name, e.g. 'block_f_simple' -> 'F'.

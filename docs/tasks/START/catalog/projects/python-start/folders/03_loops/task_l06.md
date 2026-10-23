@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [loops, bug, accumulator]
 breaking: false
+theory: [l-accumulator, l-flag]
 ---
 
 # Задача L06: Считает только первое число

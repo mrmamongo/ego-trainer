@@ -43,14 +43,41 @@ def verify(catalog_root: Path, timeout: float = 5.0) -> list[dict]:
     folders = {folder.folder.id: folder for folder in catalog.projects[0].folders}
     assert sorted(folders) == sorted(EXPECTED_IDS), sorted(folders)
 
+    lesson_folder = verify_theory(folders)
+    folder_rank = {folder_id: rank for rank, folder_id in enumerate(EXPECTED_IDS)}
+
     rows = []
     for folder_id, expected_ids in EXPECTED_IDS.items():
         discovered = folders[folder_id].tasks
         ids = [item.frontmatter.id for item in discovered]
         assert ids == expected_ids, (folder_id, ids)
         for item in discovered:
+            theory = item.frontmatter.theory
+            assert theory, f"{item.frontmatter.id} has no theory"
+            unknown = [t for t in theory if t not in lesson_folder]
+            assert not unknown, (item.frontmatter.id, "unknown theory ids", unknown)
+            later = [t for t in theory if folder_rank[lesson_folder[t]] > folder_rank[folder_id]]
+            assert not later, (item.frontmatter.id, "theory from a later folder", later)
+            assert len(set(theory)) == len(theory), (item.frontmatter.id, "repeated theory id")
             rows.append(verify_task(item, timeout))
     return rows
+
+
+def verify_theory(folders) -> dict[str, str]:
+    """Every folder has theory cards; lesson ids are unique. Returns id -> folder id."""
+    lesson_folder: dict[str, str] = {}
+    for folder_id in EXPECTED_IDS:
+        lessons = folders[folder_id].lessons
+        assert lessons, f"{folder_id} has no lesson_*.md"
+        for lesson in lessons:
+            assert not lesson.error, (lesson.md_path.name, lesson.error)
+            assert lesson.frontmatter is not None, lesson.md_path.name
+            assert lesson.body_md.strip(), f"{lesson.md_path.name} has an empty body"
+            lid = lesson.frontmatter.id
+            assert lid not in lesson_folder, ("duplicate lesson id", lid)
+            lesson_folder[lid] = folder_id
+    print(json.dumps({"lessons": len(lesson_folder)}), flush=True)
+    return lesson_folder
 
 
 def verify_task(item, timeout: float) -> dict:

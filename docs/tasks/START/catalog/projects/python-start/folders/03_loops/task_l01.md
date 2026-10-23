@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [loops, trace, current-item]
 breaking: false
+theory: [l-list-for]
 ---
 
 # Задача L01: Список и цикл for

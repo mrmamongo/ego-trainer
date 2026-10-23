@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [loops, write, counter]
 breaking: false
+theory: [l-counter]
 ---
 
 # Задача L09: Сколько длинных слов

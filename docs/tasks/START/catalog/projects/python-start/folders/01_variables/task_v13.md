@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [variables, trace, review]
 breaking: false
+theory: [v-assignment, v-branching, v-self-update]
 ---
 
 # Задача V13: Итоговая трассировка

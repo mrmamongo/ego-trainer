@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [functions, write, division]
 breaking: false
+theory: [fn-arithmetic, fn-start-value]
 ---
 
 # Задача FN14: Сколько упаковок купить

@@ -5,6 +5,7 @@ version: "1.0.0"
 level: easy
 tags: [functions, trace, return, branching]
 breaking: false
+theory: [fn-return-print]
 ---
 
 # Задача FN03: return сразу заканчивает функцию
