@@ -44,6 +44,68 @@ export interface DashboardRow {
 	attempts: number;
 	last_run_at: string | null;
 	md_path?: string;
+	// Catalog fields (null/[] on older servers) — project → folder breakdown.
+	project_id?: string | null;
+	project_name?: string | null;
+	project_order?: number;
+	folder_id?: string | null;
+	folder_name?: string | null;
+	folder_order?: number;
+	theory?: string[];
+	/** Row state computed by the host (dashboardLogic.taskState). */
+	state?: TaskState;
+}
+
+export type TaskState = 'passed' | 'defense' | 'started' | 'failed' | 'new';
+
+/** Folder progress bar (project-level groups have no id). */
+export interface FolderProgress {
+	key: string;
+	name: string;
+	passed: number;
+	total: number;
+	percent: number;
+}
+
+export interface ProjectProgress extends FolderProgress {
+	folders: FolderProgress[];
+}
+
+/** One row of GET /progress/me/understanding, ready to render. */
+export interface UnderstandingEntry {
+	task_id: string;
+	task_title: string;
+	status: string; // pending | confirmed | needs_review | active
+	status_label: string;
+	at: string | null;
+}
+
+/** Subset of GET /ai/me shown in the cabinet. */
+export interface AiAccess {
+	enabled: boolean;
+	available: boolean;
+	defense_required: boolean;
+	reason: string;
+	balance_usd: string;
+	spent_usd: string;
+}
+
+export interface Cabinet {
+	/** Per-project → per-folder passed/total progress. */
+	projects: ProjectProgress[];
+	/** First not-passed task in catalog order. */
+	next_task_id: string | null;
+	next_task_title: string | null;
+	/** Understanding evidence, newest first (null = endpoint unavailable). */
+	understanding: UnderstandingEntry[] | null;
+	/** AI access/budget (null = endpoint unavailable or offline). */
+	ai: AiAccess | null;
+	/** Evidence rows that make a passed solution count as «Решена». */
+	defense_required: boolean;
+	/** Task id → state; absent keys are unknown (no progress data). */
+	states: Record<string, TaskState>;
+	/** AIAccount.reason already translated to Russian by the host. */
+	ai_reason_label: string | null;
 }
 
 export interface DashboardSummary {
@@ -60,6 +122,8 @@ export interface DashboardData {
 	blocks: string[];
 	rows: DashboardRow[];
 	error?: string;
+	/** Student cabinet sections; absent on data cached before the upgrade. */
+	cabinet?: Cabinet;
 }
 
 export interface TaskHint {

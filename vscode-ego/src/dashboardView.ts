@@ -113,6 +113,24 @@ export class DashboardView {
             case 'dashboard.open':
                 if (msg.taskId) await DashboardView.openRow(msg.taskId);
                 break;
+            case 'dashboard.next': {
+                // «Продолжить»: first not-passed task in catalog order.
+                const nextId = DashboardView.lastData?.cabinet?.next_task_id;
+                if (nextId) await DashboardView.openRow(nextId);
+                else vscode.window.showInformationMessage('Ego: все задачи пройдены.');
+                break;
+            }
+            case 'dashboard.defend':
+                // Understanding check lives in the tutor sidebar; it opens on
+                // the next check of that task (the extension.ts check flow).
+                if (msg.taskId) {
+                    await DashboardView.openRow(msg.taskId);
+                    await vscode.commands.executeCommand('ego.assistant', msg.taskId);
+                }
+                break;
+            case 'dashboard.ai':
+                await vscode.commands.executeCommand('ego.assistant');
+                break;
             case 'dashboard.check':
                 if (msg.taskId) await deps.checkTask(msg.taskId);
                 await DashboardView.refresh();

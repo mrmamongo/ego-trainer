@@ -18,6 +18,10 @@ export type ExtMessage =
 	| { type: 'dashboard.hints'; taskId: string }
 	| { type: 'dashboard.pullAll' }
 	| { type: 'dashboard.push' }
+	// Student cabinet: continue with the next task, defend understanding, AI chat.
+	| { type: 'dashboard.next' }
+	| { type: 'dashboard.defend'; taskId: string }
+	| { type: 'dashboard.ai' }
 	| { type: 'taskView.check'; taskId: string }
 	| { type: 'taskView.openPy'; taskId: string }
 	| { type: 'taskView.refresh' }

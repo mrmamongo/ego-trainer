@@ -1,10 +1,23 @@
 <script lang="ts">
 	import { dashboardData } from './shared/store';
 	import { postToHost } from './shared/api';
-	import type { DashboardRow, TaskStatusFilter } from './shared/types';
+	import type { DashboardRow, TaskState, TaskStatusFilter } from './shared/types';
 
+	let projectKey = $state<string>('all');
 	let blockFilter = $state('all');
 	let statusFilter = $state<TaskStatusFilter>('all');
+	let search = $state('');
+
+	// Labels in the webview are local: the bundle must not import node-side code.
+	// Labels (Russian, incl. server-side status names) come pre-rendered from
+	// the host via the `cabinet` payload, so this bundle stays ASCII.
+	const STATE_LABELS: Record<TaskState, string> = {
+		passed: 'Решена',
+		defense: 'Ждёт защиты понимания',
+		started: 'В работе',
+		failed: 'Есть ошибки',
+		new: 'Не начата'
+	};
 
 	function normalizeStatus(status: string | undefined | null): string {
 		return (status ?? '').trim().toLowerCase();
@@ -18,36 +31,64 @@
 		return status === 'failed' || status === 'error' || status === 'timeout';
 	}
 
-	function matchesStatus(status: string, filter: TaskStatusFilter): boolean {
-		if (filter === 'all') return true;
-		if (filter === 'new') return isNewStatus(status);
-		if (filter === 'failed') return isFailedStatus(status);
-		return status === filter;
+	/** Row state: computed by the host, or derived from the raw status (offline cache). */
+	function stateOf(row: DashboardRow): TaskState {
+		if (row.state) return row.state;
+		const s = normalizeStatus(row.status);
+		if (s === 'passed') return 'passed';
+		if (isFailedStatus(s)) return 'failed';
+		if (isNewStatus(s)) return 'new';
+		return 'started';
 	}
 
-	function statusIcon(status: string): string {
-		const s = normalizeStatus(status);
-		if (s === 'passed') return '✓';
-		if (s === 'partial') return '◐';
-		if (isFailedStatus(s)) return '✗';
+	function labelFor(row: DashboardRow): string {
+		return STATE_LABELS[stateOf(row)];
+	}
+
+	function statusIcon(state: TaskState): string {
+		if (state === 'passed') return '✓';
+		if (state === 'defense') return '?';
+		if (state === 'started') return '↻';
+		if (state === 'failed') return '✗';
 		return '○';
 	}
 
-	function statusLabel(status: string): string {
-		const s = normalizeStatus(status);
-		if (isNewStatus(s)) return 'new';
-		if (s === 'error' || s === 'timeout') return s;
-		return s || 'new';
+	function matchesStatus(row: DashboardRow, filter: TaskStatusFilter): boolean {
+		if (filter === 'all') return true;
+		const state = stateOf(row);
+		if (filter === 'new') return state === 'new';
+		if (filter === 'failed') return state === 'failed';
+		return state === filter;
+	}
+
+	function matchesSearch(row: DashboardRow, query: string): boolean {
+		if (!query) return true;
+		const haystack = `${row.id} ${row.title} ${row.block} ${row.project_name ?? ''} ${row.folder_name ?? ''}`.toLocaleLowerCase('ru');
+		return haystack.includes(query);
 	}
 
 	function formatLastRun(value: string | null): string {
 		if (!value) return '—';
 		const date = new Date(value);
 		if (Number.isNaN(date.getTime())) return '—';
-		return date.toLocaleString(undefined, {
+		return date.toLocaleString('ru-RU', {
 			dateStyle: 'short',
 			timeStyle: 'short'
 		});
+	}
+
+	function formatDate(value: string | null): string {
+		if (!value) return '—';
+		const date = new Date(value);
+		if (Number.isNaN(date.getTime())) return '—';
+		return date.toLocaleString('ru-RU', { dateStyle: 'medium', timeStyle: 'short' });
+	}
+
+	function plural(n: number, one: string, few: string, many: string): string {
+		const mod100 = n % 100;
+		if (mod100 >= 11 && mod100 <= 14) return many;
+		const mod10 = n % 10;
+		return mod10 === 1 ? one : mod10 >= 2 && mod10 <= 4 ? few : many;
 	}
 
 	function openTask(taskId: string) {
@@ -62,6 +103,18 @@
 		postToHost({ type: 'dashboard.hints', taskId });
 	}
 
+	function defendTask(taskId: string) {
+		postToHost({ type: 'dashboard.defend', taskId });
+	}
+
+	function continueNext() {
+		postToHost({ type: 'dashboard.next' });
+	}
+
+	function openAssistant() {
+		postToHost({ type: 'dashboard.ai' });
+	}
+
 	function refresh() {
 		postToHost({ type: 'dashboard.refresh' });
 	}
@@ -74,138 +127,341 @@
 		postToHost({ type: 'dashboard.push' });
 	}
 
+	const rows = $derived.by(() => $dashboardData?.rows ?? []);
+	const cabinet = $derived($dashboardData?.cabinet);
+	const rowById = $derived(new Map(rows.map((row) => [row.id, row])));
+
+	// Counters follow the per-task state (passed counts only confirmed solutions).
+	const counts = $derived.by(() => {
+		let passed = 0;
+		let open = 0;
+		let defense = 0;
+		let failed = 0;
+		for (const row of rows) {
+			const state = stateOf(row);
+			if (state === 'passed') passed++;
+			else open++;
+			if (state === 'defense') defense++;
+			if (state === 'failed') failed++;
+		}
+		return { passed, open, defense, failed, total: rows.length };
+	});
+
+	const progressPct = $derived(counts.total > 0 ? Math.round((counts.passed / counts.total) * 100) : 0);
+
+	// Project tabs: derived from rows so they match the server grouping even
+	// when the cabinet payload is missing (cached data).
+	const projectTabs = $derived.by(() => {
+		const names = new Map<string, string>();
+		for (const row of rows) {
+			const key = row.project_id || `block:${row.block}`;
+			if (!names.has(key)) names.set(key, row.project_name || `Блок ${row.block}`);
+		}
+		return [...names.entries()];
+	});
+
+	const nextRow = $derived.by(() => {
+		const id = cabinet?.next_task_id;
+		if (!id) return null;
+		return rowById.get(id) ?? null;
+	});
+
 	const filteredRows = $derived.by(() => {
-		const data = $dashboardData;
-		if (!data) return [] as DashboardRow[];
-		return data.rows.filter((row) => {
+		const query = search.trim().toLocaleLowerCase('ru');
+		return rows.filter((row) => {
+			const key = row.project_id || `block:${row.block}`;
+			const projectOk = projectKey === 'all' || key === projectKey;
 			const blockOk = blockFilter === 'all' || row.block === blockFilter;
-			const statusOk = matchesStatus(normalizeStatus(row.status), statusFilter);
-			return blockOk && statusOk;
+			return (
+				projectOk &&
+				blockOk &&
+				matchesSearch(row, query) &&
+				matchesStatus(row, statusFilter)
+			);
 		});
 	});
 
-	const progressPct = $derived.by(() => {
-		const data = $dashboardData;
-		if (!data || data.summary.total <= 0) return 0;
-		return Math.round((data.summary.passed / data.summary.total) * 100);
+	const shownProjects = $derived.by(() => {
+		const projects = cabinet?.projects;
+		if (!projects) return [];
+		return projectKey === 'all' ? projects : projects.filter((p) => p.key === projectKey);
 	});
+
+	const understandingOpen = $derived(
+		(cabinet?.understanding ?? []).filter((entry) => normalizeStatus(entry.status) !== 'confirmed')
+	);
+
+	const understandingAll = $derived(cabinet?.understanding ?? []);
+
+	const recentAttempts = $derived(
+		rows
+			.filter((row) => !isNewStatus(normalizeStatus(row.status)))
+			.sort((a, b) => (b.last_run_at || '').localeCompare(a.last_run_at || ''))
+			.slice(0, 10)
+	);
+
+	const ai = $derived(cabinet?.ai ?? null);
 </script>
 
 <main class="dashboard">
 	{#if $dashboardData === null}
-		<div class="loading">Loading…</div>
+		<div class="loading" aria-live="polite">Загружаю личный кабинет…</div>
 	{:else}
 		{@const data = $dashboardData}
 		{@const offline = data.mode === 'offline'}
 
 		<header class="header">
 			<div class="brand-row">
-				<h1 class="brand">Ego Trainer</h1>
+				<h1 class="brand">Личный кабинет</h1>
 				<span class="mode" class:offline data-mode={data.mode}>
-					{data.mode === 'server' ? 'Server' : 'Offline'}
+					{data.mode === 'server' ? 'Сервер' : 'Офлайн'}
 				</span>
 			</div>
+			<p class="subheading">Задачи, попытки, защита понимания и ассистент — всё в одном месте.</p>
 		</header>
 
 		{#if data.error}
 			<p class="error" role="alert">{data.error}</p>
 		{/if}
 
-		<section class="summary" aria-label="Progress summary">
-			<div class="metrics">
-				<div class="metric">
-					<span class="metric-value">{data.summary.passed}</span>
-					<span class="metric-label">passed</span>
+		{#if counts.total > 0}
+			<section class="summary" aria-label="Сводка прогресса">
+				<div class="metric-row">
+					<div class="metric">
+						<span class="metric-value">{counts.total}</span>
+						<span class="metric-label">{plural(counts.total, 'задача', 'задачи', 'задач')} всего</span>
+					</div>
+					<div class="metric passed">
+						<span class="metric-value">{counts.passed}</span>
+						<span class="metric-label">решено</span>
+					</div>
+					<div class="metric">
+						<span class="metric-value">{counts.open}</span>
+						<span class="metric-label">в работе и новых</span>
+					</div>
+					{#if counts.defense > 0}
+						<div class="metric defense">
+							<span class="metric-value">{counts.defense}</span>
+							<span class="metric-label">ждут защиты</span>
+						</div>
+					{/if}
 				</div>
-				<div class="metric">
-					<span class="metric-value">{data.summary.partial}</span>
-					<span class="metric-label">partial</span>
+				<div class="progress" aria-label="Решено {progressPct}%">
+					<div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={progressPct}>
+						<div class="progress-fill" style:width="{progressPct}%"></div>
+					</div>
+					<span class="progress-label">{progressPct}%</span>
 				</div>
-				<div class="metric">
-					<span class="metric-value">{data.summary.new}</span>
-					<span class="metric-label">new</span>
-				</div>
-				<div class="metric">
-					<span class="metric-value">{data.summary.failed}</span>
-					<span class="metric-label">failed</span>
-				</div>
-				<div class="metric">
-					<span class="metric-value">{data.summary.total}</span>
-					<span class="metric-label">total</span>
-				</div>
-			</div>
-			<div class="progress" aria-label="{progressPct}% passed">
-				<div class="progress-track">
-					<div class="progress-fill" style:width="{progressPct}%"></div>
-				</div>
-				<span class="progress-label">{progressPct}% passed</span>
-			</div>
-		</section>
+			</section>
 
-		<section class="filters" aria-label="Filters">
+			<section class="continue" aria-label="Продолжить">
+				{#if nextRow}
+					<div class="continue-text">
+						<span class="continue-eyebrow">Продолжить</span>
+						<strong class="continue-title">{nextRow.id} · {nextRow.title}</strong>
+						<span class="continue-meta">
+							{nextRow.project_name || `Блок ${nextRow.block}`}
+							{#if nextRow.folder_name} · {nextRow.folder_name}{/if}
+							· {labelFor(nextRow)}
+						</span>
+					</div>
+					<button type="button" class="btn primary" onclick={continueNext}>Открыть задачу →</button>
+				{:else}
+					<div class="continue-text">
+						<span class="continue-eyebrow">Продолжить</span>
+						<strong class="continue-title">Все задачи пройдены</strong>
+						<span class="continue-meta">Отличная работа — загляни в раздел защиты понимания.</span>
+					</div>
+				{/if}
+			</section>
+		{/if}
+
+		{#if ai}
+			<section class="ai" aria-label="Учебный ассистент">
+				<div class="ai-text">
+					<strong>Учебный ассистент</strong>
+					<span class="ai-status" class:available={ai.available}>
+						{ai.available ? 'Доступен' : 'Недоступен'}
+						{#if cabinet?.ai_reason_label} · {cabinet.ai_reason_label}{/if}
+					</span>
+					<span class="ai-meta">
+						Баланс ${ai.balance_usd} · потрачено ${ai.spent_usd}
+						{#if ai.defense_required}· защита понимания обязательна{/if}
+					</span>
+				</div>
+				<button type="button" class="btn" onclick={openAssistant}>Открыть ассистента</button>
+			</section>
+		{/if}
+
+		{#if cabinet?.understanding !== null && cabinet !== undefined}
+			<section class="understanding" aria-label="Защита понимания">
+				<div class="section-heading">
+					<h2>Защита понимания</h2>
+					{#if understandingAll.length > 0}
+						<span class="section-count">{understandingOpen.length} {plural(understandingOpen.length, 'решение', 'решения', 'решений')} без подтверждения</span>
+					{/if}
+				</div>
+				{#if understandingAll.length === 0}
+					<p class="empty-note">
+						Пока проверенных решений нет. Пройди тесты задачи — после этого станет доступна защита понимания.
+					</p>
+				{:else}
+					<ul class="understanding-list">
+						{#each understandingAll as entry (entry.task_id + entry.status + entry.at)}
+							{@const confirmed = normalizeStatus(entry.status) === 'confirmed'}
+							{@const canOpen = rowById.has(entry.task_id)}
+							<li class="understanding-row">
+								<span class="state-dot" data-status={entry.status} aria-hidden="true">{confirmed ? '✓' : '?'}</span>
+								<span class="understanding-main">
+									<button
+										type="button"
+										class="link"
+										disabled={!canOpen}
+										title={canOpen ? 'Открыть задачу' : 'Задачи больше нет в каталоге'}
+										onclick={() => openTask(entry.task_id)}
+									>
+										{entry.task_id} · {entry.task_title}
+									</button>
+									<span class="understanding-label">{entry.status_label}</span>
+								</span>
+								<span class="muted">{formatDate(entry.at)}</span>
+								{#if !confirmed && canOpen}
+									<button type="button" class="btn" onclick={() => defendTask(entry.task_id)}>Пройти защиту</button>
+								{/if}
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</section>
+		{/if}
+
+		{#if shownProjects.length > 0}
+			<section class="projects" aria-label="Прогресс по проектам">
+				<div class="section-heading">
+					<h2>Прогресс по проектам</h2>
+					{#if projectKey !== 'all'}
+						<button type="button" class="btn" onclick={() => (projectKey = 'all')}>Показать все проекты</button>
+					{/if}
+				</div>
+				{#each shownProjects as project (project.key)}
+					<article class="project">
+						<div class="project-head">
+							<button
+								type="button"
+								class="project-name"
+								title="Показать задачи проекта"
+								onclick={() => (projectKey = projectKey === project.key ? 'all' : project.key)}
+							>
+								{project.name}
+							</button>
+							<span class="project-count mono">{project.passed}/{project.total}</span>
+						</div>
+						<div class="bar" aria-label="{project.name}: решено {project.passed} из {project.total}">
+							<div class="bar-fill" style:width="{project.percent}%"></div>
+						</div>
+						<ul class="folders">
+							{#each project.folders as folder (folder.key)}
+								<li class="folder">
+									<span class="folder-name">{folder.name}</span>
+									<span class="bar small" aria-label="{folder.name}: решено {folder.passed} из {folder.total}">
+										<span class="bar-fill" style:width="{folder.percent}%"></span>
+									</span>
+									<span class="folder-count mono">{folder.passed}/{folder.total}</span>
+								</li>
+							{/each}
+						</ul>
+					</article>
+				{/each}
+			</section>
+		{/if}
+
+		<section class="filters" aria-label="Фильтры">
 			<label class="filter">
-				<span class="filter-label">Block</span>
-				<select bind:value={blockFilter}>
-					<option value="all">All blocks</option>
-					{#each data.blocks as block (block)}
-						<option value={block}>{block}</option>
+				<span class="filter-label">Проект</span>
+				<select bind:value={projectKey}>
+					<option value="all">Все проекты</option>
+					{#each projectTabs as [key, name] (key)}
+						<option value={key}>{name}</option>
 					{/each}
 				</select>
 			</label>
 			<label class="filter">
-				<span class="filter-label">Status</span>
-				<select bind:value={statusFilter}>
-					<option value="all">all</option>
-					<option value="passed">passed</option>
-					<option value="partial">partial</option>
-					<option value="new">new</option>
-					<option value="failed">failed</option>
+				<span class="filter-label">Блок</span>
+				<select bind:value={blockFilter}>
+					<option value="all">Все блоки</option>
+					{#each data.blocks as block (block)}
+						<option value={block}>Блок {block}</option>
+					{/each}
 				</select>
+			</label>
+			<label class="filter">
+				<span class="filter-label">Статус</span>
+				<select bind:value={statusFilter}>
+					<option value="all">Любой</option>
+					<option value="new">Не начата</option>
+					<option value="started">В работе</option>
+					<option value="defense">Ждёт защиты</option>
+					<option value="passed">Решена</option>
+					<option value="failed">Есть ошибки</option>
+				</select>
+			</label>
+			<label class="filter grow">
+				<span class="filter-label">Поиск</span>
+				<input type="search" placeholder="Найти задачу…" bind:value={search} />
 			</label>
 		</section>
 
-		<section class="table-wrap" aria-label="Tasks">
+		<section class="table-wrap" aria-label="Задачи">
+			<div class="table-head">
+				<h2>Задачи</h2>
+				<span class="section-count">{filteredRows.length} из {rows.length}</span>
+			</div>
 			<table class="tasks">
 				<thead>
 					<tr>
-						<th>Task</th>
-						<th>Title</th>
-						<th>Status</th>
-						<th>Version</th>
-						<th>Tests</th>
-						<th>Attempts</th>
-						<th>Last run</th>
-						<th>Actions</th>
+						<th>Задача</th>
+						<th>Название</th>
+						<th>Где</th>
+						<th>Статус</th>
+						<th>Тесты</th>
+						<th>Попытки</th>
+						<th>Последняя</th>
+						<th>Действия</th>
 					</tr>
 				</thead>
 				<tbody>
 					{#if filteredRows.length === 0}
 						<tr>
-							<td colspan="8" class="empty">No tasks match the current filters.</td>
+							<td colspan="8" class="empty">Под текущие фильтры задачи не подходят.</td>
 						</tr>
 					{:else}
 						{#each filteredRows as row (row.id)}
-							{@const status = normalizeStatus(row.status)}
-							<tr>
+							{@const state = stateOf(row)}
+							<tr class:next={row.id === cabinet?.next_task_id}>
 								<td class="mono">{row.id}</td>
 								<td>{row.title}</td>
-								<td>
-									<span class="status" data-status={statusLabel(status)}>
-										<span class="status-icon" aria-hidden="true">{statusIcon(status)}</span>
-										{statusLabel(status)}
-									</span>
+								<td class="muted where">
+									{row.project_name || `Блок ${row.block}`}
+									{#if row.folder_name}<span class="folder-hint">› {row.folder_name}</span>{/if}
 								</td>
-								<td class="mono">
-									v{row.version}
-									{#if row.stale}<span class="stale" title="Progress is from an older task version">stale progress</span>{/if}
+								<td>
+									<span class="status" data-status={state}>
+										<span class="status-icon" aria-hidden="true">{statusIcon(state)}</span>
+										{STATE_LABELS[state]}
+									</span>
+									{#if row.stale}<span class="stale" title="Прогресс относится к другой версии задачи">устар.</span>{/if}
 								</td>
 								<td class="mono">{row.passed_tests}/{row.total_tests}</td>
 								<td class="mono">{row.attempts}</td>
 								<td class="muted">{formatLastRun(row.last_run_at)}</td>
 								<td class="actions">
-									<button type="button" class="btn" onclick={() => openTask(row.id)}>Open</button>
-									<button type="button" class="btn" onclick={() => checkTask(row.id)}>Check</button>
-									<button type="button" class="btn" onclick={() => hintsTask(row.id)}>Hints</button>
+									<button type="button" class="btn" onclick={() => openTask(row.id)}>{state === 'new' ? 'Открыть' : 'Продолжить'}</button>
+									<button type="button" class="btn" onclick={() => checkTask(row.id)}>Проверить</button>
+									{#if state === 'defense'}
+										<button type="button" class="btn primary" onclick={() => defendTask(row.id)}>Защита</button>
+									{:else}
+										<button type="button" class="btn" onclick={() => hintsTask(row.id)}>Подсказки</button>
+									{/if}
 								</td>
 							</tr>
 						{/each}
@@ -214,20 +470,43 @@
 			</table>
 		</section>
 
+		{#if recentAttempts.length > 0}
+			<section class="recent" aria-label="Последние попытки">
+				<div class="section-heading">
+					<h2>Последние попытки</h2>
+				</div>
+				<ul class="recent-list">
+					{#each recentAttempts as row (row.id)}
+						{@const state = stateOf(row)}
+						<li class="recent-row">
+							<span class="state-dot" data-status={state} aria-hidden="true">{statusIcon(state)}</span>
+							<span class="recent-title">
+								<button type="button" class="link" onclick={() => openTask(row.id)}>{row.id} · {row.title}</button>
+							</span>
+							<span class="status" data-status={state}>{STATE_LABELS[state]}</span>
+							<span class="mono">{row.passed_tests}/{row.total_tests}</span>
+							<span class="muted">{plural(row.attempts, 'попытка', 'попытки', 'попыток')}</span>
+							<span class="muted">{formatLastRun(row.last_run_at)}</span>
+						</li>
+					{/each}
+				</ul>
+			</section>
+		{/if}
+
 		<footer class="footer">
-			<button type="button" class="btn primary" onclick={pullAll} disabled={offline} title={offline ? 'Unavailable offline' : 'Pull all tasks'}>
-				Pull All
+			<button type="button" class="btn primary" onclick={pullAll} disabled={offline} title={offline ? 'Недоступно в офлайн-режиме' : 'Загрузить все задачи'}>
+				Загрузить задачи
 			</button>
 			<button
 				type="button"
 				class="btn primary"
 				onclick={pushProgress}
 				disabled={offline}
-				title={offline ? 'Unavailable offline — switch to Server mode' : 'Push local progress to server'}
+				title={offline ? 'Недоступно в офлайн-режиме — переключитесь на «Сервер»' : 'Отправить локальный прогресс на сервер'}
 			>
-				Push Progress
+				Отправить прогресс
 			</button>
-			<button type="button" class="btn" onclick={refresh}>Refresh</button>
+			<button type="button" class="btn" onclick={refresh}>Обновить</button>
 		</footer>
 	{/if}
 </main>
@@ -283,6 +562,12 @@
 		line-height: 1.2;
 	}
 
+	.subheading {
+		margin: 0.25rem 0 0;
+		font-size: 0.85rem;
+		opacity: 0.7;
+	}
+
 	.mode {
 		font-size: 0.75rem;
 		font-weight: 600;
@@ -303,11 +588,7 @@
 		margin: 0;
 		padding: 0.5rem 0.65rem;
 		border-left: 3px solid var(--vscode-inputValidation-errorBorder, #f14c4c);
-		background: color-mix(
-			in srgb,
-			var(--vscode-inputValidation-errorBackground, #f14c4c) 18%,
-			transparent
-		);
+		background: color-mix(in srgb, var(--vscode-inputValidation-errorBackground, #f14c4c) 18%, transparent);
 		color: var(--vscode-errorForeground, var(--vscode-foreground));
 	}
 
@@ -317,7 +598,7 @@
 		gap: 0.55rem;
 	}
 
-	.metrics {
+	.metric-row {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.35rem 1.25rem;
@@ -335,10 +616,17 @@
 		font-variant-numeric: tabular-nums;
 	}
 
+	.metric.passed .metric-value {
+		color: var(--vscode-testing-iconPassed, #73c991);
+	}
+
+	.metric.defense .metric-value {
+		color: var(--vscode-testing-iconQueued, #cca700);
+	}
+
 	.metric-label {
 		font-size: 0.8rem;
 		opacity: 0.7;
-		text-transform: lowercase;
 	}
 
 	.progress {
@@ -359,7 +647,6 @@
 		height: 100%;
 		border-radius: 2px;
 		background: var(--vscode-button-background);
-		box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--vscode-focusBorder, transparent) 40%, transparent);
 		transition: width 0.35s ease;
 	}
 
@@ -368,6 +655,248 @@
 		font-size: 0.8rem;
 		opacity: 0.75;
 		font-variant-numeric: tabular-nums;
+	}
+
+	.continue,
+	.ai {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		padding: 0.7rem 0.85rem;
+		border-left: 3px solid var(--vscode-focusBorder, var(--vscode-button-background));
+		background: color-mix(in srgb, var(--vscode-button-background) 10%, transparent);
+	}
+
+	.continue-text,
+	.ai-text {
+		display: flex;
+		flex-direction: column;
+		gap: 0.15rem;
+		min-width: 0;
+	}
+
+	.continue-eyebrow {
+		font-size: 0.72rem;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		opacity: 0.7;
+	}
+
+	.continue-title {
+		font-size: 0.95rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.continue-meta,
+	.ai-meta {
+		font-size: 0.78rem;
+		opacity: 0.75;
+	}
+
+	.ai-status {
+		font-size: 0.85rem;
+		color: var(--vscode-testing-iconFailed, #f14c4c);
+	}
+
+	.ai-status.available {
+		color: var(--vscode-testing-iconPassed, #73c991);
+	}
+
+	.section-heading,
+	.table-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+	}
+
+	h2 {
+		margin: 0;
+		font-size: 0.95rem;
+		letter-spacing: -0.01em;
+	}
+
+	.section-count {
+		font-size: 0.78rem;
+		opacity: 0.7;
+	}
+
+	.empty-note {
+		margin: 0.25rem 0 0;
+		font-size: 0.82rem;
+		opacity: 0.7;
+	}
+
+	.understanding-list,
+	.folders,
+	.recent-list {
+		list-style: none;
+		margin: 0.4rem 0 0;
+		padding: 0;
+	}
+
+	.understanding-row,
+	.recent-row {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		padding: 0.35rem 0;
+		border-bottom: 1px solid color-mix(in srgb, var(--vscode-foreground) 8%, transparent);
+		flex-wrap: wrap;
+	}
+
+	.understanding-main {
+		display: flex;
+		flex-direction: column;
+		gap: 0.1rem;
+		min-width: 0;
+		flex: 1;
+	}
+
+	.understanding-label {
+		font-size: 0.78rem;
+		opacity: 0.75;
+	}
+
+	.link {
+		appearance: none;
+		border: 0;
+		background: none;
+		padding: 0;
+		color: var(--vscode-textLink-foreground, #3794ff);
+		font: inherit;
+		font-size: 0.85rem;
+		text-align: left;
+		cursor: pointer;
+	}
+
+	.link:hover:not(:disabled) {
+		text-decoration: underline;
+	}
+
+	.link:disabled {
+		color: var(--vscode-foreground);
+		opacity: 0.6;
+		cursor: default;
+	}
+
+	.state-dot {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.1rem;
+		height: 1.1rem;
+		flex-shrink: 0;
+		font-weight: 700;
+		font-size: 0.75rem;
+		border: 1px solid color-mix(in srgb, var(--vscode-foreground) 25%, transparent);
+		border-radius: 50%;
+	}
+
+	.state-dot[data-status='passed'],
+	.state-dot[data-status='confirmed'] {
+		color: var(--vscode-testing-iconPassed, #73c991);
+		border-color: currentColor;
+	}
+
+	.state-dot[data-status='defense'],
+	.state-dot[data-status='pending'],
+	.state-dot[data-status='active'],
+	.state-dot[data-status='needs_review'] {
+		color: var(--vscode-testing-iconQueued, #cca700);
+		border-color: currentColor;
+	}
+
+	.state-dot[data-status='failed'] {
+		color: var(--vscode-testing-iconFailed, #f14c4c);
+		border-color: currentColor;
+	}
+
+	.projects {
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
+	}
+
+	.project {
+		padding: 0.5rem 0.65rem;
+		border: 1px solid color-mix(in srgb, var(--vscode-foreground) 14%, transparent);
+	}
+
+	.project-head {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 0.75rem;
+	}
+
+	.project-name {
+		appearance: none;
+		border: 0;
+		background: none;
+		padding: 0;
+		font: inherit;
+		font-weight: 650;
+		color: var(--vscode-foreground);
+		cursor: pointer;
+		text-align: left;
+	}
+
+	.project-name:hover {
+		color: var(--vscode-textLink-foreground, #3794ff);
+	}
+
+	.project-count,
+	.folder-count {
+		font-size: 0.8rem;
+		opacity: 0.85;
+	}
+
+	.bar {
+		display: block;
+		height: 0.4rem;
+		margin: 0.35rem 0;
+		border-radius: 2px;
+		background: color-mix(in srgb, var(--vscode-foreground) 12%, transparent);
+		overflow: hidden;
+	}
+
+	.bar.small {
+		flex: 1;
+		height: 0.25rem;
+		margin: 0;
+	}
+
+	.bar-fill {
+		display: block;
+		height: 100%;
+		background: var(--vscode-testing-iconPassed, var(--vscode-button-background));
+		transition: width 0.35s ease;
+	}
+
+	.folders {
+		margin-top: 0.3rem;
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+	}
+
+	.folder {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		font-size: 0.8rem;
+	}
+
+	.folder-name {
+		flex: 0 0 12rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		opacity: 0.85;
 	}
 
 	.filters {
@@ -382,12 +911,18 @@
 		gap: 0.4rem;
 	}
 
+	.filter.grow {
+		flex: 1;
+		min-width: 12rem;
+	}
+
 	.filter-label {
 		font-size: 0.8rem;
 		opacity: 0.75;
 	}
 
-	select {
+	select,
+	input[type='search'] {
 		appearance: none;
 		min-width: 9rem;
 		padding: 0.25rem 0.5rem;
@@ -398,7 +933,13 @@
 		font: inherit;
 	}
 
-	select:focus-visible {
+	.filter.grow input[type='search'] {
+		flex: 1;
+		width: 100%;
+	}
+
+	select:focus-visible,
+	input[type='search']:focus-visible {
 		outline: 1px solid var(--vscode-focusBorder, var(--vscode-button-background));
 		outline-offset: 1px;
 	}
@@ -407,6 +948,10 @@
 		overflow-x: auto;
 		border-top: 1px solid color-mix(in srgb, var(--vscode-foreground) 14%, transparent);
 		border-bottom: 1px solid color-mix(in srgb, var(--vscode-foreground) 14%, transparent);
+	}
+
+	.table-head {
+		padding: 0.45rem 0;
 	}
 
 	.tasks {
@@ -437,14 +982,26 @@
 	}
 
 	tbody tr:hover {
-		background: var(
-			--vscode-list-hoverBackground,
-			color-mix(in srgb, var(--vscode-foreground) 6%, transparent)
-		);
+		background: var(--vscode-list-hoverBackground, color-mix(in srgb, var(--vscode-foreground) 6%, transparent));
+	}
+
+	tbody tr.next {
+		box-shadow: inset 2px 0 var(--vscode-focusBorder, var(--vscode-button-background));
 	}
 
 	td {
 		border-bottom: 1px solid color-mix(in srgb, var(--vscode-foreground) 8%, transparent);
+	}
+
+	.where {
+		max-width: 16rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.folder-hint {
+		margin-left: 0.3rem;
+		opacity: 0.7;
 	}
 
 	.mono {
@@ -471,13 +1028,25 @@
 		text-align: center;
 		opacity: 0.65;
 		padding: 1.25rem 0.55rem;
+		white-space: normal;
 	}
 
 	.status {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.3rem;
-		text-transform: lowercase;
+	}
+
+	[data-status='passed']:not(.state-dot) {
+		color: var(--vscode-testing-iconPassed, inherit);
+	}
+
+	[data-status='defense']:not(.state-dot) {
+		color: var(--vscode-testing-iconQueued, inherit);
+	}
+
+	[data-status='failed']:not(.state-dot) {
+		color: var(--vscode-testing-iconFailed, inherit);
 	}
 
 	.status-icon {
@@ -488,6 +1057,11 @@
 	.actions {
 		display: flex;
 		gap: 0.3rem;
+	}
+
+	.recent-title {
+		flex: 1;
+		min-width: 10rem;
 	}
 
 	.footer {
@@ -514,10 +1088,7 @@
 	}
 
 	.btn:hover:not(:disabled) {
-		background: var(
-			--vscode-list-hoverBackground,
-			color-mix(in srgb, var(--vscode-foreground) 8%, transparent)
-		);
+		background: var(--vscode-list-hoverBackground, color-mix(in srgb, var(--vscode-foreground) 8%, transparent));
 	}
 
 	.btn:focus-visible {
@@ -551,12 +1122,25 @@
 		}
 	}
 
+	@media (max-width: 720px) {
+		.continue,
+		.ai {
+			flex-direction: column;
+			align-items: flex-start;
+		}
+
+		.folder-name {
+			flex-basis: 7rem;
+		}
+	}
+
 	@media (prefers-reduced-motion: reduce) {
 		.header {
 			animation: none;
 		}
 
 		.progress-fill,
+		.bar-fill,
 		tbody tr {
 			transition: none;
 		}

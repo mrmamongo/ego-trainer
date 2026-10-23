@@ -289,4 +289,74 @@ export class EgoApi {
     async health(): Promise<{ status: string; version: string }> {
         return this.request('GET', '/health');
     }
+
+    // === Student cabinet (additive; older servers answer 404) ===
+
+    /** GET /progress/me/understanding — evidence for already-checked solutions. */
+    async getMyUnderstanding(): Promise<UnderstandingRow[]> {
+        return this.request<UnderstandingRow[]>('GET', '/progress/me/understanding');
+    }
+
+    /** GET /ai/me — tutor access and budget (the `AIAccount` shape). */
+    async getAiMe(): Promise<AIAccount> {
+        return this.request<AIAccount>('GET', '/ai/me');
+    }
+
+    /** GET /progress/me — the current student's own progress rows. */
+    async getMyProgress(): Promise<ProgressRow[]> {
+        return this.request<ProgressRow[]>('GET', '/progress/me');
+    }
+}
+
+// === Student cabinet contracts (shared worker contract, backward compatible) ===
+
+/**
+ * Catalog location fields added to TaskMeta. Older servers omit them, so every
+ * consumer must treat a missing value as null / [].
+ */
+export interface TaskCatalogFields {
+    project_id: string | null;
+    project_name: string | null;
+    project_order: number;
+    folder_id: string | null;
+    folder_name: string | null;
+    folder_order: number;
+    theory: string[];
+}
+
+/**
+ * One row of GET /progress/me/understanding (see `submission_views` in
+ * ego_server/ai.py): evidence for a checked solution, without code or billing.
+ */
+export interface UnderstandingRow {
+    id: string;
+    task_id: string;
+    version: string;
+    solution_hash: string;
+    /** pending | confirmed | needs_review | active (server vocabulary). */
+    understanding: string;
+    evidence: { stage: string; quote: string }[];
+    created_at: string;
+}
+
+/**
+ * TaskMeta with the optional catalog fields. Optional types keep old-server
+ * listings assignable to it directly.
+ */
+export type TaskMetaWithCatalog = TaskMeta & Partial<TaskCatalogFields>;
+
+/**
+ * Normalize catalog fields of a server task: a missing field is null / 0 / [],
+ * as the shared contract requires for old servers.
+ */
+export function catalogFieldsOf(task: TaskMetaWithCatalog): TaskCatalogFields {
+    return {
+        project_id: task.project_id ?? null,
+        project_name: task.project_name ?? null,
+        project_order: task.project_order ?? 0,
+        folder_id: task.folder_id ?? null,
+        folder_name: task.folder_name ?? null,
+        folder_order: task.folder_order ?? 0,
+        theory: Array.isArray(task.theory) ? task.theory : [],
+    };
 }
