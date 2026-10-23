@@ -16,18 +16,28 @@ SemVer policy (per D16.6):
 - hash changed + version not bumped → sync error (task skipped, counted).
 - ``breaking: true`` or major bump → mark prior progress ``stale``.
 - ``auto_minor`` policy (legacy fixture) → silent minor bump (old behavior).
+
+Theory cards (``lesson_*.md``, catalog mode only):
+- lessons are upserted by id (update when ``content_hash`` changes);
+- lessons of a synced project whose file disappeared are deleted;
+- a duplicate lesson id (second card) is a sync error; an unknown
+  ``theory`` id on a task only adds a warning to ``error_details``;
+- task ``theory`` is metadata, not graded content: it is refreshed on
+  every sync even when the task hash/version did not change.
 """
 
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ego.catalog import Project, Folder, TaskFrontmatter
+from ego.catalog import CONTENT_ID_RE, Project, Folder, TaskFrontmatter, lesson_content_hash
 from ego.content_repo import (
+    DiscoveredLesson,
     DiscoveredTask,
     discover_repo,
 )
@@ -52,6 +62,10 @@ class SyncResult:
     started_at: str = ""
     finished_at: str = ""
     log_id: int | None = None  # sync_log row id
+    # Theory cards: reported in the summary, not part of added/updated/skipped.
+    lessons_added: int = 0
+    lessons_updated: int = 0
+    lessons_deleted: int = 0
 
     @property
     def status(self) -> str:
@@ -125,13 +139,17 @@ def sync_from_path(
         _finish_sync_log(conn, log_id, result, git_sha=None)
         return result
 
-    # Upsert projects, folders, tasks.
+    # Upsert projects, folders, lessons, tasks.
     for proj in catalog.projects:
         _upsert_project(conn, proj.project)
+        synced_lesson_ids: set[str] = set()
         for folder in proj.folders:
             _upsert_folder(conn, folder.folder, proj.project.id)
+            for lesson in folder.lessons:
+                _upsert_lesson(conn, lesson, result, synced_lesson_ids)
             for dtask in folder.tasks:
                 _upsert_discovered_task(conn, dtask, proj.project, folder.folder, result)
+        _delete_stale_lessons(conn, proj.project.id, synced_lesson_ids, result)
 
     _finish_sync_log(conn, log_id, result, git_sha=None)
     return result
@@ -227,6 +245,111 @@ def _upsert_folder(conn: sqlite3.Connection, folder: Folder, project_id: str) ->
     )
 
 
+# === Lesson (theory card) upsert ===
+
+
+def _upsert_lesson(
+    conn: sqlite3.Connection,
+    lesson: DiscoveredLesson,
+    result: SyncResult,
+    synced_ids: set[str],
+) -> None:
+    """Upsert one discovered ``lesson_*.md`` (idempotent by id).
+
+    A file that failed to parse, a lesson id that was already seen in this
+    repo (duplicate), or an id that is not URL-safe is a sync error — the
+    card is skipped, counted, and never written.
+    """
+    where = lesson.md_path.name
+    if lesson.frontmatter is None:
+        result.errors += 1
+        result.error_details.append(f"LESSON {where}: {lesson.error}")
+        return
+    fm = lesson.frontmatter
+    if not re.fullmatch(CONTENT_ID_RE, fm.id):
+        result.errors += 1
+        result.error_details.append(
+            f"LESSON {where}: invalid id {fm.id!r} "
+            f"(expected {CONTENT_ID_RE}); skipping"
+        )
+        return
+    if fm.id in synced_ids:
+        result.errors += 1
+        result.error_details.append(
+            f"LESSON {fm.id}: duplicate lesson id (second file {where}); skipping"
+        )
+        return
+    synced_ids.add(fm.id)
+
+    now = _now_iso()
+    content_hash = lesson_content_hash(fm, lesson.body_md)
+    existing = conn.execute(
+        "SELECT content_hash FROM lessons WHERE id = ?", (fm.id,)
+    ).fetchone()
+    if existing is None:
+        conn.execute(
+            """INSERT INTO lessons
+            (id, project_id, folder_id, title, "order", version, content_hash,
+             body_md, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                fm.id,
+                lesson.project_id,
+                lesson.folder_id,
+                fm.title,
+                fm.order,
+                fm.version,
+                content_hash,
+                lesson.body_md,
+                now,
+                now,
+            ),
+        )
+        result.lessons_added += 1
+        return
+    # Lessons carry no SemVer gate: any change is applied in place.
+    if existing["content_hash"] == content_hash:
+        return
+    conn.execute(
+        """UPDATE lessons SET
+        project_id = ?, folder_id = ?, title = ?, "order" = ?, version = ?,
+        content_hash = ?, body_md = ?, updated_at = ?
+        WHERE id = ?""",
+        (
+            lesson.project_id,
+            lesson.folder_id,
+            fm.title,
+            fm.order,
+            fm.version,
+            content_hash,
+            lesson.body_md,
+            now,
+            fm.id,
+        ),
+    )
+    result.lessons_updated += 1
+
+
+def _delete_stale_lessons(
+    conn: sqlite3.Connection,
+    project_id: str,
+    synced_ids: set[str],
+    result: SyncResult,
+) -> None:
+    """Delete lessons of ``project_id`` whose ``lesson_*.md`` disappeared."""
+    existing_ids = [
+        row["id"]
+        for row in conn.execute(
+            "SELECT id FROM lessons WHERE project_id = ?", (project_id,)
+        ).fetchall()
+    ]
+    stale = [lesson_id for lesson_id in existing_ids if lesson_id not in synced_ids]
+    if not stale:
+        return
+    conn.executemany("DELETE FROM lessons WHERE id = ?", [(i,) for i in stale])
+    result.lessons_deleted += len(stale)
+
+
 # === Task upsert (the core of sync) ===
 
 
@@ -253,6 +376,7 @@ def _upsert_discovered_task(
     # Apply frontmatter overrides (D16.6: frontmatter is source of truth).
     if dtask.frontmatter is not None:
         task = _apply_frontmatter(task, dtask.frontmatter)
+    theory = _task_theory(dtask.frontmatter)
 
     # Attach catalog FKs.
     task_version_policy = project.version_policy
@@ -264,6 +388,7 @@ def _upsert_discovered_task(
         project_id=project.id,
         version_policy=task_version_policy,
         declared_breaking=task.extra.get("breaking", False),
+        theory=theory,
     )
     if outcome == "imported":
         result.added += 1
@@ -277,6 +402,33 @@ def _upsert_discovered_task(
             f"VERSION {task.id}: content changed but version not bumped "
             f"(file v{task.version} <= DB v); skipping"
         )
+
+    # Lessons are synced after every task of the project, but validate ids
+    # up front: theory is only advisory, so a bad id must never fail the task.
+    for lesson_id in theory:
+        if not re.fullmatch(CONTENT_ID_RE, lesson_id):
+            result.error_details.append(
+                f"THEORY {task.id}: invalid lesson id {lesson_id!r} "
+                f"(expected {CONTENT_ID_RE})"
+            )
+            continue
+        known = conn.execute("SELECT 1 FROM lessons WHERE id = ?", (lesson_id,)).fetchone()
+        if known is None:
+            result.error_details.append(
+                f"THEORY {task.id}: lesson '{lesson_id}' not found; warning only"
+            )
+
+
+def _task_theory(fm: TaskFrontmatter | None) -> list[str]:
+    """Ordered, de-duplicated lesson ids from task frontmatter."""
+    if fm is None:
+        return []
+    out: list[str] = []
+    for lesson_id in fm.theory:
+        lesson_id = str(lesson_id).strip()
+        if lesson_id and lesson_id not in out:
+            out.append(lesson_id)
+    return out
 
 
 def _apply_frontmatter(task: Task, fm: TaskFrontmatter) -> Task:
@@ -302,14 +454,19 @@ def _upsert_task_row(
     project_id: str,
     version_policy: str,
     declared_breaking: bool,
+    theory: list[str] | None = None,
 ) -> str:
     """Insert/update ``tasks`` + ``task_versions`` per SemVer policy.
+
+    ``theory`` (lesson ids) is not graded content: it is written on every
+    call, and a theory-only change does not require a version bump.
 
     Returns ``"imported"`` | ``"updated"`` | ``"skipped"`` | ``"error"``.
     """
     now = _now_iso()
+    theory_json = _dump_tags(theory or [])
     existing = conn.execute(
-        "SELECT id, version, content_hash FROM tasks WHERE id = ?",
+        "SELECT id, version, content_hash, theory FROM tasks WHERE id = ?",
         (task.id,),
     ).fetchone()
 
@@ -318,9 +475,9 @@ def _upsert_task_row(
         conn.execute(
             """INSERT INTO tasks
             (id, block, slug, task_id, title, level, tags, version,
-             content_hash, breaking, md_path, folder_id, project_id,
+             content_hash, breaking, md_path, folder_id, project_id, theory,
              created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 task.id,
                 task.block,
@@ -335,6 +492,7 @@ def _upsert_task_row(
                 str(task.md_path),
                 folder_id,
                 project_id,
+                theory_json,
                 now,
                 now,
             ),
@@ -358,6 +516,13 @@ def _upsert_task_row(
     if existing["content_hash"] == task.content_hash and (
         version_policy == "auto_minor" or task.version == existing["version"]
     ):
+        # Metadata refresh: theory links never require a version bump.
+        if (existing["theory"] or "[]") != theory_json:
+            conn.execute(
+                "UPDATE tasks SET theory = ?, updated_at = ? WHERE id = ?",
+                (theory_json, now, task.id),
+            )
+            return "updated"
         return "skipped"
 
     # Content changed — resolve new version per policy.
@@ -376,7 +541,7 @@ def _upsert_task_row(
         """UPDATE tasks SET
         block = ?, slug = ?, task_id = ?, title = ?, level = ?, tags = ?,
         version = ?, content_hash = ?, breaking = ?, md_path = ?,
-        folder_id = ?, project_id = ?, updated_at = ?
+        folder_id = ?, project_id = ?, theory = ?, updated_at = ?
         WHERE id = ?""",
         (
             task.block,
@@ -391,6 +556,7 @@ def _upsert_task_row(
             str(task.md_path),
             folder_id,
             project_id,
+            theory_json,
             now,
             task.id,
         ),

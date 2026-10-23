@@ -131,12 +131,13 @@ def _bump_minor(version: str) -> str:
 def get_task_meta(conn: sqlite3.Connection, task_id: str) -> dict | None:
     """Fetch task metadata by id. Returns a plain dict or ``None``.
 
-    The ``tags`` column is deserialized from JSON text to a list, and
-    ``breaking`` is coerced to ``bool``.
+    The ``tags`` / ``theory`` columns are deserialized from JSON text to
+    lists, and ``breaking`` is coerced to ``bool``.
     """
     row = conn.execute(
         """SELECT id, block, slug, task_id, title, level, tags, version,
-                  content_hash, breaking, md_path, created_at, updated_at
+                  content_hash, breaking, md_path, theory, folder_id,
+                  project_id, created_at, updated_at
            FROM tasks WHERE id = ?""",
         (task_id,),
     ).fetchone()
@@ -144,5 +145,6 @@ def get_task_meta(conn: sqlite3.Connection, task_id: str) -> dict | None:
         return None
     d = dict(row)
     d["tags"] = json.loads(d["tags"]) if d["tags"] else []
+    d["theory"] = json.loads(d["theory"]) if d.get("theory") else []
     d["breaking"] = bool(d["breaking"])
     return d

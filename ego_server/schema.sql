@@ -49,10 +49,25 @@ CREATE TABLE IF NOT EXISTS tasks (
   md_path      TEXT NOT NULL,              -- относительный путь к .md в git-репо сервера
   folder_id    TEXT,                       -- FK -> folders.id (nullable for legacy)
   project_id   TEXT,                       -- FK -> projects.id (nullable for legacy)
+  theory       TEXT NOT NULL DEFAULT '[]', -- JSON array of lesson ids (ordered)
   archived     INTEGER NOT NULL DEFAULT 0,
   created_at   TEXT NOT NULL,              -- ISO 8601
   updated_at   TEXT NOT NULL,
   UNIQUE(block, task_id)
+);
+
+-- Теория («карточка» перед задачами): lesson_*.md в папке проекта
+CREATE TABLE IF NOT EXISTS lessons (
+  id           TEXT PRIMARY KEY,           -- уникален в рамках всего content-repo
+  project_id   TEXT NOT NULL,              -- FK -> projects.id
+  folder_id    TEXT NOT NULL,              -- FK -> folders.id (внутри project_id)
+  title        TEXT NOT NULL DEFAULT '',
+  "order"      INTEGER NOT NULL DEFAULT 0, -- сортировка внутри папки
+  version      TEXT NOT NULL DEFAULT '1.0.0',  -- информационная (без SemVer-гейта)
+  content_hash TEXT NOT NULL,              -- sha256(meta + body_md)
+  body_md      TEXT NOT NULL DEFAULT '',   -- markdown без frontmatter
+  created_at   TEXT NOT NULL,
+  updated_at   TEXT NOT NULL
 );
 
 -- История версий (для отката и объяснимости прогресса)
@@ -225,6 +240,8 @@ CREATE TABLE IF NOT EXISTS admin_chat_proposals (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_folders_project ON folders(project_id);
+CREATE INDEX IF NOT EXISTS idx_lessons_project ON lessons(project_id);
+CREATE INDEX IF NOT EXISTS idx_lessons_folder ON lessons(folder_id);
 CREATE INDEX IF NOT EXISTS idx_sync_log_started ON sync_log(started_at);
 
 -- === Collaborative editing (ADR-0017) ===

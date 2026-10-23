@@ -24,6 +24,21 @@ from ego_server.models import Hint, HintsResponse, TaskFull, TaskMeta
 router = APIRouter()
 
 
+# Task columns + catalog names (LEFT JOIN: legacy tasks have no folder/project,
+# so those fields stay NULL and ``theory`` defaults to an empty JSON array).
+_TASK_META_SQL = (
+    "SELECT tasks.id, tasks.block, tasks.slug, tasks.task_id, tasks.title, tasks.level, "
+    "tasks.tags, tasks.version, tasks.content_hash, tasks.breaking, tasks.md_path, "
+    "COALESCE(tasks.theory, '[]') AS theory, tasks.folder_id, tasks.project_id, "
+    "tasks.created_at, tasks.updated_at, "
+    "p.name AS project_name, COALESCE(p.\"order\", 0) AS project_order, "
+    'f.name AS folder_name, COALESCE(f."order", 0) AS folder_order '
+    "FROM tasks "
+    "LEFT JOIN projects p ON p.id = tasks.project_id "
+    "LEFT JOIN folders f ON f.id = tasks.folder_id AND f.project_id = tasks.project_id"
+)
+
+
 @router.get("", response_model=list[TaskMeta])
 async def list_tasks(
     db: DbDep,
@@ -31,18 +46,11 @@ async def list_tasks(
     block: Annotated[str | None, Query(description="Filter by block letter")] = None,
 ) -> list[TaskMeta]:
     """List all tasks (metadata only, no content). Optional ?block=F filter."""
-    if block:
-        rows = db.execute(
-            "SELECT id, block, slug, task_id, title, level, tags, version, "
-            f"content_hash, breaking, md_path FROM tasks WHERE {ACTIVE_TASK_FILTER} AND block = ? "
-            "ORDER BY block, task_id",
-            (block,),
-        ).fetchall()
-    else:
-        rows = db.execute(
-            "SELECT id, block, slug, task_id, title, level, tags, version, "
-            f"content_hash, breaking, md_path FROM tasks WHERE {ACTIVE_TASK_FILTER} ORDER BY block, task_id"
-        ).fetchall()
+    where = ACTIVE_TASK_FILTER + (" AND tasks.block = ?" if block else "")
+    rows = db.execute(
+        f"{_TASK_META_SQL} WHERE {where} ORDER BY tasks.block, tasks.task_id",
+        (block,) if block else (),
+    ).fetchall()
     return [_row_to_meta(r) for r in rows]
 
 
@@ -82,6 +90,7 @@ async def get_task(
 
     can_see_solution = include_solution and user["role"] in ("mentor", "admin")
 
+    catalog = _load_catalog_meta(db, "tasks.id = ?", (task_id,))
     return TaskFull(
         id=task.id,
         block=task.block,
@@ -97,6 +106,13 @@ async def get_task(
         statement_md=task.statement_md,
         stub_py=task.stub_py,
         solution_py=task.solution_py if can_see_solution else "",
+        project_id=meta["project_id"],
+        project_name=catalog["project_name"],
+        project_order=catalog["project_order"],
+        folder_id=meta["folder_id"],
+        folder_name=catalog["folder_name"],
+        folder_order=catalog["folder_order"],
+        theory=meta["theory"],
     )
 
 
@@ -253,4 +269,30 @@ def _row_to_meta(row) -> TaskMeta:
         content_hash=row["content_hash"],
         breaking=bool(row["breaking"]),
         md_path=row["md_path"],
+        project_id=row["project_id"],
+        project_name=row["project_name"],
+        project_order=row["project_order"],
+        folder_id=row["folder_id"],
+        folder_name=row["folder_name"],
+        folder_order=row["folder_order"],
+        theory=json.loads(row["theory"]) if row["theory"] else [],
     )
+
+
+def _load_catalog_meta(db, where: str, params: tuple) -> dict:
+    """Names/orders of the task's project and folder (``None``/``0`` for legacy)."""
+    row = db.execute(
+        f"""SELECT p.name AS project_name, COALESCE(p."order", 0) AS project_order,
+                   f.name AS folder_name, COALESCE(f."order", 0) AS folder_order
+            FROM tasks
+            LEFT JOIN projects p ON p.id = tasks.project_id
+            LEFT JOIN folders f ON f.id = tasks.folder_id AND f.project_id = tasks.project_id
+            WHERE {where}""",
+        params,
+    ).fetchone()
+    return dict(row) if row is not None else {
+        "project_name": None,
+        "project_order": 0,
+        "folder_name": None,
+        "folder_order": 0,
+    }

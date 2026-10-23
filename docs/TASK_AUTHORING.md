@@ -7,6 +7,7 @@ and the **legacy fixture layout** (`docs/tasks/block_*/`).
 > **TL;DR for new tasks:** use the catalog layout. Create `catalog.yaml` at
 > repo root, then `projects/<id>/project.yaml`, `folders/<id>/folder.yaml`,
 > and `task_<slug>.md` + `.solution.py` + `.tests.py` sidecars.
+> Optional theory cards (`lesson_<slug>.md`) live in the folder too — see §3.4.
 
 ---
 
@@ -23,6 +24,7 @@ ego-tasks/                              ← content-repo root
         └── folders/
             └── <folder_id>/            ← e.g. block_f_simple
                 ├── folder.yaml         ← folder (block) metadata
+                ├── lesson_<slug>.md    ← optional theory card (+ frontmatter)
                 ├── task_<slug>.md      ← task statement (+ YAML frontmatter)
                 ├── task_<slug>.solution.py   ← reference solution (sidecar)
                 └── task_<slug>.tests.py      ← test cases (sidecar)
@@ -194,6 +196,7 @@ task_f1_find_critical(bugs)
 | `tags` | list[str] | `[]` | Topic tags for filtering |
 | `folder` | str \| null | `null` | Override folder id (default: parent directory name) |
 | `breaking` | bool | `false` | Marks a breaking change (invalidates prior progress) |
+| `theory` | list[str] | `[]` | Ordered lesson ids shown before the task (see §3.4) |
 
 #### Markdown body conventions
 
@@ -295,6 +298,58 @@ def task_x(a0):
 > **Hypothesis `@scenario`** (property-based tests) is post-MVP (epic 9u7)
 > and not yet supported. Use explicit `@case` for now.
 
+### 3.4 `lesson_<slug>.md` — theory card (optional)
+
+A lesson is a short Markdown "card" that explains a concept before the tasks
+that need it (catalog layout only; legacy folders ignore `lesson_*.md`).
+Lessons are **not** graded: no solution, no tests, no `@case`.
+
+```markdown
+---
+id: roles-accumulator        # unique across the whole content repo
+title: "Накопитель"
+order: 2                     # sort inside the folder, default 0
+version: "1.0.0"             # informational, default "1.0.0"
+---
+
+# Накопитель
+
+Переменная-сумматор хранит результат и растёт в цикле....
+```
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `id` | str | required | Unique lesson id; pattern `[A-Za-z0-9][A-Za-z0-9._-]{0,63}` |
+| `title` | str | first `# H1`, else `id` | Human-readable title |
+| `order` | int | `0` | Sort inside the folder |
+| `version` | str | `"1.0.0"` | Informational only — no SemVer gate |
+
+Link lessons to a task with `theory:` in the task frontmatter (ordered ids):
+
+```yaml
+---
+id: L03
+title: "Сумма в цикле"
+version: "1.0.0"
+theory: [roles-accumulator, roles-counter]
+---
+```
+
+Sync rules (see also `CONTENT_CATALOG.md` → *Sync rules (theory cards)*):
+
+- lessons are upserted by id; a changed body/meta is applied in place;
+- a lesson whose file disappears is deleted on the next sync of its project;
+- a **duplicate lesson id** is a sync error for the second file;
+- `theory` is refreshed on every sync and never needs a version bump — a
+  theory-only edit does not affect `content_hash` or grading;
+- a `theory` id with no matching lesson is a **warning** in the sync log
+  (`error_details`), not an error: the task still imports.
+
+Students read lessons through the API: `GET /lessons` (list of
+`LessonMeta`) and `GET /lessons/<id>` (adds `body_md`). `TaskMeta.theory`
+and the new `project_*` / `folder_*` fields are additive — old clients can
+ignore them.
+
 ---
 
 ## 4. Versioning Policy (SemVer)
@@ -394,8 +449,12 @@ Each sync run writes a row to `sync_log`:
 | `repo_url` | Path or URL synced from |
 | `git_sha` | Git revision (NULL in PR 1; populated in PR 2) |
 | `status` | `success` \| `partial` \| `failed` |
-| `added` / `updated` / `skipped` / `errors` | Per-task counts |
-| `error_details` | Newline-separated error messages |
+| `added` / `updated` / `skipped` / `errors` | Per-task counts (`LESSON ...` errors included) |
+| `error_details` | Newline-separated error and warning lines (incl. `THEORY ...` warnings) |
+
+The `POST /admin/sync-tasks` response also reports lesson counts
+(`lessons_added`, `lessons_updated`, `lessons_deleted`); they are not
+stored as `sync_log` columns.
 
 ---
 
@@ -532,6 +591,8 @@ Errors:
 | Task files | `task_<slug>.{md,solution.py,tests.py}` | `task_f1.md` |
 | Task id (frontmatter) | uppercase, dot-separated | `F1`, `1.5`, `A3` |
 | Task function name | `task_<slug_with_underscores>` | `task_f1_find_critical` |
+| Lesson file | `lesson_<slug>.md` | `lesson_roles_accumulator.md` |
+| Lesson id (frontmatter) | lowercase, hyphen-separated, unique repo-wide | `roles-accumulator` |
 
 The **slug** in filenames is derived from the task id: `F1` → `f1`,
 `1.5` → `1_5`, `A3` → `a3`. The function name extends the slug with a
@@ -553,6 +614,8 @@ Before syncing a new task, verify:
 - [ ] `expected` in `@case` matches what the reference solution returns
 - [ ] Version is `1.0.0` for a new task
 - [ ] No `<details>` block in `.md` (use `.solution.py` sidecar instead)
+- [ ] Every `theory:` id exists as a `lesson_*.md` with that frontmatter `id`
+- [ ] Lesson ids are unique across the whole content repo
 
 ---
 
@@ -606,4 +669,5 @@ stages (`ego-trainer-1f9.2` and `ego-trainer-1f9.3`).
   - `ego/content_repo.py` — repo walker (catalog + legacy)
   - `ego/parser.py` — `.md` → `Task` parser
   - `ego/testing.py` — `@case` decorator
-  - `ego_server/sync.py` — sync pipeline + SemVer enforcement
+  - `ego_server/sync.py` — sync pipeline + SemVer enforcement (incl. theory cards)
+  - `ego_server/routers/lessons.py` — `GET /lessons`, `GET /lessons/<id>`

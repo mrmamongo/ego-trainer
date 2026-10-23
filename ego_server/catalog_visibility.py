@@ -8,6 +8,11 @@ ACTIVE_TASK_FILTER = (
     "(SELECT 1 FROM projects p WHERE p.id = tasks.project_id AND p.archived = 1)"
 )
 
+# Lessons have no own archive flag: visible iff their project is not archived.
+ACTIVE_LESSON_FILTER = (
+    "lessons.project_id IN (SELECT id FROM projects WHERE archived = 0)"
+)
+
 
 def activate_only_projects(conn: sqlite3.Connection, project_ids: list[str]) -> dict:
     """Select the visible projects without deleting content or learner history.

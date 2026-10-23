@@ -1537,4 +1537,7 @@ def _to_dto(result, *, repo_url: str) -> SyncResultDTO:
         finished_at=result.finished_at,
         git_sha=result.git_sha,
         repo_url=repo_url,
+        lessons_added=result.lessons_added,
+        lessons_updated=result.lessons_updated,
+        lessons_deleted=result.lessons_deleted,
     )

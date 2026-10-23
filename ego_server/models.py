@@ -33,7 +33,11 @@ class MeResponse(BaseModel):
 
 
 class TaskMeta(BaseModel):
-    """Метаданные задачи (без контента — контент в git .md)."""
+    """Метаданные задачи (без контента — контент в git .md).
+
+    Catalog fields (``project_*`` / ``folder_*`` / ``theory``) are additive:
+    old clients ignore them, legacy tasks without a project get ``None``/``0``.
+    """
 
     id: str
     block: str
@@ -46,6 +50,13 @@ class TaskMeta(BaseModel):
     content_hash: str
     breaking: bool = False
     md_path: str
+    project_id: str | None = None
+    project_name: str | None = None
+    project_order: int = 0
+    folder_id: str | None = None
+    folder_name: str | None = None
+    folder_order: int = 0
+    theory: list[str] = Field(default_factory=list)
 
 
 class TaskFull(TaskMeta):
@@ -54,6 +65,29 @@ class TaskFull(TaskMeta):
     statement_md: str
     stub_py: str
     solution_py: str
+
+
+class LessonMeta(BaseModel):
+    """Теория (карточка ``lesson_*.md``) без тела.
+
+    ``block`` = ``folder.code`` — то же значение, что ``TaskMeta.block``
+    для задач этой папки.
+    """
+
+    id: str
+    project_id: str | None = None
+    folder_id: str | None = None
+    block: str
+    title: str
+    order: int = 0
+    version: str = "1.0.0"
+    content_hash: str
+
+
+class LessonFull(LessonMeta):
+    """Теория с markdown-телом (отдаётся по GET /lessons/<id>)."""
+
+    body_md: str
 
 
 class ProgressPush(BaseModel):
@@ -166,6 +200,9 @@ class SyncResultDTO(BaseModel):
     finished_at: str = ""
     git_sha: str | None = None
     repo_url: str = ""
+    lessons_added: int = 0
+    lessons_updated: int = 0
+    lessons_deleted: int = 0
 
 
 class SyncLogRow(BaseModel):

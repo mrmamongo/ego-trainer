@@ -52,6 +52,9 @@ def _migrate_add_columns(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE tasks ADD COLUMN project_id TEXT")
     if "archived" not in tasks_cols:
         conn.execute("ALTER TABLE tasks ADD COLUMN archived INTEGER NOT NULL DEFAULT 0")
+    # tasks.theory: JSON array of lesson ids (theory cards before the task)
+    if "theory" not in tasks_cols:
+        conn.execute("ALTER TABLE tasks ADD COLUMN theory TEXT NOT NULL DEFAULT '[]'")
 
     projects_cols = {row["name"] for row in conn.execute("PRAGMA table_info(projects)")}
     if "archived" not in projects_cols:
@@ -60,6 +63,34 @@ def _migrate_add_columns(conn: sqlite3.Connection) -> None:
     oauth_cols = {row["name"] for row in conn.execute("PRAGMA table_info(oauth_flows)")}
     if "callback_uri" not in oauth_cols:
         conn.execute("ALTER TABLE oauth_flows ADD COLUMN callback_uri TEXT")
+
+    _migrate_add_lessons_table(conn)
+
+
+def _migrate_add_lessons_table(conn: sqlite3.Connection) -> None:
+    """Create ``lessons`` (+ indexes) on databases predating theory cards.
+
+    ``CREATE TABLE IF NOT EXISTS`` in ``schema.sql`` already covers this for
+    any older DB; the explicit statement keeps the guarantee local to the
+    migration path (e.g. a DB initialized from an older ``schema.sql``
+    copy without re-running the full script).
+    """
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS lessons (
+          id           TEXT PRIMARY KEY,
+          project_id   TEXT NOT NULL,
+          folder_id    TEXT NOT NULL,
+          title        TEXT NOT NULL DEFAULT '',
+          "order"      INTEGER NOT NULL DEFAULT 0,
+          version      TEXT NOT NULL DEFAULT '1.0.0',
+          content_hash TEXT NOT NULL,
+          body_md      TEXT NOT NULL DEFAULT '',
+          created_at   TEXT NOT NULL,
+          updated_at   TEXT NOT NULL
+        )"""
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_lessons_project ON lessons(project_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_lessons_folder ON lessons(folder_id)")
 
 
 def init_db() -> None:

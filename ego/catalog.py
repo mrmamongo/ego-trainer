@@ -14,6 +14,7 @@ Layout::
             └── folders/
                 └── <folder_id>/
                     ├── folder.yaml
+                    ├── lesson_<slug>.md          # theory card (optional)
                     ├── task_<slug>.md
                     ├── task_<slug>.solution.py
                     └── task_<slug>.tests.py
@@ -23,10 +24,12 @@ Legacy fixture (``docs/tasks/block_*/`` without YAML) imports as:
 - folder = directory name (``block_f_simple``)
 - task meta from H1 + bold lines; version default ``1.0.0`` +
   ``version_policy: auto_minor``
+- lessons are ignored (legacy layout has none)
 """
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Literal
 
@@ -39,6 +42,11 @@ from ego.models import Level
 
 VersionPolicy = Literal["declare", "auto_minor"]
 AuthType = Literal["none", "token", "ssh"]
+
+#: Task ids and lesson ids become path segments in the content API
+#: (``/tasks/<id>``, ``/lessons/<id>``); keep them URL-safe and shadow-proof.
+#: The same pattern is used by the server to reject query params outright.
+CONTENT_ID_RE = r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}"
 
 # === Catalog root (catalog.yaml) ===
 
@@ -118,6 +126,27 @@ class TaskFrontmatter(BaseModel):
     tags: list[str] = Field(default_factory=list)
     folder: str | None = None  # optional; default = parent dirname
     breaking: bool = False
+    # Ordered lesson ids (theory cards) shown before the task. Not part of
+    # the grading content: sync refreshes it even when the hash is unchanged.
+    theory: list[str] = Field(default_factory=list)
+
+
+# === Lesson frontmatter (YAML inside ``lesson_*.md``) ===
+
+
+class LessonFrontmatter(BaseModel):
+    """YAML frontmatter at the top of ``lesson_*.md`` (theory card).
+
+    Lessons are folder-level Markdown cards; they have no solution/tests
+    and are never graded. Body of ``.md`` = lesson content (``body_md``).
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: str  # unique across the whole content-repo
+    title: str = ""
+    order: int = 0  # sort inside folder
+    version: str = "1.0.0"  # informational (no SemVer enforcement)
 
 
 # === Parsers ===
@@ -199,6 +228,38 @@ def parse_task_frontmatter(md_text: str) -> tuple[TaskFrontmatter | None, str]:
     if fm_dict is None:
         return None, body
     return TaskFrontmatter(**fm_dict), body
+
+
+def parse_lesson_frontmatter(md_text: str) -> tuple[LessonFrontmatter, str]:
+    """Parse ``lesson_*.md`` → ``(LessonFrontmatter, body_md)``.
+
+    Raises ``ValueError`` when frontmatter is missing, malformed or has no
+    ``id``. ``title`` defaults to the first body H1 (``# ...``) if omitted.
+    """
+    fm_dict, body = split_frontmatter(md_text)
+    if fm_dict is None:
+        raise ValueError("lesson must start with YAML frontmatter (--- ... ---)")
+    fm = LessonFrontmatter(**fm_dict)
+    if not fm.title:
+        fm.title = _first_h1(body) or fm.id
+    return fm, body
+
+
+def lesson_content_hash(fm: LessonFrontmatter, body: str) -> str:
+    """sha256 over lesson meta + body (markdown text → hex digest).
+
+    Uses the same null-byte separators as :func:`ego.parser._hash_content`.
+    """
+    parts = (fm.id, fm.title, str(fm.order), fm.version, body)
+    return hashlib.sha256("\x00".join(parts).encode("utf-8")).hexdigest()
+
+
+def _first_h1(body: str) -> str:
+    """First ``# Title`` line of ``body`` (empty string if absent)."""
+    for line in body.splitlines():
+        if line.startswith("# "):
+            return line[2:].strip()
+    return ""
 
 
 # === File-level convenience ===

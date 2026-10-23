@@ -30,11 +30,13 @@ from pathlib import Path
 from ego.catalog import (
     Catalog,
     Folder,
+    LessonFrontmatter,
     Project,
     TaskFrontmatter,
     load_catalog,
     load_folder_file,
     load_project_file,
+    parse_lesson_frontmatter,
     parse_task_frontmatter,
 )
 
@@ -57,11 +59,28 @@ class DiscoveredTask:
 
 
 @dataclass
+class DiscoveredLesson:
+    """One ``lesson_*.md`` theory card on disk (catalog mode only).
+
+    ``frontmatter`` is ``None`` when the file could not be parsed — the
+    ``error`` string then explains why (reported by sync, never fatal).
+    """
+
+    md_path: Path
+    frontmatter: LessonFrontmatter | None = None
+    body_md: str = ""
+    error: str = ""
+    folder_id: str = ""  # parent folder id (slug)
+    project_id: str = ""  # parent project id
+
+
+@dataclass
 class DiscoveredFolder:
-    """One folder (block) with its meta and discovered tasks."""
+    """One folder (block) with its meta and discovered tasks + lessons."""
 
     folder: Folder
     tasks: list[DiscoveredTask] = field(default_factory=list)
+    lessons: list[DiscoveredLesson] = field(default_factory=list)
 
 
 @dataclass
@@ -83,6 +102,11 @@ class DiscoveredCatalog:
     def all_tasks(self) -> list[DiscoveredTask]:
         """Flatten all discovered tasks across projects/folders."""
         return [t for p in self.projects for f in p.folders for t in f.tasks]
+
+    @property
+    def all_lessons(self) -> list[DiscoveredLesson]:
+        """Flatten all discovered lessons across projects/folders."""
+        return [lesson for p in self.projects for f in p.folders for lesson in f.lessons]
 
 
 # === Public API ===
@@ -163,6 +187,7 @@ def _discover_folders(proj_dir: Path, project_id: str) -> list[DiscoveredFolder]
         folder.project_id = project_id
         df = DiscoveredFolder(folder=folder)
         df.tasks = _discover_tasks(folder_dir, folder.id, project_id)
+        df.lessons = _discover_lessons(folder_dir, folder.id, project_id)
         out.append(df)
     return out
 
@@ -228,6 +253,7 @@ def _discover_legacy_mode(repo_root: Path) -> DiscoveredCatalog:
         )
         df = DiscoveredFolder(folder=folder)
         df.tasks = _discover_tasks(block_dir, folder.id, FIXTURE_PROJECT_ID)
+        # Legacy layout has no lessons; a stray lesson_*.md is ignored.
         dp.folders.append(df)
     return DiscoveredCatalog(projects=[dp], is_legacy=True)
 
@@ -254,6 +280,30 @@ def _discover_tasks(
                 project_id=project_id,
             )
         )
+    return out
+
+
+def _discover_lessons(
+    folder_dir: Path, folder_id: str, project_id: str
+) -> list[DiscoveredLesson]:
+    """Find all ``lesson_*.md`` theory cards in a folder and parse them.
+
+    Parse errors are captured per file (``DiscoveredLesson.error``) so the
+    walker never aborts on one bad card; sync reports them as warnings.
+    """
+    out: list[DiscoveredLesson] = []
+    for md_path in sorted(folder_dir.glob("lesson_*.md")):
+        lesson = DiscoveredLesson(
+            md_path=md_path, folder_id=folder_id, project_id=project_id
+        )
+        try:
+            fm, body = parse_lesson_frontmatter(md_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            lesson.error = str(e)
+        else:
+            lesson.frontmatter = fm
+            lesson.body_md = body
+        out.append(lesson)
     return out
 
 
