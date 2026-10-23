@@ -20,6 +20,8 @@ import { openTaskPy, openTaskWithView } from './openTask';
 import { readEgoConfig, writeEgoConfig, readManifest, type EgoMode } from './egoWorkspace';
 import { forgejoLogin, registerForgejoUriHandler } from './forgejoLogin';
 import { decideSession } from './sessionDecision';
+import { classifyAuthStatus, decideAuthStart, type AuthMeResult } from './authStatus';
+import { EgoApiError } from './api';
 import { EgoStatusBar } from './statusBar';
 import { runOfflineCheck } from './offlineCheck';
 import { switchMode } from './modeSwitch';
@@ -40,7 +42,7 @@ async function recreateApi(context: vscode.ExtensionContext): Promise<void> {
         .get<string>('serverUrl', 'http://localhost:8000');
     const workspaceConfig = await readEgoConfig();
     const session = decideSession(workspaceConfig, await context.secrets.get(SECRET_KEY));
-    api = new EgoApi(settingsUrl, session.apiToken);
+    api = trackApiToken(new EgoApi(settingsUrl, session.apiToken), session.apiToken);
     treeProvider.updateApi(api);
     void refreshAssistantAccess();
 }
@@ -66,7 +68,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     AssistantPanel.configure(context.extensionUri, () => api);
     AssistantPanel.register(context);
 
-    api = new EgoApi(serverUrl, session.apiToken);
+    api = trackApiToken(new EgoApi(serverUrl, session.apiToken), session.apiToken);
 
     // Tree view.
     // Lesson read flags live in globalState; the tree redraws when they change.
@@ -140,6 +142,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ),
         // Setup / auth — no .ego/ required.
         vscode.commands.registerCommand('ego.login', () => cmdLogin(context)),
+        vscode.commands.registerCommand('ego.logout', () => cmdLogout(context)),
         vscode.commands.registerCommand('ego.setServer', () => cmdSetServer(context)),
         vscode.commands.registerCommand('ego.setupPython', () => cmdSetupPython()),
         vscode.commands.registerCommand('ego.showWelcome', () =>
@@ -338,20 +341,120 @@ export function deactivate(): void {
 
 // === Command implementations ===
 
+/** Mirror of api's current token, so "a token exists" is known without a private getter. */
+let apiToken: string | undefined;
+
+/** Mirror an api created during activation. */
+function trackApiToken(created: EgoApi, token: string | undefined): EgoApi {
+    created.setToken(token);
+    apiToken = token;
+    return created;
+}
+
+/** Apply the signed-in UI state shared by every successful login path. */
+async function applyLoggedInState(): Promise<void> {
+    await vscode.commands.executeCommand('setContext', 'ego.loggedIn', true);
+    statusBar.setMode('server');
+    await refreshAssistantAccess();
+    treeProvider.refresh();
+}
+
+/** Store a new token and restore the signed-in state. */
+async function startSession(context: vscode.ExtensionContext, token: string): Promise<void> {
+    await context.secrets.store(SECRET_KEY, token);
+    apiToken = token;
+    api.setToken(token);
+    await applyLoggedInState();
+}
+
+/** Clear the token and reset the signed-in state (shared by logout and expiry). */
+async function resetSession(context: vscode.ExtensionContext): Promise<void> {
+    await context.secrets.delete(SECRET_KEY);
+    apiToken = undefined;
+    api.setToken(undefined);
+    AssistantPanel.close();
+    await vscode.commands.executeCommand('setContext', 'ego.loggedIn', false);
+    await vscode.commands.executeCommand('setContext', 'ego.aiEnabled', false);
+    const existing = await readEgoConfig();
+    if (existing?.token) await writeEgoConfig({ ...existing, token: '' });
+    treeProvider.refresh();
+}
+
+interface CurrentAuth {
+    result: AuthMeResult;
+    me?: { user_id: string; username: string; role: string };
+    message?: string;
+}
+
+/** Check GET /auth/me for the current token: valid, expired or server unreachable. */
+async function checkCurrentAuth(): Promise<CurrentAuth> {
+    try {
+        return { result: 'ok', me: await api.me() };
+    } catch (error) {
+        if (error instanceof EgoApiError) return { result: classifyAuthStatus(error.status), message: error.message };
+        // fetch() rejects with TypeError when the server cannot be reached.
+        return { result: 'unreachable', message: (error as Error).message };
+    }
+}
+
 async function cmdLogin(context: vscode.ExtensionContext): Promise<void> {
     AssistantPanel.close();
+    const storedToken = await context.secrets.get(SECRET_KEY);
+    const hasToken = !!(storedToken || apiToken);
+    if (hasToken) {
+        if (storedToken !== apiToken) {
+            apiToken = storedToken;
+            api.setToken(storedToken);
+        }
+        const current = await checkCurrentAuth();
+        const start = decideAuthStart({ hasToken, meResult: current.result });
+        // Offline mode keeps the token out of api; the check above used it only to look.
+        if (start !== 'already') api.setToken(undefined);
+        if (start === 'unreachable') {
+            vscode.window.showErrorMessage(
+                `Ego: сервер недоступен — ${current.message}. Токен сохранён, проверь подключение и повтори Ego: Login.`
+            );
+            return;
+        }
+        if (start === 'already' && current.me) {
+            const me = current.me;
+            if (storedToken) {
+                // A valid session switches an offline workspace back to server mode.
+                await vscode.commands.executeCommand('setContext', 'ego.offline', false);
+                await startSession(context, storedToken);
+            }
+            await applyLoggedInState();
+            const choice = await vscode.window.showInformationMessage(
+                `Ego: вы уже вошли как ${me.username} (${me.role})`,
+                'Войти другим аккаунтом', 'Выйти',
+            );
+            if (choice === 'Выйти') await resetSession(context);
+            else if (choice === 'Войти другим аккаунтом') await startLoginFlow(context);
+            return;
+        }
+        // Expired or invalid token: drop it before the normal flow.
+        await resetSession(context);
+    }
+    await startLoginFlow(context);
+}
+
+async function cmdLogout(context: vscode.ExtensionContext): Promise<void> {
+    await resetSession(context);
+    vscode.window.showInformationMessage('Ego: вы вышли из аккаунта');
+}
+
+/** Forgejo browser login, then the local username/password fallback. */
+async function startLoginFlow(context: vscode.ExtensionContext): Promise<void> {
     try {
         const response = await forgejoLogin(api);
         if (response !== null) {
             if (!response) return;
             await context.secrets.store(SECRET_KEY, response.access_token);
+            apiToken = response.access_token;
             api.setToken(response.access_token);
             const existing = await readEgoConfig();
             if (existing) await writeEgoConfig({ ...existing, token: '', student_id: response.user_id, student_username: response.username, role: response.role });
-            await vscode.commands.executeCommand('setContext', 'ego.loggedIn', true);
-            statusBar.setMode('server');
-            await refreshAssistantAccess();
-            treeProvider.refresh();
+            await applyLoggedInState();
             vscode.window.showInformationMessage(`Ego: Logged in as ${response.username} (${response.role})`);
             return;
         }
@@ -377,23 +480,15 @@ async function cmdLogin(context: vscode.ExtensionContext): Promise<void> {
     // Existing users fall back to login below.
     try {
         const resp = await api.register(username, password, 'student');
-        await context.secrets.store(SECRET_KEY, resp.access_token);
-        api.setToken(resp.access_token);
-        vscode.commands.executeCommand('setContext', 'ego.loggedIn', true);
-        statusBar.setMode('server');
-        await refreshAssistantAccess();
-        treeProvider.refresh();
+        await startSession(context, resp.access_token);
+        await vscode.commands.executeCommand('setContext', 'ego.offline', false);
         vscode.window.showInformationMessage(`Ego: Logged in as ${username} (student)`);
     } catch (e) {
         // Maybe already registered — try login.
         try {
             const resp = await api.login(username, password);
-            await context.secrets.store(SECRET_KEY, resp.access_token);
-            api.setToken(resp.access_token);
-            vscode.commands.executeCommand('setContext', 'ego.loggedIn', true);
-            statusBar.setMode('server');
-            await refreshAssistantAccess();
-            treeProvider.refresh();
+            await startSession(context, resp.access_token);
+            await vscode.commands.executeCommand('setContext', 'ego.offline', false);
             vscode.window.showInformationMessage(`Ego: Logged in as ${username}`);
         } catch (e2) {
             vscode.window.showErrorMessage(`Ego: Login failed — ${(e2 as Error).message}`);
@@ -708,6 +803,7 @@ async function cmdSwitchMode(context: vscode.ExtensionContext): Promise<void> {
         getApi: () => api,
         setApi: (a) => {
             api = a;
+            apiToken = undefined;
             treeProvider.updateApi(api);
             void refreshAssistantAccess();
         },

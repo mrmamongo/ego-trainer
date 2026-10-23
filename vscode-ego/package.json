@@ -29,6 +29,11 @@
         "category": "Ego"
       },
       {
+        "command": "ego.logout",
+        "title": "Ego: Выйти",
+        "category": "Ego"
+      },
+      {
         "command": "ego.setServer",
         "title": "Ego: Set Server URL",
         "category": "Ego"
@@ -170,7 +175,8 @@
           "group": "navigation"
         },
         { "command": "ego.dashboard", "when": "view == egoTaskTree", "group": "navigation@2" },
-        { "command": "ego.login", "when": "view == egoTaskTree && !ego.loggedIn && !ego.offline", "group": "navigation@3" }
+        { "command": "ego.login", "when": "view == egoTaskTree && !ego.loggedIn && !ego.offline", "group": "navigation@3" },
+        { "command": "ego.logout", "when": "view == egoTaskTree && ego.loggedIn && !ego.offline", "group": "navigation@4" }
       ],
       "view/item/context": [
         {
