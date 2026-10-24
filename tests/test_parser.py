@@ -1,4 +1,4 @@
-"""Tests for ego.parser — parsing 255 existing .md files + edge cases."""
+"""Tests for ego.parser — parsing 263 existing .md files + edge cases."""
 
 from pathlib import Path
 
@@ -24,10 +24,10 @@ def _find_task(tasks_dir: Path, name: str) -> Path:
     raise FileNotFoundError(name)
 
 
-# === Smoke: parse all 255 ===
+# === Smoke: parse all 263 ===
 
 
-def test_parse_all_255_tasks(task_files):
+def test_parse_all_263_tasks(task_files):
     """Every .md in docs/tasks/ should parse successfully."""
     for path in task_files:
         task = parse_task_file(path)
@@ -43,9 +43,9 @@ def test_parse_all_255_tasks(task_files):
         assert len(task.content_hash) == 64, f"hash not sha256 in {path}"
 
 
-def test_parse_all_255_count(task_files):
-    """Should be 255 parseable tasks: 33 existing, 27 XL-A and 195 START tasks."""
-    assert len(task_files) == 255
+def test_parse_all_263_count(task_files):
+    """Should be 263 parseable tasks: 33 existing, 27 XL-A and 203 START tasks."""
+    assert len(task_files) == 263
 
 
 # === Specific tasks ===

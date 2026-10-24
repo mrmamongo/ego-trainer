@@ -72,9 +72,6 @@ def handle(entries, limits, line):
 
 
 def task_px07_session(lines):
-    # вызывается в конце файла: запоминаем, что файл запущен как программа, а не проверкой
-    global STARTED_BY_USER
-    STARTED_BY_USER = __file__ == sys.argv[0]
     entries = []
     limits = []
     replies = []
@@ -97,8 +94,6 @@ def main():
         print(handle(entries, limits, line))
 
 
-import sys
-
-if __file__ == sys.argv[0]:
+if __name__ == "__main__":
     main()
 # ===== конец готового цикла =====

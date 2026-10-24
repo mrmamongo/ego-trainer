@@ -56,6 +56,7 @@ EXPECTED_IDS = {
     "08_lists": [f"LI{n:02}" for n in range(1, 23)],
     "09_functions_deep": [f"FD{n:02}" for n in range(1, 21)],
     "10_projects": [f"MP{n:02}" for n in range(1, 21)],
+    "11_project_expenses": [f"PX{n:02}" for n in range(1, 9)],
 }
 
 
@@ -130,7 +131,12 @@ def verify_task(item, timeout: float) -> dict:
     for result in reference.results + starter.results:
         if is_rule_result(result):
             continue  # static @rules rows carry a rule key, not an expected value
-        assert (result.expected_repr == HIDDEN) == is_trace, (task.id, result.expected_repr)
+        hidden = result.expected_repr == HIDDEN
+        if is_trace:
+            assert hidden, (task.id, "trace answers must be hidden", result.description)
+        else:
+            # Whole-program tasks may hide some full scenarios; smoke cases stay visible.
+            assert not (hidden and result.level == "smoke"), (task.id, "smoke case hidden", result.description)
     if rule_failures(starter):
         # The GIVEN helpers in the starter must not break the task's own rules.
         raise AssertionError((task.id, "starter violates @rules", rule_failures(starter)))

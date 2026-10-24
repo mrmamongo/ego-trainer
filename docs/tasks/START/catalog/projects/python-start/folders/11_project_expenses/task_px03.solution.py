@@ -36,9 +36,6 @@ def handle(entries, line):
 
 
 def task_px03_session(lines):
-    # вызывается в конце файла: запоминаем, что файл запущен как программа, а не проверкой
-    global STARTED_BY_USER
-    STARTED_BY_USER = __file__ == sys.argv[0]
     entries = []
     replies = []
     for line in lines:
@@ -59,8 +56,6 @@ def main():
         print(handle(entries, line))
 
 
-import sys
-
-if __file__ == sys.argv[0]:
+if __name__ == "__main__":
     main()
 # ===== конец готового цикла =====

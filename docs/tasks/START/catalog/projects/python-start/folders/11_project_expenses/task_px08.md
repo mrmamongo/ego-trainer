@@ -3,7 +3,7 @@ id: PX08
 title: "Целиком: учёт расходов"
 version: "1.0.0"
 level: medium
-tags: [projects, write, trace]
+tags: [projects, write]
 breaking: false
 theory: [px-program, px-parsing, px-report]
 ---
