@@ -89,7 +89,9 @@ def test_landing_is_public_complete_and_no_store(client):
     assert "Твой первый код" in response.text
     assert 'href="/extension/download"' in response.text
     assert 'href="/student"' in response.text
-    assert 'href="/panel"' in response.text
+    # The site has a single mentor (the owner): no public mentor section or panel link.
+    assert 'href="/panel"' not in response.text
+    assert "наставник" not in response.text.lower()
     assert "{{BRAND_" not in response.text
     assert "195" in response.text and "56" in response.text
     assert "https://fonts" not in response.text
