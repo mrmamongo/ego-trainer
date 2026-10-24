@@ -62,11 +62,12 @@ def test_student_assets_are_available(client, name):
     assert response.content
 
 
-def test_student_shell_is_self_contained_and_keeps_learning_sections(client):
+def test_student_shell_is_self_contained_and_has_course_sidebar(client):
     html = client.get("/student").text
     assert 'href="/static/student.css"' in html
     assert html.index("student-logic.js") < html.index("student-markdown.js") < html.index("student.js")
-    assert "Теория" in html and "VS Code" in html
+    assert 'id="course-sidebar"' in html and 'id="sidebar-catalog"' in html
+    assert "VS Code" in html
     assert "наставник" not in html.lower()
     assert not re.search(r'(?:src|href)="https?://', html)
     javascript = client.get("/static/student.js").text

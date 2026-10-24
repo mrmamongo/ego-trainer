@@ -69,83 +69,85 @@ test('guest sees friendly login on desktop and mobile and can sign in', async ({
   await page.getByLabel('Логин').fill('egor');
   await page.getByLabel('Пароль').fill('password');
   await page.getByRole('button', { name: 'Войти →' }).click();
-  await expect(page.locator('.next-card')).toBeVisible();
+  await expect(page).toHaveURL(/\/student\/tasks\/V02$/);
+  await expect(page.locator('.reader-page')).toBeVisible();
   expect(errors).toEqual([]);
 });
 
-test('empty progress offers the first task and fits a phone', async ({ page }) => {
+test('empty progress opens the first task and fits a phone', async ({ page }) => {
   const errors = await mockApi(page, { progress: [] });
   await signIn(page);
   await page.goto('/student');
-  await expect(page.locator('.next-card h2')).toContainText('Первая переменная');
-  await expect(page.locator('.overall-number')).toHaveText('0%');
-  await page.screenshot({ path: 'test-results/empty-desktop.png', fullPage: true });
+  await expect(page).toHaveURL(/\/student\/tasks\/V01$/);
+  await expect(page.getByRole('heading', { name: 'Первая переменная', exact: true })).toBeVisible();
+  await expect(page.locator('.sidebar-progress-head')).toContainText('0 из 6');
   await page.setViewportSize({ width: 375, height: 812 });
   await expectNoOverflow(page);
   await page.screenshot({ path: 'test-results/empty-mobile.png', fullPage: true });
   expect(errors).toEqual([]);
 });
 
-test('Egor sees defense, catalog filters and the same next task', async ({ page }) => {
+test('desktop sidebar selects, searches and opens a clean task page', async ({ page }) => {
   const errors = await mockApi(page);
   await signIn(page);
   await page.goto('/student');
-  await expect(page.locator('.next-card h2')).toContainText('Переменные и типы');
-  await expect(page.locator('.defense-item')).toHaveCount(1);
-  await expect(page.locator('.next-actions .button-primary')).toHaveAttribute('href', 'vscode://ego-trainer.ego-trainer/open?task=V02');
-  await page.screenshot({ path: 'test-results/egor-desktop.png', fullPage: true });
-  await page.locator('.main-nav [data-nav="course"]').click();
-  await page.getByRole('button', { name: 'Требуют защиты' }).click();
-  await expect(page.locator('.task-link')).toHaveCount(1);
-  await expect(page.locator('.task-link .item-title').first()).toContainText('V02');
-  await page.getByRole('button', { name: 'Требуют защиты' }).click();
-  await page.getByRole('searchbox', { name: 'Поиск задачи по номеру и названию' }).fill('F10');
-  await expect(page.locator('.task-link')).toHaveCount(1);
-  await expect(page.locator('.task-link .item-title').first()).toContainText('F10');
-  await page.setViewportSize({ width: 375, height: 812 });
-  await expectNoOverflow(page);
-  await page.screenshot({ path: 'test-results/course-mobile.png', fullPage: true });
+  await expect(page).toHaveURL(/\/student\/tasks\/V02$/);
+  await expect(page.locator('#course-sidebar')).toBeVisible();
+  await expect(page.locator('[data-task-link="V02"]')).toHaveAttribute('aria-current', 'page');
+  await expect(page.locator('.reader-vscode')).toHaveAttribute('href', 'vscode://ego-trainer.ego-trainer/open?task=V02');
+  await expect(page.locator('.reader-statement')).toContainText('Напиши функцию и проверь пример.');
+  await expect(page.locator('.task-theory, .attempt-card, .hint-item, .next-card')).toHaveCount(0);
+  await page.screenshot({ path: 'test-results/task-desktop.png', fullPage: true });
+  await page.getByRole('searchbox', { name: 'Поиск по задачам и теории' }).fill('F10');
+  await expect(page.locator('#sidebar-catalog .task-link')).toHaveCount(1);
+  await expect(page.locator('#sidebar-catalog .task-link .item-title')).toContainText('F10');
+  await page.locator('[data-task-link="F10"]').click();
+  await expect(page).toHaveURL(/\/student\/tasks\/F10$/);
+  await expect(page.getByRole('heading', { name: 'Возвращаем результат', exact: true })).toBeVisible();
+  await expect(page.locator('.reader-statement')).toContainText('Напиши функцию и проверь пример.');
   expect(errors).toEqual([]);
 });
 
-test('task page keeps theory answers, hints and deep link on a phone', async ({ page }) => {
+test('theory opens separately and keeps self-check answers and VS Code guide', async ({ page }) => {
   const errors = await mockApi(page);
   await signIn(page);
   await page.goto('/student/tasks/V02');
-  await expect(page.getByRole('heading', { name: 'Переменные и типы', exact: true })).toBeVisible();
-  await expect(page.locator('.attempt-stat strong').first()).toHaveText('3/3');
-  await expect(page.locator('.attempt-status .status-badge')).toHaveText('Ждёт защиты понимания');
-  await expect(page.locator('.attempt-card')).not.toContainText('[object HTMLSpanElement]');
-  await expect(page.locator('.task-actionbar .button-primary')).toHaveAttribute('href', 'vscode://ego-trainer.ego-trainer/open?task=V02');
-  const answer = page.locator('.task-theory .markdown details');
-  await expect(answer).toHaveCount(1);
+  await page.locator('[data-lesson-link="v-assignment"]').click();
+  await expect(page).toHaveURL(/\/student\?view=theory&lesson=v-assignment$/);
+  await expect(page.getByRole('heading', { name: 'Знак = — это команда записи', exact: true })).toBeVisible();
+  await expect(page.locator('[data-lesson-link="v-assignment"]')).toHaveAttribute('aria-current', 'page');
+  await expect(page.locator('.reader-statement table')).toHaveCount(1);
+  const answer = page.locator('.reader-statement details');
   await answer.locator('summary').click();
   await expect(answer).toHaveAttribute('open', '');
   await expect(answer.getByText(/В переменной останется/)).toBeVisible();
-  await expect(page.locator('.hint-item')).toHaveCount(2);
-  await page.screenshot({ path: 'test-results/task-desktop.png', fullPage: true });
-  await page.setViewportSize({ width: 375, height: 812 });
-  await expectNoOverflow(page);
-  await page.screenshot({ path: 'test-results/task-mobile.png', fullPage: true });
-  await answer.locator('[data-task-link="V03"]').click();
-  await expect(page).toHaveURL(/\/student\/tasks\/V03$/);
+  await page.screenshot({ path: 'test-results/theory-desktop.png', fullPage: true });
+  await page.locator('.sidebar-setup').click();
+  await expect(page.getByText('Версия 0.2.1')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Скачать расширение ↓' })).toHaveAttribute('href', '/extension/download');
   expect(errors).toEqual([]);
 });
 
-test('theory library opens a linked card and VS Code guide', async ({ page }) => {
+test('mobile drawer closes after task selection and supports Escape', async ({ page }) => {
   const errors = await mockApi(page);
   await signIn(page);
-  await page.goto('/student?view=theory&lesson=v-assignment');
-  const card = page.locator('[data-lesson-card="v-assignment"]');
-  await expect(card).toHaveAttribute('open', '');
-  await expect(card.locator('table')).toHaveCount(1);
-  await card.locator('.markdown details summary').click();
-  await expect(card.locator('.markdown details')).toHaveAttribute('open', '');
   await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto('/student/tasks/V02');
+  await expect(page.getByRole('heading', { name: 'Переменные и типы', exact: true })).toBeVisible();
   await expectNoOverflow(page);
-  await page.screenshot({ path: 'test-results/theory-mobile.png', fullPage: true });
-  await page.locator('.main-nav [data-nav="vscode"]').click();
-  await expect(page.getByText('Версия 0.2.1')).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Скачать расширение ↓' })).toHaveAttribute('href', '/extension/download');
+  await page.screenshot({ path: 'test-results/task-mobile.png', fullPage: true });
+  await page.locator('#sidebar-toggle').click();
+  await expect(page.locator('body')).toHaveClass(/sidebar-open/);
+  await expect(page.locator('#course-sidebar')).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)');
+  await page.screenshot({ path: 'test-results/sidebar-mobile.png', fullPage: true, animations: 'disabled' });
+  await page.getByRole('searchbox', { name: 'Поиск по задачам и теории' }).fill('F10');
+  await page.locator('[data-task-link="F10"]').click();
+  await expect(page).toHaveURL(/\/student\/tasks\/F10$/);
+  await expect(page.locator('body')).not.toHaveClass(/sidebar-open/);
+  await expect(page.getByRole('heading', { name: 'Возвращаем результат', exact: true })).toBeVisible();
+  await page.locator('#sidebar-toggle').click();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('body')).not.toHaveClass(/sidebar-open/);
+  await expectNoOverflow(page);
   expect(errors).toEqual([]);
 });

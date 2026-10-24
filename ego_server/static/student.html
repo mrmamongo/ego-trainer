@@ -10,19 +10,14 @@
   <link rel="stylesheet" href="/static/student.css">
 </head>
 <body>
-  <a class="skip-link" href="#main-content">К содержимому</a>
+  <a class="skip-link" href="#view-content">К содержимому</a>
   <header class="topbar">
     <div class="topbar-inner">
-      <a class="brand" href="/student" data-nav="today" aria-label="Cogito — на главную">
+      <button id="sidebar-toggle" class="sidebar-toggle hidden" type="button" aria-controls="course-sidebar" aria-expanded="false"><span aria-hidden="true">☰</span> Задачи</button>
+      <a class="brand" href="/student" data-nav="today" aria-label="Cogito — продолжить курс">
         <img class="brand-mark" src="/static/branding/cogito-mark.png" alt="" width="40" height="40">
         <span class="brand-copy"><strong data-brand-name>Cogito</strong><small>твой курс Python</small></span>
       </a>
-      <nav id="main-nav" class="main-nav hidden" aria-label="Разделы кабинета">
-        <a href="/student?view=today" data-nav="today"><span aria-hidden="true">☀</span>Сегодня</a>
-        <a href="/student?view=course" data-nav="course"><span aria-hidden="true">▤</span>Курс</a>
-        <a href="/student?view=theory" data-nav="theory"><span aria-hidden="true">⌁</span>Теория</a>
-        <a href="/student?view=vscode" data-nav="vscode"><span aria-hidden="true">↗</span>VS Code</a>
-      </nav>
       <div id="user-actions" class="user-actions hidden">
         <span id="user-name" class="user-name"></span>
         <button id="logout" class="icon-button" type="button" title="Выйти из аккаунта" aria-label="Выйти из аккаунта">Выйти</button>
@@ -62,10 +57,20 @@
     </section>
 
     <div id="dashboard" class="dashboard hidden">
+      <button id="sidebar-backdrop" class="sidebar-backdrop" type="button" aria-label="Закрыть список задач"></button>
+      <aside id="course-sidebar" class="course-sidebar" aria-label="Навигация по курсу">
+        <div class="sidebar-heading">
+          <div><p class="eyebrow">Учебный путь</p><h2>Мой курс</h2></div>
+          <button id="sidebar-close" class="sidebar-close" type="button" aria-label="Закрыть список задач">×</button>
+        </div>
+        <div class="sidebar-search search-box"><input id="sidebar-search" type="search" placeholder="Найти задачу или теорию" aria-label="Поиск по задачам и теории"></div>
+        <div id="sidebar-progress" class="sidebar-progress"></div>
+        <nav id="sidebar-catalog" class="sidebar-catalog" aria-label="Задачи и теория"></nav>
+        <a class="sidebar-setup" href="/student?view=vscode" data-nav="vscode"><span aria-hidden="true">↗</span><span>Настроить VS Code<small>Скачать и установить расширение</small></span></a>
+      </aside>
       <div id="view-content" class="view-content" tabindex="-1">
         <div class="loading-state" role="status"><span class="loading-mark" aria-hidden="true"></span><p>Собираю твой курс…</p></div>
       </div>
-      <footer class="student-footer"><span data-brand-name>Cogito</span><span>Учиться можно понемногу. Главное — возвращаться.</span></footer>
     </div>
   </main>
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
