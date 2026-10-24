@@ -97,6 +97,110 @@ def test_landing_is_public_complete_and_no_store(client):
     assert "https://fonts" not in response.text
 
 
+FOLDER_TITLES = [
+    "Переменные",
+    "Функции",
+    "Циклы и роли переменных",
+    "Числа и выражения",
+    "range и while",
+    "break, continue и вложенные циклы",
+    "Строки",
+    "Списки",
+    "Функции глубже",
+    "Мини-проекты",
+]
+
+
+def test_landing_keeps_collapsible_folders(client):
+    import re
+
+    html = client.get("/").text
+    details = re.findall(r"<details\b[^>]*>.*?</details>", html, flags=re.S)
+    assert len(details) == 10
+    titles = [re.search(r'class="folder-name">([^<]+)<', block).group(1) for block in details]
+    assert titles == FOLDER_TITLES
+    for block in details:
+        assert "<summary>" in block
+    assert "https://fonts" not in html
+
+
+def test_landing_has_no_external_resources(client):
+    import re
+
+    html = client.get("/").text
+    tagged = re.findall(r"<(script|link|img|iframe|source)\b[^>]*>", html)
+    for tag in tagged:
+        for url in re.findall(r'(?:src|href)="([^"]+)"', tag):
+            assert not re.match(r"(?i)\s*(https?:)?//", url), url
+    assert "url(http" not in html
+    assert "@import" not in html
+    # Headers connect only to same-origin endpoints.
+    for url in re.findall(r"(?:fetch|import)\('([^']+)'", html):
+        assert url.startswith("/"), url
+
+
+def test_landing_effects_respect_reduced_motion_and_no_js(client):
+    html = client.get("/").text
+    assert "@media(prefers-reduced-motion:reduce)" in html
+    assert "@media(prefers-reduced-motion:no-preference)" in html
+    # Content is hidden only after the inline script marks the document as JS-capable.
+    assert "document.documentElement.classList.add('js')" in html
+    assert ".js .reveal" in html
+    head = html[: html.index("</head>")]
+    assert "classList.add('js')" in head
+    # No external libraries or trackers.
+    assert "cdn." not in html and "google-analytics" not in html
+
+
+def _inline_style_and_script(html: str) -> tuple[str, str]:
+    import re
+
+    style = re.search(r"(?s)<style>(.*?)</style>", html)
+    scripts = re.findall(r"(?s)<script\b[^>]*>(.*?)</script>", html)
+    assert style, "inline <style> is expected"
+    return style.group(1), "\n".join(scripts)
+
+
+def test_landing_folders_animate_without_js_dependency(client):
+    import re
+
+    html = client.get("/").text
+    style, script = _inline_style_and_script(html)
+    # Progressive enhancement: the <details> elements stay the source of truth.
+    assert re.findall(r"<details\b", html) and "</summary>" in html
+    assert "details.querySelector('[data-body]')" in script
+    assert "body.animate(" in script  # Web Animations API for height + opacity
+    # The icon rotates + -> x smoothly, and height/opacity share the timing.
+    assert re.search(r"\.folder\[open\] \.folder-plus\{transform:rotate\(45deg\)", style)
+    assert "transition:transform" in style
+
+
+def test_landing_motion_respects_reduced_motion_and_hidden_tab(client):
+    html = client.get("/").text
+    style, script = _inline_style_and_script(html)
+    # Everything animated sits behind the no-preference query; the reduce block kills the rest.
+    assert style.count("@media(prefers-reduced-motion:no-preference)") == 1
+    assert "transition:none!important;animation:none!important" in style
+    # Infinite CSS loops (sticky notes) and JS loops (trace table) pause correctly.
+    assert "'(prefers-reduced-motion: reduce)'" in script
+    assert "visibilitychange" in script and "document.hidden" in script
+    assert "IntersectionObserver" in script
+    # The hero sequence waits are abortable and a cancelled run shows the final state.
+    assert "new AbortController()" in script
+    assert "function finish()" in script and "code.classList.add('done')" in script
+    # No !important width override left to poison transitions in the hero.
+    assert "measuring" not in script and "measuring" not in style
+
+
+def test_landing_added_effects_stay_small(client):
+    html = client.get("/").text
+    style, script = _inline_style_and_script(html)
+    # Everything added on top of the committed page: base CSS 16.6 KB + effects, base script
+    # 0.5 KB + effects. Keeps the page lean (the brief asks for about 12 KB of additions).
+    assert len(style.encode()) < 21_000, len(style.encode())
+    assert len(script.encode()) < 12_000, len(script.encode())
+
+
 def test_landing_counter_upserts_and_ignores_bots(client):
     for _ in range(2):
         assert client.get("/", headers={"User-Agent": "Mozilla/5.0"}).status_code == 200
