@@ -15,6 +15,26 @@ from pathlib import Path
 from ego.checker import run_check
 from ego.content_repo import discover_repo
 from ego.parser import parse_task_file
+from ego.static_rules import RULE_PREFIX
+
+HIDDEN = "<скрыто>"
+
+
+def is_rule_result(result) -> bool:
+    """True for a static ``@rules`` result (see ego.static_rules)."""
+    return result.description.startswith(RULE_PREFIX)
+
+
+def rule_failures(result) -> list[str]:
+    """Failing static-rule descriptions — the code breaks its own ``@rules``."""
+    return [tr.description for tr in result.results if is_rule_result(tr) and not tr.passed]
+
+
+def count_cases(result, level: str | None = None) -> int:
+    """Behaviour-case count of a check result (static rules excluded)."""
+    return sum(
+        not is_rule_result(tr) and (level is None or tr.level == level) for tr in result.results
+    )
 
 
 DEFAULT_CATALOG = Path(__file__).resolve().parents[1] / "docs/tasks/XL-A/catalog"
@@ -65,25 +85,45 @@ def verify(catalog_root: Path, timeout: float = 5.0) -> dict:
                 if not result.passed
             ]
             raise AssertionError(f"{task.id} reference failures: {failures!r}")
-        levels = Counter(result.level for result in reference.results)
+        # The reference must obey the task's own static @rules.
+        assert not rule_failures(reference), (
+            task.id,
+            "reference violates @rules",
+            rule_failures(reference),
+        )
+        levels = Counter(result.level for result in reference.results if not is_rule_result(result))
         assert levels["smoke"] >= 3 and levels["full"] >= 1, (task.id, levels)
+        for result in reference.results:
+            if not is_rule_result(result):
+                assert result.expected_repr != HIDDEN, (task.id, result.expected_repr)
 
         starter = run_check(task, task.stub_py, level="smoke", timeout=timeout)
-        assert starter.total_tests == levels["smoke"], task.id
-        assert all(result.level == "smoke" for result in starter.results), task.id
+        starter_cases = [result for result in starter.results if not is_rule_result(result)]
+        assert len(starter_cases) == levels["smoke"], task.id
+        assert all(result.level == "smoke" for result in starter_cases), task.id
+        # The starter's GIVEN helpers must not break the task's own rules
+        # (the intentional bug may, e.g. an unfinished function).
+        assert not rule_failures(starter), (
+            task.id,
+            "starter violates @rules",
+            rule_failures(starter),
+        )
         # This task asks for behavior-preserving decomposition: structure needs
         # mentor review, while tests intentionally accept the original behavior.
         if task.id == "XL-A25":
-            assert starter.all_passed, "XL-A25 baseline must preserve behavior"
+            assert all(result.passed for result in starter_cases), (
+                "XL-A25 baseline must preserve behavior"
+            )
         else:
             assert not starter.all_passed, f"{task.id} starter is already solved"
         assert starter.status not in {"no_tests", "timeout"}, (task.id, starter.status)
         row = {
             "id": task.id,
-            "reference": reference.passed_tests,
+            "reference": count_cases(reference),
             "smoke": levels["smoke"],
             "full": levels["full"],
-            "starter_smoke_passed": starter.passed_tests,
+            "starter_smoke_passed": sum(result.passed for result in starter_cases),
+            "rules": count_cases(reference) != reference.total_tests,
         }
         rows.append(row)
         print(json.dumps(row, ensure_ascii=False), flush=True)
@@ -107,7 +147,9 @@ def main() -> None:
     args = parser.parse_args()
     report = verify(args.catalog, args.timeout)
     if args.report:
-        args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        args.report.write_text(
+            json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
     print(json.dumps({key: value for key, value in report.items() if key != "results"}))
 
 

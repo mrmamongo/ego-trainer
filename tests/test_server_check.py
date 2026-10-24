@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import importlib
+import shutil
 import tempfile
+import uuid
 from pathlib import Path
 
 import pytest
@@ -227,6 +229,71 @@ def test_check_response_has_results_array(client):
             assert "description" in tr
             assert "passed" in tr
             assert "expected_repr" in tr
+
+
+def _make_rules_task() -> Path:
+    """Catalog task under docs/tasks with an @rules declaration on a sidecar."""
+    folder = Path("docs/tasks") / f"block_static_rules_{uuid.uuid4().hex[:8]}"
+    folder.mkdir(parents=True)
+    md = (
+        "# Задача SR1: Объедини два отсортированных списка\n\n"
+        "## Условие\n\nВерни слияние двух отсортированных списков.\n\n"
+        "## Пример\n\n```python\ntask_sr1_merge([1], [2])\n# -> [1, 2]\n```\n"
+    )
+    (folder / "task_sr1.md").write_text(md, encoding="utf-8")
+    (folder / "task_sr1.solution.py").write_text(
+        "def task_sr1_merge(a, b):\n    return sorted(a + b)\n",
+        encoding="utf-8",
+    )
+    (folder / "task_sr1.tests.py").write_text(
+        "from ego.testing import case, rules\n\n"
+        "@rules(\n"
+        '    forbid_names=["sorted"],\n'
+        '    messages={"sorted": "Сортировку нужно написать самому"},\n'
+        ")\n"
+        '@case(args=([1, 3], [2]), expected=[1, 2, 3], description="merge")\n'
+        "def task_sr1_merge(a, b):\n"
+        "    ...\n",
+        encoding="utf-8",
+    )
+    return folder
+
+
+def test_check_passes_rule_results_through(client):
+    """@rules violations reach the API unchanged, first and before the cases."""
+    folder = _make_rules_task()
+    try:
+        from ego_server.cli import main as cli_main
+
+        cli_main(["admin", "import-tasks", "--docs-dir", str(folder)])
+
+        token, _ = _register_and_login(client, username="rule_student")
+        student = "def task_sr1_merge(a, b):\n    # line 2\n    return sorted(a + b)\n"
+        r = client.post(
+            "/check",
+            json={"task_id": "SR1", "student_code": student},
+            headers=_auth_headers(token),
+        )
+        assert r.status_code == 200, r.text
+        data = r.json()
+        from ego.checker import RULE_PREFIX
+
+        assert data["results"][0] == {
+            "description": "Правило: Сортировку нужно написать самому (строка 3)",
+            "passed": False,
+            "expected_repr": "sorted",
+            "actual_repr": None,
+            "error": None,
+        }
+        assert data["results"][1]["description"] == "merge"
+        assert data["results"][1]["passed"] is True
+        assert data["passed_tests"] == 1  # only the case counts
+        assert data["total_tests"] == 2  # rule result included
+        assert data["status"] == "partial"  # never "passed" while a rule fails
+        assert f"{RULE_PREFIX}Сортировку нужно написать самому (строка 3)" in data["log"]
+        assert "Ожидалось: sorted" not in data["log"]
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
 
 
 def test_check_log_contains_summary(client):

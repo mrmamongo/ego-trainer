@@ -288,6 +288,48 @@ def task_x(a0):
     ...
 ```
 
+#### Static rules (`@rules`, optional)
+
+```python
+from ego.testing import case, rules
+
+@rules(
+    forbid_names=["sorted"],
+    messages={"sorted": "Сортировку нужно написать самому"},
+)
+@case(args=([1, 3], [2]), expected=[1, 2, 3], description="merge")
+@case(args=([], [1]), expected=[1], description="empty + one")
+def task_li21_merge_sorted(a, b):
+    ...
+```
+
+`@rules` checks the student's **code** (AST), not only return values — use it
+when the statement says «не используй `sorted`», «напиши функцию
+`parse_command`», etc.
+
+| Param | Description |
+|-------|-------------|
+| `forbid_names` | Bare names used anywhere (`sorted(...)`, `x = max`) |
+| `forbid_methods` | Attribute calls (`x.sort(...)`, `s.replace(...)`) |
+| `forbid_imports` | `import math`, `from math import ...` (also `math.sqrt(...)` calls) |
+| `forbid_nodes` | `ast` node class names: `Global`, `Lambda`, `ListComp`, `While`, ... |
+| `require_functions` | Top-level functions that must exist (name only) |
+| `allow_in` | Functions exempt from `forbid_*` (besides the built-in `given_*` exemption) |
+| `messages` | Russian text per rule key: `"sorted"`, `"sort"`, `"math"`, `"Global"` |
+
+- Stackable with `@case` in any order; only one `@rules` per task function.
+- Arguments are validated when the module is imported (unknown ast node →
+  `ValueError`).
+- Each violation is one failing result placed before the cases:
+  «Правило: нельзя использовать `sorted` (строка 7)» /
+  «Правило: нужна функция `parse_command`». Cases still run, but the task
+  cannot reach `passed` while a rule fails.
+- The reference solution is checked with the same rules by
+  `scripts/verify_*_catalog.py`, so the reference must obey its own rules too.
+- `@rules` is **not** part of `content_hash` (tests are not hashed). When
+  adding rules to a published task, **bump `version`** in the frontmatter so
+  sync applies the change.
+
 #### Test levels
 
 - **`smoke`** — fast, runs on every check (student + server). 3-5 cases.
@@ -374,8 +416,9 @@ changing task content. The sync pipeline checks:
 
 `content_hash` = SHA-256 of `statement_md + stub_py + solution_py`.
 Changing whitespace or comments in the solution **does** change the hash.
-Test sidecars are not part of this hash. In `declare` mode, bump the task version
-for test-only changes so sync refreshes the tests; do not rely on hash changes.
+Test sidecars are not part of this hash — including `@rules` declarations. In
+`declare` mode, bump the task version for test-only changes (new `@case`, new
+`@rules`) so sync refreshes the tests; do not rely on hash changes.
 
 ### 4.2 `auto_minor` policy (default for legacy fixture)
 
@@ -612,6 +655,8 @@ Before syncing a new task, verify:
 - [ ] `task_<slug>.tests.py` has at least one `@case` with `level="smoke"`
 - [ ] `args` in `@case` is a **tuple** (note the trailing comma for single-arg cases)
 - [ ] `expected` in `@case` matches what the reference solution returns
+- [ ] If `@rules` is used: the reference solution obeys the rules itself and the
+      starter's `given_*` helpers do not break them
 - [ ] Version is `1.0.0` for a new task
 - [ ] No `<details>` block in `.md` (use `.solution.py` sidecar instead)
 - [ ] Every `theory:` id exists as a `lesson_*.md` with that frontmatter `id`
@@ -668,6 +713,7 @@ stages (`ego-trainer-1f9.2` and `ego-trainer-1f9.3`).
   - `ego/catalog.py` — YAML models + parsers
   - `ego/content_repo.py` — repo walker (catalog + legacy)
   - `ego/parser.py` — `.md` → `Task` parser
-  - `ego/testing.py` — `@case` decorator
+  - `ego/testing.py` — `@case` / `@rules` decorators
+  - `ego/static_rules.py` — static (AST) rule evaluation
   - `ego_server/sync.py` — sync pipeline + SemVer enforcement (incl. theory cards)
   - `ego_server/routers/lessons.py` — `GET /lessons`, `GET /lessons/<id>`

@@ -10,12 +10,28 @@ import ast
 import json
 from pathlib import Path
 
-from ego.checker import run_check
+from ego.checker import CheckResult, TestResult, run_check
 from ego.content_repo import discover_repo
 from ego.parser import parse_task_file
+from ego.static_rules import RULE_PREFIX
 
 DEFAULT_CATALOG = Path(__file__).resolve().parents[1] / "docs/tasks/START/catalog"
 HIDDEN = "<скрыто>"
+
+
+def is_rule_result(result: TestResult) -> bool:
+    """True for a static ``@rules`` result (see ego.static_rules)."""
+    return result.description.startswith(RULE_PREFIX)
+
+
+def rule_failures(result: CheckResult) -> list[str]:
+    """Failing static-rule descriptions — the code breaks its own ``@rules``."""
+    return [tr.description for tr in result.results if is_rule_result(tr) and not tr.passed]
+
+
+def count_case_results(result: CheckResult) -> int:
+    """Number of behaviour cases in a check result (static rules excluded)."""
+    return sum(not is_rule_result(tr) for tr in result.results)
 
 
 def task_signature(source: str) -> tuple[str, str]:
@@ -40,6 +56,7 @@ EXPECTED_IDS = {
     "08_lists": [f"LI{n:02}" for n in range(1, 23)],
     "09_functions_deep": [f"FD{n:02}" for n in range(1, 21)],
     "10_projects": [f"MP{n:02}" for n in range(1, 21)],
+    "11_project_expenses": [f"PX{n:02}" for n in range(1, 9)],
 }
 
 
@@ -102,22 +119,41 @@ def verify_task(item, timeout: float) -> dict:
     is_trace = "trace" in item.frontmatter.tags
     reference = run_check(task, task.solution_py, level="all", timeout=timeout)
     assert reference.all_passed, (task.id, reference.status, reference.results)
+    # all_passed already fails on rule results (they never pass); name them.
+    assert not rule_failures(reference), (
+        task.id,
+        "reference violates @rules",
+        rule_failures(reference),
+    )
     starter = run_check(task, task.stub_py, level="all", timeout=timeout)
     assert not starter.all_passed, f"{task.id} starter is already solved"
     assert starter.status not in {"no_tests", "timeout"}, (task.id, starter.status)
     for result in reference.results + starter.results:
-        assert (result.expected_repr == HIDDEN) == is_trace, (task.id, result.expected_repr)
+        if is_rule_result(result):
+            continue  # static @rules rows carry a rule key, not an expected value
+        hidden = result.expected_repr == HIDDEN
+        if is_trace:
+            assert hidden, (task.id, "trace answers must be hidden", result.description)
+        else:
+            # Whole-program tasks may hide some full scenarios; smoke cases stay visible.
+            assert not (hidden and result.level == "smoke"), (task.id, "smoke case hidden", result.description)
+    if rule_failures(starter):
+        # The GIVEN helpers in the starter must not break the task's own rules.
+        raise AssertionError((task.id, "starter violates @rules", rule_failures(starter)))
 
     if not is_trace:
         smoke = run_check(task, task.stub_py, level="smoke", timeout=timeout)
         assert not smoke.all_passed, f"{task.id} starter passes smoke"
-        assert smoke.total_tests >= 3, (task.id, smoke.total_tests)
-        assert reference.total_tests > smoke.total_tests, f"{task.id} has no full cases"
+        # Rule results count towards total_tests; compare the case counts.
+        smoke_cases = count_case_results(smoke)
+        assert smoke_cases >= 3, (task.id, smoke_cases)
+        assert count_case_results(reference) > smoke_cases, f"{task.id} has no full cases"
 
     row = {
         "id": task.id,
         "reference": f"{reference.passed_tests}/{reference.total_tests}",
         "starter": f"{starter.passed_tests}/{starter.total_tests}",
+        "rules": count_case_results(reference) != reference.total_tests,
         "starter_status": starter.status,
     }
     print(json.dumps(row, ensure_ascii=False), flush=True)

@@ -164,6 +164,62 @@ def task_f1_find_critical(bugs):
     ...
 ```
 
+## Static rules (`@rules`)
+
+Тесты видят только возвращаемые значения, поэтому «не используй `sorted`» из
+условия так не проверить: `sorted(a + b)` проходит задачу на слияние. Для этого
+есть opt-in статические правила — AST-проверка кода студента. Они объявляются в
+`.tests.py` рядом с `@case`:
+
+```python
+from ego.testing import case, rules
+
+@rules(
+    forbid_names=["sum", "sorted", "max"],       # bare names / builtins (Call или ссылка)
+    forbid_methods=["sort", "replace"],          # вызовы x.sort(...), s.replace(...)
+    forbid_imports=["math"],                     # import math / from math import ...
+    forbid_nodes=["Global", "Lambda", "ListComp"],  # имена классов ast
+    require_functions=["parse_command"],         # обязательные функции верхнего уровня
+    allow_in=["given_helper"],                   # функции, где forbid_* не действует
+    messages={"sorted": "Сортировку нужно написать самому"},  # сообщения по ключу правила
+)
+@case(args=([1, 3], [2]), expected=[1, 2, 3], description="merge")
+@case(args=([], [1]), expected=[1], description="empty + one")
+def task_li21_merge_sorted(a, b):
+    ...
+```
+
+Правила:
+
+- `@rules` можно ставить до или после `@case` в любом порядке; на функцию —
+  максимум один `@rules` (второй даёт `ValueError` при загрузке модуля).
+- Аргументы проверяются при декорации: неизвестное имя узла `ast`,
+  несуществующий ключ в `messages` или строка вместо списка → `ValueError`.
+- Функции с именем `given_*` (GIVEN-хелперы из стартера) всегда освобождены от
+  `forbid_*`; `allow_in` добавляет к ним другие имена. Также не учитывается имя
+  модуля, затенённое параметром (`def f(math)`).
+- `messages` принимает имя правила (`"sorted"`, `"sort"`, `"math"`, `"Global"`)
+  или квалифицированную форму (`"method:sort"`).
+
+Проверка (`ego/checker.py` + `ego/static_rules.py`):
+
+- перед запуском кейсов код студента парсится через `ast`; при `SyntaxError`
+  поведение прежнее (ошибку сообщает runner для каждого кейса).
+- каждое нарушение — один неуспешный `TestResult` **первым** в `results`:
+  `description="Правило: нельзя использовать \`sorted\` (строка 7)"`,
+  `level="smoke"`, `expected_repr="sorted"` (ключ правила), `actual_repr=None`,
+  `error=None`. Нет обязательной функции → `«Правило: нужна функция \`parse_command\`»`.
+- На каждое правило — один результат (первая строка), а не на каждое вхождение.
+- Кейсы всё равно запускаются; `status` не может стать `passed`, пока правило
+  нарушено; `passed_tests` считает только кейсы, `total_tests` включает
+  результаты правил. Формы `CheckResult` / `TestResult` не меняются.
+- Верификаторы (`scripts/verify_*_catalog.py`) проверяют эталонное решение
+  теми же правилами: эталон, нарушающий свои же `@rules`, роняет проверку.
+
+`@rules` не входит в `content_hash` (`statement_md + stub_py + solution_py`) и
+не версионируется сам по себе: меняя правила опубликованной задачи, подними
+`version` в frontmatter, иначе sync не применит изменение.
+
 ## Hooks
 
 ### `@before`
@@ -262,9 +318,11 @@ def after(func: Callable):
 3. Parser: `tests_file` — путь к `.tests.py` (поле `Task.tests_file`)
 4. Checker:
    a. Импортирует `.tests.py` (через `importlib`)
-   b. Находит `task_*` функцию, собирает `_ego_cases`
+   b. Находит `task_*` функцию, собирает `_ego_cases` и опциональные `@rules`
    c. Фильтрует по `level` аргумента `run_check` (`smoke` | `full` | `all`, default `smoke`)
    d. Находит `_ego_before` / `_ego_after` функции
+   d1. Если у задачи есть `@rules` — парсит код студента (`ast`) и ставит
+      результаты нарушений первыми в `results` (см. «Static rules»)
    e. Для каждого выбранного `@case`:
       - `ctx = before(task_func)` если есть
       - Запускает student code с `case.args`

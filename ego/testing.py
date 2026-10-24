@@ -3,6 +3,8 @@
 Public API used by mentors when writing sidecar tests next to ``.md``:
 
 - ``@case(args=..., expected=..., description=..., level="smoke"|"full")``
+- ``@rules(...)`` opt-in static AST rules checked against the student's code
+  (see ``ego.static_rules``); stackable with ``@case`` in any order
 - ``@before`` / ``@after`` hooks around each case
 
 See ``docs/TESTS_DESIGN.md``. Hypothesis ``@scenario`` is post-MVP (epic 9u7)
@@ -13,6 +15,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Callable, Literal
+
+import ego.static_rules as _static_rules
 
 TestLevel = Literal["smoke", "full"]
 Comparison = Literal["repr", "value"]
@@ -103,6 +107,55 @@ def case(
                 hide_expected=hide_expected,
             ),
         )
+        return func
+
+    return decorator
+
+
+def rules(
+    *,
+    forbid_names: list[str] | tuple[str, ...] = (),
+    forbid_methods: list[str] | tuple[str, ...] = (),
+    forbid_imports: list[str] | tuple[str, ...] = (),
+    forbid_nodes: list[str] | tuple[str, ...] = (),
+    require_functions: list[str] | tuple[str, ...] = (),
+    allow_in: list[str] | tuple[str, ...] = (),
+    messages: dict[str, str] | None = None,
+) -> Callable[[Callable], Callable]:
+    """Declare static rules for the task's student code (opt-in, AST-based).
+
+    Stackable with ``@case`` in any order; at most one ``@rules`` per task
+    (a second one raises ``ValueError`` at decoration time)::
+
+        @rules(
+            forbid_names=["sorted"],
+            messages={"sorted": "Сортировку нужно написать самому"},
+        )
+        @case(args=([3, 1], [2]), expected=[1, 2, 3])
+        def task_li21_merge_sorted(a, b):
+            ...
+
+    Functions whose name starts with ``given_`` (GIVEN helpers) are always
+    exempt from ``forbid_*`` rules; ``allow_in`` adds more exempt names.
+    Unknown ast node class names raise ``ValueError`` here.
+    """
+    spec = _static_rules.build_rules(
+        forbid_names=forbid_names,
+        forbid_methods=forbid_methods,
+        forbid_imports=forbid_imports,
+        forbid_nodes=forbid_nodes,
+        require_functions=require_functions,
+        allow_in=allow_in,
+        messages=messages,
+    )
+
+    def decorator(func: Callable) -> Callable:
+        if getattr(func, "_ego_rules", None) is not None:
+            raise ValueError(
+                f"@rules already declared on {getattr(func, '__name__', func)!r}; "
+                "put all rule keys in a single @rules(...)"
+            )
+        func._ego_rules = spec  # type: ignore[attr-defined]
         return func
 
     return decorator

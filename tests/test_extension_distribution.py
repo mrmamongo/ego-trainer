@@ -380,9 +380,11 @@ def test_is_newer_semver(candidate, current, expected):
 
 
 def test_student_page_has_extension_block(client):
+    # The reworked cabinet renders the extension block from student.js.
     response = client.get("/student")
     assert response.status_code == 200
-    assert 'id="extension-download"' in response.text
-    assert "Расширение для VS Code" in response.text
-    assert 'id="extension-link"' in response.text
-    assert "/extension/latest" in client.get("/static/student.js").text
+    assert "/static/student.js" in response.text
+    script = client.get("/static/student.js").text
+    assert "/extension/latest" in script
+    assert "/extension/download" in script
+    assert "Решай в VS Code" in script

@@ -190,7 +190,9 @@ def _print_traceback():
 
 # === Execute student code ===
 _code = {code!r}
-_namespace = {{ "__name__": "__main__", "__file__": "<ego-runner>" }}
+# Not "__main__": a student's `if __name__ == "__main__": main()` (an input() loop
+# for running the program locally) must not start during checks.
+_namespace = {{ "__name__": "student", "__file__": "<ego-runner>" }}
 
 try:
     exec(_code, _namespace)

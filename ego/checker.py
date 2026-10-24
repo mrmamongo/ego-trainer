@@ -22,6 +22,10 @@ from typing import Any, Callable
 
 from ego.models import Task
 from ego.runner import parse_return_value, run_function
+from ego.static_rules import RULE_PREFIX
+from ego.static_rules import Rules as StaticRules
+from ego.static_rules import evaluate as evaluate_rules
+from ego.static_rules import format_violation
 from ego.testing import (
     CaseResult,
     LevelFilter,
@@ -105,7 +109,7 @@ def run_check(
         raise ValueError(f"invalid level filter: {level!r}")
 
     func_name = _find_main_function(task.solution_py)
-    if not func_name:
+    if not func_name:  # skips _load_tests_module: empty results as before
         return CheckResult(
             task_id=task.id,
             version=task.version,
@@ -118,7 +122,7 @@ def run_check(
             level=level,
         )
 
-    loaded = _load_tests_module(task)
+    loaded = _load_tests_module(task, entry_point=func_name)
     test_cases = _extract_test_cases(task, level=level, loaded=loaded)
     if not test_cases:
         return CheckResult(
@@ -141,6 +145,10 @@ def run_check(
     passed_count = 0
     had_timeout = False
     had_error = False
+
+    # Static @rules first: the student sees rule violations and case results.
+    rule_results = _static_rule_results(loaded, student_code, entry_point=func_name)
+    results.extend(rule_results)
 
     for tc in test_cases:
         expected_repr = tc.expected_repr
@@ -246,7 +254,7 @@ def run_check(
         status = "timeout"
     elif had_error and passed_count == 0:
         status = "error"
-    elif passed_count == total and total > 0:
+    elif passed_count == total and total > 0 and not rule_results:
         status = "passed"
     elif passed_count == 0:
         status = "failed"
@@ -291,6 +299,42 @@ def _make_task_func_stub(func_name: str) -> Callable:
     return stub
 
 
+def _is_rule_result(result: TestResult) -> bool:
+    """True for a static-rule result (no expected/actual values to show)."""
+    return result.description.startswith(RULE_PREFIX)
+
+
+def _static_rule_results(
+    loaded: _LoadedTests | None,
+    student_code: str,
+    *,
+    entry_point: str,
+) -> list[TestResult]:
+    """Evaluate ``@rules`` on the student's AST; one failing result per rule.
+
+    A ``SyntaxError`` keeps today's behaviour (the runner reports it per case),
+    so parsing failures yield no rule results. ``entry_point`` (the ``task_*``
+    function from the reference) satisfies ``require_functions``.
+    """
+    if loaded is None or loaded.rules is None or loaded.rules.is_empty:
+        return []
+    try:
+        violations = evaluate_rules(student_code, loaded.rules, skip_functions=(entry_point,))
+    except SyntaxError:
+        return []
+    return [
+        TestResult(
+            description=format_violation(violation, loaded.rules.message_for(violation)),
+            passed=False,
+            expected_repr=violation.trigger,
+            actual_repr=None,
+            error=None,
+            level="smoke",
+        )
+        for violation in violations
+    ]
+
+
 def _call_after(
     after_hook: Callable | None,
     task_func: Callable,
@@ -321,10 +365,15 @@ class _LoadedTests:
     cases: list[EgoTestCase]
     before_hook: Callable | None
     after_hook: Callable | None
+    rules: StaticRules | None = None
 
 
-def _load_tests_module(task: Task) -> _LoadedTests | None:
-    """Import ``task.tests_file`` via importlib; return None if absent."""
+def _load_tests_module(task: Task, *, entry_point: str | None = None) -> _LoadedTests | None:
+    """Import ``task.tests_file`` via importlib; return None if absent.
+
+    With ``entry_point`` (the solution's ``task_*`` function), ``@rules`` are
+    taken from that function only; without it the module-wide first one wins.
+    """
     path = task.tests_file
     if path is None or not Path(path).is_file():
         return None
@@ -346,6 +395,7 @@ def _load_tests_module(task: Task) -> _LoadedTests | None:
     cases: list[EgoTestCase] = []
     before_hook: Callable | None = None
     after_hook: Callable | None = None
+    task_rules: StaticRules | None = None
 
     for name in dir(module):
         obj = getattr(module, name)
@@ -355,12 +405,21 @@ def _load_tests_module(task: Task) -> _LoadedTests | None:
             after_hook = obj
         if callable(obj) and name.startswith("task_") and hasattr(obj, "_ego_cases"):
             cases.extend(obj._ego_cases)
+        declared = getattr(obj, "_ego_rules", None)
+        if not callable(obj) or not isinstance(declared, StaticRules):
+            continue
+        if entry_point is not None:
+            if name == entry_point:
+                task_rules = declared
+        elif task_rules is None:
+            task_rules = declared
 
     return _LoadedTests(
         module=module,
         cases=cases,
         before_hook=before_hook,
         after_hook=after_hook,
+        rules=task_rules,
     )
 
 
@@ -479,6 +538,9 @@ def format_check_result(result: CheckResult) -> str:
     for tr in result.results:
         if tr.passed:
             lines.append(f"   + [{tr.level}] {tr.description}")
+        elif _is_rule_result(tr):
+            # Static @rules result: no expected/actual values to show.
+            lines.append(f"   x [{tr.level}] {tr.description}")
         else:
             lines.append(f"   x [{tr.level}] {tr.description}")
             lines.append(f"     Ожидалось: {tr.expected_repr}")
