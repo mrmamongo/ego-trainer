@@ -33,6 +33,9 @@ EXPECTED_IDS = {
     "01_variables": [f"V{n:02}" for n in range(1, 14)],
     "02_functions": [f"FN{n:02}" for n in range(1, 23)],
     "03_loops": [f"L{n:02}" for n in range(1, 25)],
+    "04_numbers": [f"N{n:02}" for n in range(1, 9)],
+    "05_range_while": [f"R{n:02}" for n in range(1, 23)],
+    "06_break_nested": [f"BK{n:02}" for n in range(1, 23)],
 }
 
 

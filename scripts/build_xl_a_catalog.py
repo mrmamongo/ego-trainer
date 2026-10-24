@@ -17,7 +17,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOT = REPO_ROOT / "docs" / "tasks" / "XL-A"
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 TITLE_RE = re.compile(r"^XL-A(?P<number>\d{2})\. (?P<kind>.+?) — (?P<title>.+)$")
 TASK_RE = re.compile(r"^task_xla(?P<number>\d{2})_")
 KINDS = {"НАЙТИ БАГ": "bug", "ПРАВКИ": "modify", "НОВЫЙ КОД": "new"}
@@ -45,90 +45,104 @@ GROUPS = (
     Group("09_agent_plans", "Планы агента", "agent-plans"),
 )
 
-PARTY_CONTRACT = """Места и результат подбора:
-    slots = {"tank": 1, "healer": 1, "damage": 2}
-    result = {"members": [ID],
-              "missing": {"tank": int, "healer": int, "damage": int},
-              "ready": bool}
+PARTY_CONTRACT = '''
+    Как выглядит подбор группы:
+        slots = {"tank": 1, "healer": 1, "damage": 2}
+        result = {"members": [ID],
+                  "missing": {"tank": int, "healer": int, "damage": int},
+                  "ready": bool}
 
-Количество мест — целое >= 0. Отсутствующая в slots роль требует 0 мест.
-Роли обрабатываются в порядке tank, healer, damage. Внутри роли сначала
-выбирается большее wait_seconds, при равенстве — меньший по алфавиту ID
-игрока. members следует этому порядку. При нехватке сохраняется частичный
-состав. В missing всегда все три роли и число незаполненных мест каждой.
-ready=True ровно при отсутствии незаполненных мест. Для slots={}
-members=[], все значения missing равны 0, ready=True."""
+    Количество мест — целое число не меньше нуля. Если роли нет в slots,
+    для неё нужно 0 мест.
+    Роли обрабатываются в порядке tank, healer, damage. Внутри роли сначала
+    выбирается тот, кто дольше ждёт (больше wait_seconds), а при равенстве —
+    меньший по алфавиту ID игрока. members идут в этом же порядке. Если
+    игроков не хватает, сохраняется частичный состав. В missing всегда есть
+    все три роли и число незаполненных мест каждой.
+    ready=True ровно тогда, когда незаполненных мест нет. Для slots={}
+    members=[], все значения missing равны 0, ready=True.
+'''
 
-GUILD_CONTRACT = """Состояние и канонические команды:
-    state = {"events": [{"id": "e1", "title": "Рейд", "capacity": 2,
-                         "members": ["m1"]}], "next_id": 2}
-    create = {"tool": "create_event", "args": {"title": "Рейд", "capacity": 2}}
-    join = {"tool": "join_event", "args": {"event_id": "e1", "member_id": "m2"}}
+GUILD_CONTRACT = '''
+    Состояние гильдии и формат команд:
+        state = {"events": [{"id": "e1", "title": "Рейд", "capacity": 2,
+                             "members": ["m1"]}], "next_id": 2}
+        create = {"tool": "create_event", "args": {"title": "Рейд", "capacity": 2}}
+        join = {"tool": "join_event", "args": {"event_id": "e1", "member_id": "m2"}}
 
-next_id задаёт следующий свободный номер eN. create_event добавляет
-событие с пустым members, увеличивает next_id и возвращает value={event_id}.
-join_event добавляет участника и возвращает value={event_id, member_id}.
-Порядок отказов вступления: unknown_event, already_joined, event_full.
-Неизвестная команда отклоняется с unknown_tool. given_dispatch возвращает
-{status, state, result, reason}: при успехе status="done", result=value,
-reason=None; при отказе status="rejected", result=None, reason — код отказа,
-state равно исходному состоянию. Входные объекты сохраняются."""
+    next_id задаёт следующий свободный номер eN. Команда create_event добавляет
+    событие с пустым members, увеличивает next_id и возвращает value={event_id}.
+    Команда join_event добавляет участника и возвращает value={event_id, member_id}.
+    Порядок отказов при вступлении: unknown_event, already_joined, event_full.
+    Неизвестная команда отклоняется с unknown_tool. given_dispatch возвращает
+    {status, state, result, reason}: при успехе status="done", result=value,
+    reason=None; при отказе status="rejected", result=None, reason — код отказа,
+    state равно исходному состоянию. Входные объекты сохраняются.
+'''
 
-RECIPE_CONTRACT = """Данные одного рецепта:
-    inventory = {"iron": 3, "hammer": 1}
-    recipe = {"ingredients": {"iron": 2}, "tools": {"hammer": 1},
-              "product": {"item": "sword", "qty": 1}}
+RECIPE_CONTRACT = '''
+    Данные одного рецепта:
+        inventory = {"iron": 3, "hammer": 1}
+        recipe = {"ingredients": {"iron": 2}, "tools": {"hammer": 1},
+                  "product": {"item": "sword", "qty": 1}}
 
-Имена предметов — строки. В inventory количества целые >= 0.
-ingredients обязательно и задаёт положительные количества расходуемых
-материалов. tools необязательно, по умолчанию {}; инструменты нужны
-для проверки наличия и не расходуются. product имеет поля item (строка)
-и qty (положительное целое). Если один предмет нужен как материал и как
-инструмент, до начала крафта требуется сумма количеств; списывается только
-материал. Проверяются все требования по исходному запасу. Успех сохраняет
-нулевые и посторонние ключи, добавляет продукт. При нехватке запас не меняется.
-given_craft возвращает {status: "crafted" или "missing", inventory: новый
-словарь, missing: словарь положительных нехваток}. Порядок ключей missing
-не является критерием правильности: сравниваются названия и количества."""
+    Имена предметов — строки. В inventory количества целые >= 0.
+    ingredients обязательно и задаёт положительные количества расходуемых
+    материалов. tools необязательно, по умолчанию {}; инструменты нужны
+    для проверки наличия и не расходуются. product имеет поля item (строка)
+    и qty (положительное целое). Если один предмет нужен и как материал, и как
+    инструмент, до начала крафта требуется сумма количеств; списывается только
+    материал. Все требования проверяются по исходному запасу. Успех сохраняет
+    нулевые и посторонние ключи и добавляет продукт. При нехватке запас
+    не меняется.
+    given_craft возвращает {status: "crafted" или "missing", inventory: новый
+    словарь, missing: словарь положительных нехваток}. Порядок ключей missing
+    не является критерием правильности: сравниваются названия и количества.
+'''
 
-ACTION_CONTRACT = """Команды GIVEN given_run_action:
-- create_event: args={title, capacity}. title — непустая строка после strip,
-  иначе invalid_title; capacity — именно int >= 1, bool не подходит,
-  иначе invalid_capacity. Создаётся e<next_id> с пустыми members, счётчик
-  увеличивается; result={event_id}.
-- join_event: args={event_id, member_id}. Проверки по порядку: unknown_event;
-  непустая строка member_id без обрезки, иначе invalid_member;
-  already_joined; event_full. Успех добавляет участника,
-  result={event_id, member_id}.
-- prepare_announcement: args={event_id, text}. Сначала unknown_event,
-  затем непустая строка text после strip, иначе invalid_text. Успех
-  добавляет объявление; result={announcement_index}, индекс начинается с 0.
+ACTION_CONTRACT = '''
+    Команды готовой функции given_run_action:
+    - create_event: args={title, capacity}. title — непустая строка после strip,
+      иначе invalid_title; capacity — именно int >= 1 (bool не подходит),
+      иначе invalid_capacity. Создаётся e<next_id> с пустыми members, счётчик
+      увеличивается; result={event_id}.
+    - join_event: args={event_id, member_id}. Проверки идут в таком порядке:
+      unknown_event; непустая строка member_id без обрезки, иначе
+      invalid_member; already_joined; event_full. Успех добавляет участника,
+      result={event_id, member_id}.
+    - prepare_announcement: args={event_id, text}. Сначала unknown_event,
+      затем непустая строка text после strip, иначе invalid_text. Успех
+      добавляет объявление; result={announcement_index}, индекс начинается с 0.
 
-Неизвестный tool даёт unknown_tool. Результат одной команды содержит
-{status, state, result, reason}. Успех: done и reason=None. Отказ: rejected,
-result=None, reason — код ошибки; состояние остаётся прежним. Предметная
-логика уже дана в given_run_action, её не нужно повторять."""
+    Неизвестный tool даёт unknown_tool. Результат одной команды содержит
+    {status, state, result, reason}. Успех: done и reason=None. Отказ: rejected,
+    result=None, reason — код ошибки; состояние остаётся прежним. Логика
+    команд уже написана в given_run_action, её не нужно повторять.
+'''
 
-PLAN_CONTRACT = """Данные плана и правила выполнения:
-    step = {"id": "join", "tool": "join_event", "critical": True,
-            "args": {"event_id": {"from_step": "create", "field": "event_id"},
-                     "member_id": "Sam"}}
-    report = {"id": "join", "status": "done", "result": {}, "reason": None}
+PLAN_CONTRACT = '''
+    Данные плана и правила выполнения:
+        step = {"id": "join", "tool": "join_event", "critical": True,
+                "args": {"event_id": {"from_step": "create", "field": "event_id"},
+                         "member_id": "Sam"}}
+        report = {"id": "join", "status": "done", "result": {}, "reason": None}
 
-steps — список шагов в порядке выполнения. id — уникальная строка;
-critical — bool. Значения args — str, int, bool, None либо одноуровневая
-ссылка {from_step: id, field: имя_поля} на более ранний шаг. Поле результата
-может отсутствовать. Аргументы просматриваются в порядке вставки: первая
-ошибка ссылки определяет отказ. given_resolve_args возвращает (args, error).
-Неуспешная зависимость даёт dependency_failed:<id>; отсутствующее поле —
-missing_result_field:<id>:<field>. Такой шаг получает rejected, result=None.
-Разрешённые аргументы передаются в given_run_action. Успех имеет done,
-result команды и reason=None; отказ — rejected, result=None и reason команды.
-Отказ не меняет состояние. После некритичного отказа выполнение продолжается.
-После critical-отказа все следующие шаги получают skipped, result=None,
-reason=stopped_after:<упавший_id>. Отчёты сохраняют порядок исходных шагов.
-Пустой план успешен. Правила reused и возвращаемого completed приведены
-в условии возобновления ниже."""
+    steps — список шагов в порядке выполнения. id — уникальная строка;
+    critical — bool. Значения args — str, int, bool, None либо одноуровневая
+    ссылка {from_step: id, field: имя_поля} на более ранний шаг. Поле в
+    результате может отсутствовать. Аргументы просматриваются в порядке
+    вставки: первая ошибка ссылки определяет отказ. given_resolve_args
+    возвращает (args, error).
+    Неуспешная зависимость даёт dependency_failed:<id>; отсутствующее поле —
+    missing_result_field:<id>:<field>. Такой шаг получает rejected, result=None.
+    Разрешённые аргументы передаются в given_run_action. Успех имеет done,
+    result команды и reason=None; отказ — rejected, result=None и reason команды.
+    Отказ не меняет состояние. После некритичного отказа выполнение продолжается.
+    После critical-отказа все следующие шаги получают skipped, result=None,
+    reason=stopped_after:<упавший_id>. Отчёты сохраняют порядок исходных шагов.
+    Пустой план успешен. Правила reused и возвращаемого completed приведены
+    в условии возобновления ниже.
+'''
 
 EXTRA_CONTRACTS = {
     9: PARTY_CONTRACT,
@@ -155,12 +169,13 @@ def shared_contract(module: ast.Module, number: int) -> str:
     )
     text = text.replace("Здесь нет solution.py или checker.py.", "")
     text = text.replace(
-        "В XL-A19/20 покупатель и продавец различны; XL-A21 пропускает\nсобственные лоты.",
+        "В XL-A19/20 покупатель и продавец различны; XL-A21\n"
+        "пропускает собственные лоты.",
         "Покупатель и продавец различны."
         if number in (19, 20)
         else "Собственные лоты пропускаются.",
     )
-    text = text.replace("id лотов в XL-A21 уникальны", "id лотов уникальны")
+    text = text.replace("\nid лотов в XL-A21 уникальны.", "\nid лотов уникальны.")
     text = text.replace(
         "В XL-A26/27 также разрешены словари-ссылки.",
         "В аргументах шагов также разрешены словари-ссылки." if number in (26, 27) else "",
@@ -170,42 +185,7 @@ def shared_contract(module: ast.Module, number: int) -> str:
 
 def task_documentation(node: ast.FunctionDef, number: int) -> str:
     text = ast.get_docstring(node) or ""
-    replacements = {
-        9: [
-            (
-                "slots и результат имеют договор XL-A08.",
-                "Форматы slots и результата приведены в договоре данных этой задачи.",
-            )
-        ],
-        15: [
-            (
-                "state и command имеют формат XL-A14: события, next_id и каноническая\n"
-                "    команда create_event или join_event.",
-                "state содержит события и next_id; command — каноническая\n"
-                "    команда create_event или join_event. Форматы приведены в договоре данных.",
-            ),
-            (
-                "given_dispatch; эта задача от XL-A14 не зависит.",
-                "given_dispatch, приведённый в этом файле.",
-            ),
-        ],
-        17: [("рецептам формата XL-A16.", "рецептам из договора данных этой задачи.")],
-        20: [
-            (
-                "given_buy_whole как опору для старого полного сценария; не вызывай код\n"
-                "задачи XL-A19 и не полагайся на него.",
-                "given_buy_whole как опору для старого полного сценария.",
-            )
-        ],
-        24: [("с правилами XL-A22", "с правилами из договора данных этой задачи")],
-        27: [
-            (
-                "Используй правила\nXL-A26 для ссылок, error при отсутствующем поле, dependency_failed,",
-                "Используй правила из договора данных этой задачи для ссылок,\n"
-                "error при отсутствующем поле, dependency_failed,",
-            )
-        ],
-    }
+    replacements = {}
     for old, new in replacements.get(number, []):
         if old not in text:
             raise ValueError(f"Documentation reference changed in XL-A{number:02d}: {old!r}")

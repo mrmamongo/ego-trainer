@@ -1,9 +1,11 @@
 """
 XL-A26. НОВЫЙ КОД — выполнить план с передачей результатов.
 
-Состояние сервиса: {events: {id: {title, capacity, members: [str]}},
-announcements: [{event_id, text}], next_id: int}. Следующий свободный ID
-имеет вид e<next_id>; счётчик растёт только при успешном создании.
+Состояние сервиса:
+    {events: {id: {title, capacity, members: [str]}},
+     announcements: [{event_id, text}], next_id: int}
+Следующий свободный ID имеет вид e<next_id>; счётчик растёт только при
+успешном создании.
 Команда: {tool: str, args: dict}. Все операции чистые: входное состояние
 и аргументы сохраняются. Событие создают, в него вступают и объявляют о нём.
 Все задачи используют стандартную библиотеку, без сетевых вызовов.
@@ -13,23 +15,25 @@ str, int, bool или None. В аргументах шагов также раз
 
 Дополнительный договор данных
 
-Команды GIVEN given_run_action:
-- create_event: args={title, capacity}. title — непустая строка после strip,
-  иначе invalid_title; capacity — именно int >= 1, bool не подходит,
-  иначе invalid_capacity. Создаётся e<next_id> с пустыми members, счётчик
-  увеличивается; result={event_id}.
-- join_event: args={event_id, member_id}. Проверки по порядку: unknown_event;
-  непустая строка member_id без обрезки, иначе invalid_member;
-  already_joined; event_full. Успех добавляет участника,
-  result={event_id, member_id}.
-- prepare_announcement: args={event_id, text}. Сначала unknown_event,
-  затем непустая строка text после strip, иначе invalid_text. Успех
-  добавляет объявление; result={announcement_index}, индекс начинается с 0.
 
-Неизвестный tool даёт unknown_tool. Результат одной команды содержит
-{status, state, result, reason}. Успех: done и reason=None. Отказ: rejected,
-result=None, reason — код ошибки; состояние остаётся прежним. Предметная
-логика уже дана в given_run_action, её не нужно повторять.
+    Команды готовой функции given_run_action:
+    - create_event: args={title, capacity}. title — непустая строка после strip,
+      иначе invalid_title; capacity — именно int >= 1 (bool не подходит),
+      иначе invalid_capacity. Создаётся e<next_id> с пустыми members, счётчик
+      увеличивается; result={event_id}.
+    - join_event: args={event_id, member_id}. Проверки идут в таком порядке:
+      unknown_event; непустая строка member_id без обрезки, иначе
+      invalid_member; already_joined; event_full. Успех добавляет участника,
+      result={event_id, member_id}.
+    - prepare_announcement: args={event_id, text}. Сначала unknown_event,
+      затем непустая строка text после strip, иначе invalid_text. Успех
+      добавляет объявление; result={announcement_index}, индекс начинается с 0.
+
+    Неизвестный tool даёт unknown_tool. Результат одной команды содержит
+    {status, state, result, reason}. Успех: done и reason=None. Отказ: rejected,
+    result=None, reason — код ошибки; состояние остаётся прежним. Логика
+    команд уже написана в given_run_action, её не нужно повторять.
+
 
 Работай с этой функцией. GIVEN-помощники можно вызывать, но нельзя изменять.
 """
@@ -124,10 +128,12 @@ def task_xla26_run_plan(state, steps):
     """XL-A26. НОВЫЙ КОД — выполнить план с передачей результатов.
 
     Агент составляет план из нескольких действий. Реализуй последовательное
-    выполнение и ссылки на результаты предыдущих шагов. step имеет поля
-    id (уникальная строка), tool, args и critical (bool). Значения args —
-    scalar или ссылка {from_step: id, field: имя_поля}; ссылки ведут только
-    на более ранние ID, они одноуровневые. Поле результата может отсутствовать.
+    выполнение плана и ссылки на результаты предыдущих шагов. Шаг (step)
+    имеет поля id (уникальная строка), tool, args и critical (bool).
+    Значения args — либо готовое скалярное значение, либо ссылка
+    {from_step: id, field: имя_поля}; ссылки ведут только на более ранние
+    ID, и они одноуровневые (не вложены друг в друга). Поле результата
+    может отсутствовать.
     Перебирай аргументы в порядке вставки: первая ошибка ссылки определяет
     отказ шага. Для успешных шагов разрешай ссылки через given_resolve_args
     и вызывай given_run_action — предметную логику не копируй.
