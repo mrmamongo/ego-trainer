@@ -21,6 +21,9 @@ VERSION = "1.0.0"
 TITLE_RE = re.compile(r"^XL-A(?P<number>\d{2})\. (?P<kind>.+?) — (?P<title>.+)$")
 TASK_RE = re.compile(r"^task_xla(?P<number>\d{2})_")
 KINDS = {"НАЙТИ БАГ": "bug", "ПРАВКИ": "modify", "НОВЫЙ КОД": "new"}
+# All 27 tasks live in one catalog folder; the nine stories stay as source
+# packages, domain tags and the «История» header line.
+CATALOG_FOLDER = "xl_a"
 
 
 @dataclass(frozen=True)
@@ -364,12 +367,12 @@ def statement_source(
         f"version: {yaml_string(VERSION)}",
         f"level: {level}",
         "tags: " + json.dumps(tags),
-        f"folder: {group.folder}",
+        f"folder: {CATALOG_FOLDER}",
         "---",
     ]
     body = [
         f"# Задача {task_id}: {title}",
-        f"**Блок:** XLA{group_number:02d} — {group.name}",
+        f"**История:** XLA{group_number:02d} — {group.name}",
         f"**Сложность:** {level}",
         f"**Темы:** {', '.join(tags)}",
         "## Условие",
@@ -395,17 +398,17 @@ def catalog_outputs(source_root: Path = SOURCE_ROOT) -> dict[Path, str]:
             "tags: [python, llm, agents, games, mmo]\nversion_policy: declare\n"
         ),
     }
+    folder = Path("projects/xl-a/folders") / CATALOG_FOLDER
+    outputs[folder / "folder.yaml"] = (
+        f"id: {CATALOG_FOLDER}\ncode: XL\nname: {yaml_string('XL-A: продуктовая практика')}\n"
+        f"description: {yaml_string('27 задач в девяти историях: чатботы, агенты, игры и MMO')}\n"
+        "order: 1\nlevel: medium\n"
+    )
     task_numbers: list[int] = []
     for group_number, group in enumerate(GROUPS, 1):
         source_path = source_root / group.folder / "student.py"
         source = source_path.read_text(encoding="utf-8-sig")
         module = ast.parse(source, filename=str(source_path))
-        folder = Path("projects/xl-a/folders") / group.folder
-        outputs[folder / "folder.yaml"] = (
-            f"id: {group.folder}\ncode: XLA{group_number:02d}\nname: {yaml_string(group.name)}\n"
-            f"description: {yaml_string('Продуктовая практика: ' + group.name.lower())}\n"
-            f"order: {group_number}\nlevel: {'medium' if group_number <= 6 else 'hard'}\n"
-        )
         for node in module.body:
             if not isinstance(node, ast.FunctionDef) or not TASK_RE.match(node.name):
                 continue
@@ -431,7 +434,7 @@ def catalog_outputs(source_root: Path = SOURCE_ROOT) -> dict[Path, str]:
         raise ValueError(f"Expected XL-A01 through XL-A27, got {task_numbers}")
     outputs[Path("README.txt")] = """XL-A — каталог задач Cogito
 
-27 задач XL-A01…XL-A27, 9 тематических папок, версия 1.0.0.
+27 задач XL-A01…XL-A27 в одной папке xl_a (девять историй), версия 1.0.0.
 Исходный учебный пакет сохранён в соседних 01_chat_context…09_agent_plans/student.py.
 
 Из корня ego-trainer:

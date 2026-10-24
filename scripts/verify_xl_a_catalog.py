@@ -35,7 +35,7 @@ def verify(catalog_root: Path, timeout: float = 5.0) -> dict:
     catalog = discover_repo(catalog_root)
     assert not catalog.is_legacy
     assert [project.project.id for project in catalog.projects] == ["xl-a"]
-    assert len(catalog.projects[0].folders) == 9
+    assert [folder.folder.id for folder in catalog.projects[0].folders] == ["xl_a"]
     discovered = sorted(catalog.all_tasks, key=lambda item: item.frontmatter.id)
     assert [item.frontmatter.id for item in discovered] == [
         f"XL-A{number:02}" for number in range(1, 28)

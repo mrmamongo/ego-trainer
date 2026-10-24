@@ -466,7 +466,7 @@ def _upsert_task_row(
     now = _now_iso()
     theory_json = _dump_tags(theory or [])
     existing = conn.execute(
-        "SELECT id, version, content_hash, theory FROM tasks WHERE id = ?",
+        "SELECT id, version, content_hash, theory, block, slug, md_path, folder_id, project_id FROM tasks WHERE id = ?",
         (task.id,),
     ).fetchone()
 
@@ -516,11 +516,18 @@ def _upsert_task_row(
     if existing["content_hash"] == task.content_hash and (
         version_policy == "auto_minor" or task.version == existing["version"]
     ):
-        # Metadata refresh: theory links never require a version bump.
-        if (existing["theory"] or "[]") != theory_json:
+        # Metadata refresh: theory links and catalog placement (moving a task to
+        # another folder) never affect grading, so they need no version bump.
+        placement = (task.block, task.slug, str(task.md_path), folder_id, project_id)
+        current = (
+            existing["block"], existing["slug"], existing["md_path"],
+            existing["folder_id"], existing["project_id"],
+        )
+        if (existing["theory"] or "[]") != theory_json or current != placement:
             conn.execute(
-                "UPDATE tasks SET theory = ?, updated_at = ? WHERE id = ?",
-                (theory_json, now, task.id),
+                """UPDATE tasks SET theory = ?, block = ?, slug = ?, md_path = ?,
+                folder_id = ?, project_id = ?, updated_at = ? WHERE id = ?""",
+                (theory_json, *placement, now, task.id),
             )
             return "updated"
         return "skipped"

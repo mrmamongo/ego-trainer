@@ -407,3 +407,39 @@ def test_theory_from_content_change_is_applied_with_version_bump(temp_db, repo: 
         assert (row["version"], row["theory"]) == ("1.1.0", '["cycles"]')
     finally:
         conn.close()
+
+
+def test_task_moved_to_another_folder_without_version_bump(temp_db, repo: Path):
+    """Merging folders keeps task ids: placement is refreshed, progress untouched."""
+    conn = _connect(temp_db)
+    try:
+        sync_from_path(conn, repo)
+        conn.commit()
+        old = _folder_of(repo)
+        merged = old.parent / "merged"
+        merged.mkdir()
+        (merged / "folder.yaml").write_text(
+            "id: merged\ncode: M\nname: 'Merged'\nlevel: easy\n", encoding="utf-8"
+        )
+        for name in ("task_f1.md", "lesson_roles.md"):
+            (old / name).rename(merged / name)
+        (old / "folder.yaml").unlink()
+        old.rmdir()
+
+        result = sync_from_path(conn, repo)
+        conn.commit()
+        assert result.errors == 0
+        assert result.updated == 1
+        row = conn.execute(
+            "SELECT version, block, folder_id, theory FROM tasks WHERE id = 'F1'"
+        ).fetchone()
+        assert (row["version"], row["block"], row["folder_id"]) == ("1.0.0", "M", "merged")
+        assert row["theory"] == '["roles"]'
+        versions = conn.execute(
+            "SELECT COUNT(*) FROM task_versions WHERE task_id = 'F1'"
+        ).fetchone()[0]
+        assert versions == 1
+        # A second sync is a no-op.
+        assert sync_from_path(conn, repo).skipped == 1
+    finally:
+        conn.close()
