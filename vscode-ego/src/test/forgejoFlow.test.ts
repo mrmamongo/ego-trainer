@@ -103,7 +103,7 @@ test('provider failure ends login without token exchange', async () => {
     }, callbackUri, callbacks, async () => {
         callbacks.handleUri({ ...callback, query: new URLSearchParams({ state, error: 'login_failed' }).toString() });
         return true;
-    }, () => false, async () => {}), /login failed/);
+    }, () => false, async () => {}), /Вход через Forgejo не удался/);
 });
 
 test('cancellation after a valid callback does not exchange; later attempts have fresh state', async () => {
@@ -119,7 +119,7 @@ test('cancellation after a valid callback does not exchange; later attempts have
     await assert.rejects(runForgejoFlow({
         async startForgejo() { return { ...flow, state: 'n'.repeat(43), expires_in: 0 }; },
         async exchangeForgejo() { assert.fail('stale callback must not exchange'); },
-    }, callbackUri, callbacks, async () => { callbacks.handleUri(callback); return true; }, () => false), /timed out/);
+    }, callbackUri, callbacks, async () => { callbacks.handleUri(callback); return true; }, () => false), /истекло/);
 });
 
 test('explicit cancellation after Copy ends the pending flow without exchanging', async () => {

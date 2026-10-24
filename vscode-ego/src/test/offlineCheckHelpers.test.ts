@@ -123,14 +123,14 @@ test('validateTaskId: rejects shell metacharacters and whitespace', () => {
 });
 
 test('validateTaskId: rejects empty / non-string', () => {
-    assert.deepEqual(validateTaskId(''), { ok: false, error: 'Task id is required.' });
+    assert.deepEqual(validateTaskId(''), { ok: false, error: 'Нужен номер задачи.' });
     assert.deepEqual(
         validateTaskId(undefined as unknown as string),
-        { ok: false, error: 'Task id is required.' }
+        { ok: false, error: 'Нужен номер задачи.' }
     );
     assert.deepEqual(
         validateTaskId(null as unknown as string),
-        { ok: false, error: 'Task id is required.' }
+        { ok: false, error: 'Нужен номер задачи.' }
     );
 });
 

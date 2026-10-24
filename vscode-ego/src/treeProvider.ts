@@ -1,4 +1,4 @@
-/** TreeDataProvider for Ego Tasks sidebar.
+/** TreeDataProvider for the Cogito tasks sidebar.
  *
  * Shows Project → Folder → lessons, then tasks with status icons. Clicking a task opens it.
  * Offline: reads `.ego/manifest.yaml` + `.ego/progress.json` (8bv.9.7).
@@ -17,7 +17,7 @@ export class TaskItem extends vscode.TreeItem {
     ) {
         super(task.title && task.title !== task.task_id ? `${task.task_id} · ${task.title}` : task.task_id, collapsibleState);
         const lastRun = progress?.last_run_at
-            ? ` · last ${formatRelative(progress.last_run_at)}`
+            ? ` · последняя проверка ${formatRelative(progress.last_run_at)}`
             : '';
         this.tooltip = `${task.title} (v${task.version})${lastRun}`;
         this.description = this._statusLabel();
@@ -25,7 +25,7 @@ export class TaskItem extends vscode.TreeItem {
         this.iconPath = this._icon();
         this.command = {
             command: 'ego.openTask',
-            title: 'Open Task',
+            title: 'Открыть задачу',
             arguments: [task],
         };
     }
@@ -106,7 +106,7 @@ export class LessonItem extends vscode.TreeItem {
         this.tooltip = `Теория: ${lesson.title || lesson.id}${read ? ' (прочитано)' : ''}`;
         this.contextValue = 'lesson';
         this.iconPath = new vscode.ThemeIcon('book', read ? new vscode.ThemeColor('testing.iconPassed') : undefined);
-        this.command = { command: 'ego.openLesson', title: 'Open Lesson', arguments: [lesson] };
+        this.command = { command: 'ego.openLesson', title: 'Открыть теорию', arguments: [lesson] };
     }
 }
 
@@ -298,7 +298,7 @@ export class EgoTaskTreeProvider implements vscode.TreeDataProvider<TreeNode> {
 }
 
 function errorFolder(): CatalogFolder {
-    return { key: 'error', name: 'Блок Error', order: 0, block: 'Error', projectKey: '', lessons: [], tasks: [] };
+    return { key: 'error', name: 'Блок с ошибкой', order: 0, block: 'Error', projectKey: '', lessons: [], tasks: [] };
 }
 
 async function readJsonUri<T>(uri: vscode.Uri): Promise<T | undefined> {
@@ -314,8 +314,8 @@ function formatRelative(iso: string): string {
     const t = Date.parse(iso);
     if (Number.isNaN(t)) return iso;
     const sec = Math.round((Date.now() - t) / 1000);
-    if (sec < 60) return `${sec}s ago`;
-    if (sec < 3600) return `${Math.round(sec / 60)}m ago`;
-    if (sec < 86400) return `${Math.round(sec / 3600)}h ago`;
-    return `${Math.round(sec / 86400)}d ago`;
+    if (sec < 60) return `${sec} с назад`;
+    if (sec < 3600) return `${Math.round(sec / 60)} мин назад`;
+    if (sec < 86400) return `${Math.round(sec / 3600)} ч назад`;
+    return `${Math.round(sec / 86400)} дн. назад`;
 }

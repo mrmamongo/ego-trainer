@@ -14,7 +14,7 @@ export function registerForgejoUriHandler(context: vscode.ExtensionContext): voi
 export async function forgejoLogin(api: EgoApi): Promise<AuthResponse | null | undefined> {
     const providers = await api.authProviders();
     if (!providers.forgejo) {
-        if (!providers.local) throw new Error('The server has no configured login provider.');
+        if (!providers.local) throw new Error('На сервере не настроен ни один способ входа.');
         return null;
     }
     // asExternalUri binds the return to this window, including desktop Remote SSH/WSL.
@@ -22,10 +22,10 @@ export async function forgejoLogin(api: EgoApi): Promise<AuthResponse | null | u
         `${vscode.env.uriScheme}://${FORGEJO_EXTENSION_ID}${FORGEJO_CALLBACK_PATH}`,
     ));
     if (!['vscode', 'vscode-insiders'].includes(callbackUri.scheme)) {
-        throw new Error('Forgejo sign-in requires desktop VS Code or VS Code Insiders.');
+        throw new Error('Вход через Forgejo работает только в десктопном VS Code или VS Code Insiders.');
     }
     return vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: 'Cogito: Sign in through Forgejo in your browser', cancellable: true },
+        { location: vscode.ProgressLocation.Notification, title: 'Cogito: войди через Forgejo в браузере', cancellable: true },
         async (progress, cancellation) => {
             let active = true;
             let cancelled = false;
@@ -44,7 +44,7 @@ export async function forgejoLogin(api: EgoApi): Promise<AuthResponse | null | u
                             await vscode.env.clipboard.writeText(url);
                             if (active && !isCancelled()) progress.report({ message: 'Ссылка скопирована. Открой её в браузере; я жду подтверждения входа…' });
                         } catch {
-                            if (active && !isCancelled()) void vscode.window.showErrorMessage('Не удалось скопировать ссылку. Повтори Cogito: Войти.');
+                            if (active && !isCancelled()) void vscode.window.showErrorMessage('Не удалось скопировать ссылку. Повтори «Cogito: Войти».');
                         }
                     }
                 }, () => undefined);

@@ -358,7 +358,7 @@ function hintsFromMarkdown(statementMd: string, stubPy: string): TaskViewHint[] 
 
 async function readLocalMarkdown(ref: TaskRef): Promise<string> {
     const root = vscode.workspace.workspaceFolders?.[0]?.uri;
-    if (!root) throw new Error('No workspace folder.');
+    if (!root) throw new Error('Папка проекта не открыта.');
 
     const candidates: vscode.Uri[] = [];
     if (ref.md_path) {
@@ -388,7 +388,7 @@ async function readLocalMarkdown(ref: TaskRef): Promise<string> {
         const buf = await vscode.workspace.fs.readFile(found[0]);
         return Buffer.from(buf).toString('utf-8');
     }
-    throw new Error(`Markdown for ${ref.id} not found.`);
+    throw new Error(`Файл условия задачи ${ref.id} не найден.`);
 }
 
 async function readLocalStub(ref: TaskRef): Promise<string> {

@@ -59,13 +59,13 @@
 			<span aria-hidden="true">{text}{#if !reducedMotion}<span class="cursor" class:blink={done}>|</span>{/if}</span>
 		</h1>
 		<p class="lede">
-			Practice coding tasks with auto-checking — connect to a server or work offline.
+			Решай задачи по программированию с автоматической проверкой: подключись к серверу или работай локально.
 		</p>
 
 		<div class="actions">
-			<button type="button" class="btn primary" onclick={connect}>Connect to Server</button>
-			<button type="button" class="btn primary" onclick={offline}>Use Offline</button>
-			<button type="button" class="btn quiet" onclick={skip}>Skip for now</button>
+			<button type="button" class="btn primary" onclick={connect}>Подключиться к серверу</button>
+			<button type="button" class="btn primary" onclick={offline}>Работать локально</button>
+			<button type="button" class="btn quiet" onclick={skip}>Пропустить</button>
 		</div>
 	</section>
 </main>

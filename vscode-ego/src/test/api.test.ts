@@ -48,7 +48,7 @@ test('Forgejo start sends a window-bound editor URI and rejects a foreign login 
     const api = new EgoApi('https://ego.example');
     assert.equal((await api.startForgejo(challenge, callbackUri)).authorization_url, loginUrl);
     loginUrl = 'https://attacker.example/login';
-    await assert.rejects(api.startForgejo(challenge, callbackUri), /does not match/);
+    await assert.rejects(api.startForgejo(challenge, callbackUri), /не совпадает/);
 });
 
 test('403 throws EgoApiError with forbidden message', async () => {
@@ -59,7 +59,7 @@ test('403 throws EgoApiError with forbidden message', async () => {
             assert.ok(error instanceof EgoApiError);
             assert.equal(error.status, 403);
             assert.equal(error.path, '/progress/student-1');
-            assert.match(error.message, /Forbidden/);
+            assert.match(error.message, /Недостаточно прав/);
             return true;
         }
     );

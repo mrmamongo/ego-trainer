@@ -214,7 +214,7 @@
 			<div class="brand-row">
 				<h1 class="brand">Личный кабинет</h1>
 				<span class="mode" class:offline data-mode={data.mode}>
-					{data.mode === 'server' ? 'Сервер' : 'Офлайн'}
+					{data.mode === 'server' ? 'Сервер' : 'Локально'}
 				</span>
 			</div>
 			<p class="subheading">Задачи, попытки, защита понимания и ассистент — всё в одном месте.</p>
@@ -494,7 +494,7 @@
 		{/if}
 
 		<footer class="footer">
-			<button type="button" class="btn primary" onclick={pullAll} disabled={offline} title={offline ? 'Недоступно в офлайн-режиме' : 'Загрузить все задачи'}>
+			<button type="button" class="btn primary" onclick={pullAll} disabled={offline} title={offline ? 'Недоступно в локальном режиме' : 'Скачать все задачи'}>
 				Загрузить задачи
 			</button>
 			<button
@@ -502,7 +502,7 @@
 				class="btn primary"
 				onclick={pushProgress}
 				disabled={offline}
-				title={offline ? 'Недоступно в офлайн-режиме — переключитесь на «Сервер»' : 'Отправить локальный прогресс на сервер'}
+				title={offline ? 'Недоступно в локальном режиме — переключись на «Сервер»' : 'Отправить локальный прогресс на сервер'}
 			>
 				Отправить прогресс
 			</button>

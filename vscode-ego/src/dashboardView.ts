@@ -38,7 +38,7 @@ export class DashboardView {
         const extensionUri = DashboardView.extensionUri;
         const deps = DashboardView.deps;
         if (!extensionUri || !deps) {
-            vscode.window.showErrorMessage('Cogito: Dashboard not configured.');
+            vscode.window.showErrorMessage('Cogito: личный кабинет не настроен.');
             return;
         }
 
@@ -51,7 +51,7 @@ export class DashboardView {
         DashboardView.ready = false;
         DashboardView.panel = vscode.window.createWebviewPanel(
             'egoDashboard',
-            'Ego Trainer',
+            'Cogito',
             vscode.ViewColumn.One,
             {
                 enableScripts: true,
@@ -64,7 +64,7 @@ export class DashboardView {
             webview: DashboardView.panel.webview,
             extensionUri,
             bundleName: 'dashboard.js',
-            title: 'Ego Trainer',
+            title: 'Cogito',
         });
 
         DashboardView.panel.webview.onDidReceiveMessage(async (msg: { type?: string; taskId?: string }) => {
@@ -142,7 +142,7 @@ export class DashboardView {
             case 'dashboard.pullAll': {
                 const cfg = await readEgoConfig();
                 if (cfg?.mode === 'offline') {
-                    vscode.window.showWarningMessage('Cogito: Pull All is unavailable in offline mode.');
+                    vscode.window.showWarningMessage('Cogito: скачивание задач недоступно в локальном режиме.');
                     return;
                 }
                 await deps.pullAll();
@@ -154,7 +154,7 @@ export class DashboardView {
                 const cfg = await readEgoConfig();
                 if (cfg?.mode === 'offline') {
                     vscode.window.showWarningMessage(
-                        'Cogito: Push Progress is unavailable in offline mode. Switch to Server first.'
+                        'Cogito: отправка прогресса недоступна в локальном режиме. Сначала переключись на сервер.'
                     );
                     return;
                 }
@@ -170,7 +170,7 @@ export class DashboardView {
     private static async openRow(taskId: string): Promise<void> {
         const row = DashboardView.rowsById.get(taskId);
         if (!row) {
-            vscode.window.showWarningMessage(`Cogito: Unknown task ${taskId}`);
+            vscode.window.showWarningMessage(`Cogito: задача ${taskId} не найдена.`);
             return;
         }
         await openTaskById({

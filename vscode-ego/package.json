@@ -1,7 +1,7 @@
 {
   "name": "ego-trainer",
   "displayName": "Cogito",
-  "description": "Practice tasks for junior developers — check, pull, push progress",
+  "description": "Cogito: тренажёр для начинающих разработчиков — решай задачи, проверяй код и отслеживай прогресс",
   "version": "0.1.1",
   "publisher": "ego-trainer",
   "engines": {
@@ -218,19 +218,19 @@
         "ego.serverUrl": {
           "type": "string",
           "default": "http://localhost:8000",
-          "description": "Ego server URL (e.g. http://localhost:8000 or https://ego.example.com)",
+          "description": "Адрес сервера Cogito (например, http://localhost:8000 или https://cogito.example.com)",
           "scope": "resource"
         },
         "ego.autoCheckOnSave": {
           "type": "boolean",
           "default": false,
-          "description": "Automatically run check when saving a task .py file",
+          "description": "Автоматически проверять задачу при сохранении её .py-файла",
           "scope": "resource"
         },
         "ego.pythonPackageSpec": {
           "type": "string",
           "default": "ego-trainer",
-          "description": "Python package to install for Ego checks; may be a published package or a trusted local path/URL",
+          "description": "Python-пакет для проверок Cogito: опубликованный пакет или доверенный локальный путь либо URL",
           "scope": "resource"
         }
       }

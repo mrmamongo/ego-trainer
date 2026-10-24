@@ -151,10 +151,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('ego.init', async () => {
             const mode = await vscode.window.showQuickPick(
                 [
-                    { label: 'Connect to Server', mode: 'server' as const },
-                    { label: 'Offline (local only)', mode: 'offline' as const },
+                    { label: 'Подключиться к серверу', mode: 'server' as const },
+                    { label: 'Работать локально (без сервера)', mode: 'offline' as const },
                 ],
-                { placeHolder: 'How do you want to initialize Ego?' }
+                { placeHolder: 'Как ты хочешь подключить Cogito?' }
             );
             if (!mode) return;
             const deps = welcomeDeps();
@@ -192,7 +192,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     treeProvider.refresh();
                     if (DashboardView.isOpen()) await DashboardView.refresh();
                 } catch (e) {
-                    vscode.window.showErrorMessage(`Cogito: Pull failed — ${(e as Error).message}`);
+                    vscode.window.showErrorMessage(`Cogito: не удалось скачать задачи — ${(e as Error).message}`);
                 }
             })
         ),
@@ -212,7 +212,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             withReady(() => {
                 const task = resolveTaskMeta(arg);
                 if (!task) {
-                    vscode.window.showWarningMessage('Cogito: No task selected.');
+                    vscode.window.showWarningMessage('Cogito: задача не выбрана.');
                     return;
                 }
                 return cmdOpenTask(task);
@@ -222,7 +222,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             withReady(() => {
                 const lesson = arg instanceof LessonItem ? arg.lesson : arg;
                 if (!lesson?.id) {
-                    vscode.window.showWarningMessage('Cogito: No lesson selected.');
+                    vscode.window.showWarningMessage('Cogito: карточка не выбрана.');
                     return;
                 }
                 return TaskViewPanel.showLesson(lesson);
@@ -259,13 +259,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             withReady(async () => {
                 const editor = vscode.window.activeTextEditor;
                 if (!editor) {
-                    vscode.window.showWarningMessage('Cogito: Open a task .py file first.');
+                    vscode.window.showWarningMessage('Cogito: сначала открой .py-файл задачи.');
                     return;
                 }
                 const fileName = vscode.workspace.asRelativePath(editor.document.fileName);
                 const match = fileName.match(/task_([a-z0-9_]+)\.py$/);
                 if (!match) {
-                    vscode.window.showWarningMessage(`Cogito: Not a task file: ${fileName}`);
+                    vscode.window.showWarningMessage(`Cogito: ${fileName} — не файл задачи.`);
                     return;
                 }
                 const taskId = match[1].replace(/_/g, '.').toUpperCase();
@@ -346,7 +346,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (e.affectsConfiguration('ego.serverUrl')) {
                 const newUrl = vscode.workspace.getConfiguration('ego').get<string>('serverUrl', 'http://localhost:8000');
                 await recreateApi(context);
-                vscode.window.showInformationMessage(`Cogito: Server URL changed to ${newUrl}`);
+                vscode.window.showInformationMessage(`Cogito: адрес сервера изменён на ${newUrl}`);
             }
         })
     );
@@ -435,7 +435,7 @@ async function cmdLogin(context: vscode.ExtensionContext): Promise<void> {
         if (start !== 'already') api.setToken(undefined);
         if (start === 'unreachable') {
             vscode.window.showErrorMessage(
-                `Cogito: сервер недоступен — ${current.message}. Токен сохранён, проверь подключение и повтори Cogito: Войти.`
+                `Cogito: сервер недоступен — ${current.message}. Токен сохранён, проверь подключение и повтори «Cogito: Войти».`
             );
             return;
         }
@@ -448,7 +448,7 @@ async function cmdLogin(context: vscode.ExtensionContext): Promise<void> {
             }
             await applyLoggedInState();
             const choice = await vscode.window.showInformationMessage(
-                `Cogito: вы уже вошли как ${me.username} (${me.role})`,
+                `Cogito: ты уже вошёл как ${me.username} (${me.role})`,
                 'Войти другим аккаунтом', 'Выйти',
             );
             if (choice === 'Выйти') await resetSession(context);
@@ -463,7 +463,7 @@ async function cmdLogin(context: vscode.ExtensionContext): Promise<void> {
 
 async function cmdLogout(context: vscode.ExtensionContext): Promise<void> {
     await resetSession(context);
-    vscode.window.showInformationMessage('Cogito: вы вышли из аккаунта');
+    vscode.window.showInformationMessage('Cogito: ты вышел из аккаунта.');
 }
 
 /** Forgejo browser login, then the local username/password fallback. */
@@ -478,23 +478,23 @@ async function startLoginFlow(context: vscode.ExtensionContext): Promise<void> {
             const existing = await readEgoConfig();
             if (existing) await writeEgoConfig({ ...existing, token: '', student_id: response.user_id, student_username: response.username, role: response.role });
             await applyLoggedInState();
-            vscode.window.showInformationMessage(`Cogito: Logged in as ${response.username} (${response.role})`);
+            vscode.window.showInformationMessage(`Cogito: ты вошёл как ${response.username} (${response.role})`);
             return;
         }
     } catch (error) {
-        vscode.window.showErrorMessage(`Cogito: Login failed — ${(error as Error).message}`);
+        vscode.window.showErrorMessage(`Cogito: не удалось войти — ${(error as Error).message}`);
         return;
     }
     const username = await vscode.window.showInputBox({
-        prompt: 'Username',
-        placeHolder: 'Enter your username',
+        prompt: 'Логин',
+        placeHolder: 'Введи свой логин',
     });
     if (!username) return;
 
     const password = await vscode.window.showInputBox({
-        prompt: 'Password',
+        prompt: 'Пароль',
         password: true,
-        placeHolder: 'Enter your password',
+        placeHolder: 'Введи свой пароль',
     });
     if (!password) return;
 
@@ -505,16 +505,16 @@ async function startLoginFlow(context: vscode.ExtensionContext): Promise<void> {
         const resp = await api.register(username, password, 'student');
         await startSession(context, resp.access_token);
         await vscode.commands.executeCommand('setContext', 'ego.offline', false);
-        vscode.window.showInformationMessage(`Cogito: Logged in as ${username} (student)`);
+        vscode.window.showInformationMessage(`Cogito: ты вошёл как ${username} (студент)`);
     } catch (e) {
         // Maybe already registered — try login.
         try {
             const resp = await api.login(username, password);
             await startSession(context, resp.access_token);
             await vscode.commands.executeCommand('setContext', 'ego.offline', false);
-            vscode.window.showInformationMessage(`Cogito: Logged in as ${username}`);
+            vscode.window.showInformationMessage(`Cogito: ты вошёл как ${username}`);
         } catch (e2) {
-            vscode.window.showErrorMessage(`Cogito: Login failed — ${(e2 as Error).message}`);
+            vscode.window.showErrorMessage(`Cogito: не удалось войти — ${(e2 as Error).message}`);
         }
     }
 }
@@ -522,14 +522,14 @@ async function startLoginFlow(context: vscode.ExtensionContext): Promise<void> {
 async function cmdSetupPython(): Promise<void> {
     const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     if (!workspacePath) {
-        vscode.window.showErrorMessage('Cogito: Open a workspace folder before setting up Python.');
+        vscode.window.showErrorMessage('Cogito: сначала открой папку проекта, потом настраивай Python.');
         return;
     }
 
     await vscode.window.withProgress(
         {
             location: vscode.ProgressLocation.Notification,
-            title: 'Cogito: Setting up Python…',
+            title: 'Cogito: настраиваю Python…',
             cancellable: false,
         },
         async (progress) => {
@@ -537,14 +537,14 @@ async function cmdSetupPython(): Promise<void> {
                 const packageSpec = vscode.workspace
                     .getConfiguration('ego', vscode.Uri.file(workspacePath))
                     .get<string>('pythonPackageSpec', 'ego-trainer');
-                progress.report({ message: `Installing ${packageSpec}…` });
+                progress.report({ message: `Устанавливаю ${packageSpec}…` });
                 await setupPythonEnv(workspacePath);
                 vscode.window.showInformationMessage(
-                    `Cogito: Python environment is ready using ${packageSpec}.`
+                    `Cogito: окружение Python готово (${packageSpec}).`
                 );
             } catch (error) {
                 vscode.window.showErrorMessage(
-                    `Cogito: Python setup failed — ${(error as Error).message}`
+                    `Cogito: не удалось настроить Python — ${(error as Error).message}`
                 );
             }
         }
@@ -554,7 +554,7 @@ async function cmdSetupPython(): Promise<void> {
 async function cmdSetServer(context: vscode.ExtensionContext): Promise<void> {
     AssistantPanel.close();
     const url = await vscode.window.showInputBox({
-        prompt: 'Server URL',
+        prompt: 'Адрес сервера',
         value: vscode.workspace.getConfiguration('ego').get('serverUrl', 'http://localhost:8000'),
         placeHolder: 'http://localhost:8000',
     });
@@ -562,13 +562,13 @@ async function cmdSetServer(context: vscode.ExtensionContext): Promise<void> {
 
     await vscode.workspace.getConfiguration('ego').update('serverUrl', url, vscode.ConfigurationTarget.Global);
     await recreateApi(context);
-    vscode.window.showInformationMessage(`Cogito: Server set to ${url}`);
+    vscode.window.showInformationMessage(`Cogito: сервер — ${url}`);
 }
 
 async function cmdCheck(): Promise<void> {
     const editor = vscode.window.activeTextEditor;
     if (!editor) {
-        vscode.window.showWarningMessage('Cogito: No active editor. Open a task .py file first.');
+        vscode.window.showWarningMessage('Cogito: нет открытого файла. Сначала открой .py-файл задачи.');
         return;
     }
 
@@ -576,7 +576,7 @@ async function cmdCheck(): Promise<void> {
     // Extract task_id from filename: tasks/block_f_simple/task_f1.py -> F1
     const match = fileName.match(/task_([a-z0-9_]+)\.py$/);
     if (!match) {
-        vscode.window.showWarningMessage(`Cogito: Not a task file: ${fileName}`);
+        vscode.window.showWarningMessage(`Cogito: ${fileName} — не файл задачи.`);
         return;
     }
     const taskId = match[1].replace(/_/g, '.').toUpperCase();
@@ -588,7 +588,7 @@ async function cmdCheckTask(taskId: string): Promise<void> {
     const code = await readTaskPy(taskId);
     if (code === undefined) {
         vscode.window.showWarningMessage(
-            `Cogito: No .py stub found for ${taskId}. Open the task first (or Pull All).`
+            `Cogito: для задачи ${taskId} нет .py-файла. Сначала открой задачу или скачай все задачи.`
         );
         return;
     }
@@ -607,7 +607,7 @@ async function runCheckOnCode(
         let result: CheckResponse;
         if (offline) {
             const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-            if (!root) throw new Error('No workspace folder open.');
+            if (!root) throw new Error('Папка проекта не открыта.');
             result = await runOfflineCheck({ taskId, cwd: root, code, pyPath });
         } else {
             result = await api.check(taskId, code);
@@ -629,7 +629,7 @@ async function runCheckOnCode(
         }
     } catch (e) {
         statusBar.setError((e as Error).message);
-        vscode.window.showErrorMessage(`Cogito: Check failed — ${(e as Error).message}`);
+        vscode.window.showErrorMessage(`Cogito: проверка не удалась — ${(e as Error).message}`);
     }
 }
 
@@ -694,8 +694,8 @@ async function readTaskPy(taskId: string): Promise<string | undefined> {
 
 async function cmdPull(): Promise<void> {
     const block = await vscode.window.showInputBox({
-        prompt: 'Block letter (e.g. F) or task ID (e.g. F1)',
-        placeHolder: 'F or F1',
+        prompt: 'Буква блока (например, F) или номер задачи (например, F1)',
+        placeHolder: 'F или F1',
     });
     if (!block) return;
 
@@ -707,14 +707,14 @@ async function cmdPull(): Promise<void> {
             : tasks.filter(t => t.id === block.toUpperCase());
 
         if (filtered.length === 0) {
-            vscode.window.showWarningMessage(`Cogito: No tasks matched "${block}"`);
+            vscode.window.showWarningMessage(`Cogito: по запросу «${block}» задач не найдено.`);
             return;
         }
 
         await pullTasksToWorkspace(api, filtered);
         treeProvider.refresh();
     } catch (e) {
-        vscode.window.showErrorMessage(`Cogito: Pull failed — ${(e as Error).message}`);
+        vscode.window.showErrorMessage(`Cogito: не удалось скачать задачи — ${(e as Error).message}`);
     }
 }
 
@@ -724,7 +724,7 @@ async function cmdPullAll(): Promise<void> {
         await pullTasksToWorkspace(api, tasks);
         treeProvider.refresh();
     } catch (e) {
-        vscode.window.showErrorMessage(`Cogito: Pull failed — ${(e as Error).message}`);
+        vscode.window.showErrorMessage(`Cogito: не удалось скачать задачи — ${(e as Error).message}`);
     }
 }
 
@@ -741,7 +741,7 @@ async function cmdPullAllForce(): Promise<void> {
         await pullTasksToWorkspace(api, tasks, { force: true });
         treeProvider.refresh();
     } catch (e) {
-        vscode.window.showErrorMessage(`Cogito: Pull failed — ${(e as Error).message}`);
+        vscode.window.showErrorMessage(`Cogito: не удалось скачать задачи — ${(e as Error).message}`);
     }
 }
 
@@ -750,17 +750,17 @@ async function cmdList(): Promise<void> {
         const tasks = await api.listTasks();
         const items = tasks.map(t => ({
             label: `${t.id}: ${t.title}`,
-            description: `Block ${t.block}, v${t.version}`,
+            description: `Блок ${t.block}, v${t.version}`,
             task: t,
         }));
         const picked = await vscode.window.showQuickPick(items, {
-            placeHolder: 'Select a task to open',
+            placeHolder: 'Выбери задачу, чтобы открыть',
         });
         if (picked) {
             await cmdOpenTask(picked.task);
         }
     } catch (e) {
-        vscode.window.showErrorMessage(`Cogito: List failed — ${(e as Error).message}`);
+        vscode.window.showErrorMessage(`Cogito: не удалось получить список задач — ${(e as Error).message}`);
     }
 }
 
@@ -777,7 +777,7 @@ async function cmdShowTask(): Promise<void> {
     if (cfg?.mode === 'offline') {
         const root = vscode.workspace.workspaceFolders?.[0]?.uri;
         if (!root) {
-            vscode.window.showWarningMessage('Cogito: Open a workspace to show the task statement.');
+            vscode.window.showWarningMessage('Cogito: открой папку проекта, чтобы увидеть условие задачи.');
             return;
         }
         const filename = `task_${match[1]}.md`;
@@ -787,7 +787,7 @@ async function cmdShowTask(): Promise<void> {
         ];
         const mdUri = candidates[0];
         if (!mdUri) {
-            vscode.window.showWarningMessage(`Cogito: Local statement for ${taskId} not found. Expected ${filename} under tasks/ or docs/tasks/.`);
+            vscode.window.showWarningMessage(`Cogito: локальное условие задачи ${taskId} не найдено. Ожидается файл ${filename} в tasks/ или docs/tasks/.`);
             return;
         }
         const doc = await vscode.workspace.openTextDocument(mdUri);
@@ -803,7 +803,7 @@ async function cmdShowTask(): Promise<void> {
         });
         await vscode.commands.executeCommand('markdown.showPreview', doc.uri);
     } catch (e) {
-        vscode.window.showErrorMessage(`Cogito: Show task failed — ${(e as Error).message}`);
+        vscode.window.showErrorMessage(`Cogito: не удалось показать условие — ${(e as Error).message}`);
     }
 }
 
@@ -829,7 +829,7 @@ async function cmdOpenTask(task: TaskMeta): Promise<void> {
             await vscode.workspace.fs.writeFile(pyUri, Buffer.from(full.stub_py, 'utf-8'));
             task = { ...task, title: full.title, version: full.version, md_path: vscode.workspace.asRelativePath(mdUri) };
         } catch (e) {
-            vscode.window.showErrorMessage(`Cogito: Open task failed — ${(e as Error).message}`);
+            vscode.window.showErrorMessage(`Cogito: не удалось открыть задачу — ${(e as Error).message}`);
             return;
         }
     }
@@ -894,16 +894,16 @@ function showCheckResult(result: CheckResponse, taskId: string): void {
 
     if (result.status === 'passed') {
         vscode.window.showInformationMessage(
-            `Cogito: ${icon} ${taskId} — PASSED (${result.passed_tests}/${result.total_tests})`
+            `Cogito: ${icon} ${taskId} — пройдена (${result.passed_tests}/${result.total_tests})`
         );
     } else if (result.status === 'no_tests') {
         vscode.window.showWarningMessage(
-            `Cogito: ${icon} ${taskId} — NO TESTS (task has no tests_code)`
+            `Cogito: ${icon} ${taskId} — у задачи нет тестов`
         );
     } else {
         const failedCount = result.total_tests - result.passed_tests;
         vscode.window.showWarningMessage(
-            `Cogito: ${icon} ${taskId} — ${result.status.toUpperCase()} (${result.passed_tests}/${result.total_tests}, ${failedCount} failed)`
+            `Cogito: ${icon} ${taskId} — ${STATUS_LABELS_RU[result.status] ?? result.status} (${result.passed_tests}/${result.total_tests}, не прошло: ${failedCount})`
         );
     }
 
@@ -911,11 +911,18 @@ function showCheckResult(result: CheckResponse, taskId: string): void {
     if (TaskViewPanel.isOpen() && TaskViewPanel.postResult(result)) return;
     if (TaskViewPanel.isOpen()) {
         vscode.window.showInformationMessage(
-            `Cogito: Check finished for ${result.task_id}; showing results separately.`
+            `Cogito: проверка ${result.task_id} завершена, результаты показаны в отдельной панели.`
         );
     }
     TestResultsPanel.show(result);
 }
+
+const STATUS_LABELS_RU: Record<string, string> = {
+    partial: 'частично',
+    failed: 'не пройдена',
+    error: 'ошибка',
+    timeout: 'превышено время',
+};
 
 async function cmdHints(): Promise<void> {
     const editor = vscode.window.activeTextEditor;
@@ -938,12 +945,12 @@ async function cmdHints(): Promise<void> {
                 : await api.listTasks();
             const picked = await vscode.window.showQuickPick(
                 tasks.map(t => ({ label: `${t.id}: ${'title' in t ? t.title : t.slug}`, taskId: t.id })),
-                { placeHolder: 'Select a task for hints' }
+                { placeHolder: 'Выбери задачу, чтобы посмотреть подсказки' }
             );
             if (!picked) return;
             taskId = picked.taskId;
         } catch (e) {
-            vscode.window.showErrorMessage(`Cogito: Failed to list tasks — ${(e as Error).message}`);
+            vscode.window.showErrorMessage(`Cogito: не удалось получить список задач — ${(e as Error).message}`);
             return;
         }
     }
@@ -964,35 +971,35 @@ async function cmdHintsForTask(taskId: string): Promise<void> {
             status: 'new',
         });
         vscode.window.showInformationMessage(
-            `Cogito: Opened Task view for ${taskId} — use Hint 1/2/3 buttons.`
+            `Cogito: открыта панель задания ${taskId} — подсказки 1/2/3 в кнопках на панели.`
         );
         return;
     }
 
     const level = await vscode.window.showQuickPick(
         [
-            { label: 'Level 1: Rules (Правила)', value: 1 },
-            { label: 'Level 2: Rules + Example', value: 2 },
-            { label: 'Level 3: Rules + Example + Signature', value: 3 },
+            { label: 'Уровень 1: правила', value: 1 },
+            { label: 'Уровень 2: правила и пример', value: 2 },
+            { label: 'Уровень 3: правила, пример и сигнатура', value: 3 },
         ],
-        { placeHolder: `Select hint level for ${taskId}` }
+        { placeHolder: `Выбери уровень подсказки для ${taskId}` }
     );
     if (!level) return;
 
     try {
         const resp = await api.getHints(taskId, level.value);
         if (resp.hints.length === 0) {
-            vscode.window.showInformationMessage(`Cogito: No hints available for ${taskId}`);
+            vscode.window.showInformationMessage(`Cogito: для задачи ${taskId} подсказок нет.`);
             return;
         }
         const mdContent = resp.hints.map(h => `## ${h.title}\n\n${h.content}`).join('\n\n---\n\n');
         const doc = await vscode.workspace.openTextDocument({
-            content: `# Hints for ${taskId}\n\n${mdContent}`,
+            content: `# Подсказки к задаче ${taskId}\n\n${mdContent}`,
             language: 'markdown',
         });
         await vscode.commands.executeCommand('markdown.showPreview', doc.uri);
     } catch (e) {
-        vscode.window.showErrorMessage(`Cogito: Hints failed — ${(e as Error).message}`);
+        vscode.window.showErrorMessage(`Cogito: не удалось получить подсказки — ${(e as Error).message}`);
     }
 }
 
@@ -1005,14 +1012,14 @@ async function cmdPush(): Promise<void> {
     const cfg = await readEgoConfig();
     if (cfg?.mode === 'offline') {
         vscode.window.showWarningMessage(
-            'Cogito: Push Progress is unavailable in offline mode. Run «Cogito: Переключить режим» → сервер.'
+            'Cogito: отправка прогресса недоступна в локальном режиме. Выбери «Cogito: Переключить режим» → сервер.'
         );
         return;
     }
 
     const wsFolder = vscode.workspace.workspaceFolders?.[0];
     if (!wsFolder) {
-        vscode.window.showErrorMessage('Cogito: No workspace folder open.');
+        vscode.window.showErrorMessage('Cogito: папка проекта не открыта.');
         return;
     }
 
@@ -1023,13 +1030,13 @@ async function cmdPush(): Promise<void> {
         const buf = await vscode.workspace.fs.readFile(progressUri);
         progressData = JSON.parse(Buffer.from(buf).toString('utf-8'));
     } catch {
-        vscode.window.showWarningMessage('Cogito: No .ego/progress.json found. Run "Cogito: Check" first.');
+        vscode.window.showWarningMessage('Cogito: файл .ego/progress.json не найден. Сначала запусти «Cogito: Проверить задачу».');
         return;
     }
 
     const entries = progressData.entries || [];
     if (entries.length === 0) {
-        vscode.window.showInformationMessage('Cogito: No progress entries to push.');
+        vscode.window.showInformationMessage('Cogito: нет прогресса для отправки.');
         return;
     }
 
@@ -1039,7 +1046,7 @@ async function cmdPush(): Promise<void> {
     await vscode.window.withProgress(
         {
             location: vscode.ProgressLocation.Notification,
-            title: `Cogito: Pushing ${entries.length} progress entries...`,
+            title: `Cogito: отправляю прогресс (записей: ${entries.length})…`,
             cancellable: false,
         },
         async (progress) => {
@@ -1085,9 +1092,9 @@ async function cmdPush(): Promise<void> {
                 }
             }
             if (errors === 0) {
-                vscode.window.showInformationMessage(`Cogito: Pushed ${pushed} progress entries to server.`);
+                vscode.window.showInformationMessage(`Cogito: прогресс отправлен на сервер (записей: ${pushed}).`);
             } else {
-                vscode.window.showWarningMessage(`Cogito: Pushed ${pushed}, ${errors} errors.`);
+                vscode.window.showWarningMessage(`Cogito: отправлено записей: ${pushed}, с ошибками: ${errors}.`);
             }
             treeProvider.refresh();
         }

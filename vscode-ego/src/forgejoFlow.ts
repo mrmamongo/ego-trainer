@@ -78,14 +78,14 @@ export async function runForgejoFlow(
         while (!isCancelled() && Date.now() < deadline) {
             await pause();
             if (isCancelled()) return undefined;
-            if (failed) throw new Error('Forgejo login failed or registration is closed.');
+            if (failed) throw new Error('Вход через Forgejo не удался, либо регистрация закрыта.');
             if (!ticket) continue;
             const result = await api.exchangeForgejo(flow.state, verifier, ticket);
             if (isCancelled()) return undefined;
             if (!('pending' in result)) return result;
         }
         if (isCancelled()) return undefined;
-        throw new Error('Forgejo login timed out. Run «Cogito: Войти» ещё раз.');
+        throw new Error('Время входа через Forgejo истекло. Запусти «Cogito: Войти» ещё раз.');
     } finally {
         unsubscribe();
     }

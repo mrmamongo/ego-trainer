@@ -45,7 +45,7 @@ export class WelcomeView {
             vscode.window.showWarningMessage(opts.reason);
         } else {
             vscode.window.showWarningMessage(
-                'Cogito: Workspace not initialized. Connect to a server or use Offline mode.'
+                'Cogito: папка ещё не подключена. Подключись к серверу или работай локально.'
             );
         }
         WelcomeView.show(context, deps);
@@ -66,7 +66,7 @@ export class WelcomeView {
 
         WelcomeView.panel = vscode.window.createWebviewPanel(
             'egoWelcome',
-            'Ego Trainer',
+            'Cogito',
             vscode.ViewColumn.One,
             {
                 enableScripts: true,
@@ -79,7 +79,7 @@ export class WelcomeView {
             webview: WelcomeView.panel.webview,
             extensionUri: context.extensionUri,
             bundleName: 'welcome.js',
-            title: 'Ego Trainer',
+            title: 'Cogito',
         });
 
         WelcomeView.panel.webview.onDidReceiveMessage(async (msg: { type?: string }) => {

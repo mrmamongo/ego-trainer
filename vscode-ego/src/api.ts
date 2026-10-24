@@ -158,8 +158,8 @@ export class EgoApi {
             const message = resp.status === 401
                 ? 'Нужно войти: выполни «Cogito: Войти».'
                 : resp.status === 403
-                  ? data.detail || 'Forbidden. Your role does not allow this action.'
-                  : data.detail || (resp.status === 404 ? 'Not found' : `HTTP ${resp.status}`);
+                  ? data.detail || 'Недостаточно прав для этого действия.'
+                  : data.detail || (resp.status === 404 ? 'Не найдено' : `HTTP ${resp.status}`);
             throw new EgoApiError(message, resp.status, path);
         }
         return resp.json() as Promise<T>;
@@ -180,7 +180,7 @@ export class EgoApi {
     async startForgejo(code_challenge: string, callback_uri: string): Promise<ForgejoFlow> {
         const flow = await this.request<ForgejoFlow>('POST', '/auth/forgejo/start', { code_challenge, client: 'vscode', callback_uri });
         if (new URL(flow.authorization_url).origin !== new URL(this.serverUrl).origin) {
-            throw new Error('Login URL does not match the Ego server. Check EGO_PUBLIC_URL.');
+            throw new Error('Адрес входа не совпадает с адресом сервера Cogito. Проверь EGO_PUBLIC_URL.');
         }
         return flow;
     }

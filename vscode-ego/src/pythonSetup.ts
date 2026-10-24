@@ -76,7 +76,7 @@ export async function setupPythonEnv(workspacePath: string): Promise<void> {
     try {
         await runUv(workspacePath, ['--version']);
     } catch (error) {
-        throw new Error(`Cogito: uv is required to set up Python in this workspace. ${(error as Error).message}`);
+        throw new Error(`для настройки Python в этой папке нужен uv. ${(error as Error).message}`);
     }
 
     if (!(await hasPyproject(workspacePath))) {
@@ -85,12 +85,12 @@ export async function setupPythonEnv(workspacePath: string): Promise<void> {
         } catch (error) {
             const message = (error as Error).message;
             if (!/unknown option|unexpected argument|unrecognized option|invalid.*option|no such option|does not support/i.test(message)) {
-                throw new Error(`Cogito: Could not initialize Python in this workspace: ${message}`);
+                throw new Error(`не удалось инициализировать Python в этой папке: ${message}`);
             }
             try {
                 await runUv(workspacePath, ['init', '--no-readme']);
             } catch (fallbackError) {
-                throw new Error(`Cogito: Could not initialize Python in this workspace with uv init --bare or uv init --no-readme: ${(fallbackError as Error).message}`);
+                throw new Error(`не удалось инициализировать Python в этой папке через uv init --bare или uv init --no-readme: ${(fallbackError as Error).message}`);
             }
         }
     }
@@ -98,12 +98,12 @@ export async function setupPythonEnv(workspacePath: string): Promise<void> {
     try {
         await runUv(workspacePath, ['add', packageSpec]);
     } catch (error) {
-        throw new Error(`Cogito: Could not install configured Python package "${packageSpec}": ${(error as Error).message}`);
+        throw new Error(`не удалось установить пакет Python «${packageSpec}»: ${(error as Error).message}`);
     }
 
     try {
         await runUv(workspacePath, ['run', 'python', '-c', 'import ego.checker']);
     } catch (error) {
-        throw new Error(`Cogito: Python setup completed for "${packageSpec}", but uv run python -c "import ego.checker" failed: ${(error as Error).message}`);
+        throw new Error(`пакет «${packageSpec}» установлен, но проверка uv run python -c "import ego.checker" не прошла: ${(error as Error).message}`);
     }
 }

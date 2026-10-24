@@ -12,7 +12,7 @@ export async function openTaskPy(
 ): Promise<boolean> {
     const root = vscode.workspace.workspaceFolders?.[0]?.uri;
     if (!root) {
-        vscode.window.showErrorMessage('Cogito: No workspace folder open.');
+        vscode.window.showErrorMessage('Cogito: папка проекта не открыта.');
         return false;
     }
     const normalized = taskId.replace(/\./g, '_').toLowerCase();
@@ -52,7 +52,7 @@ export async function openTaskPy(
         }
     }
     vscode.window.showWarningMessage(
-        `Cogito: No .py stub for ${taskId}. Pull the task or create tasks/<block>/${filename}.`
+        `Cogito: для задачи ${taskId} нет .py-файла. Скачай задачу или создай tasks/<блок>/${filename}.`
     );
     return false;
 }

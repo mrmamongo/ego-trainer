@@ -91,16 +91,16 @@ export type TaskIdValidation =
  */
 export function validateTaskId(taskId: string): TaskIdValidation {
     if (!taskId || typeof taskId !== 'string') {
-        return { ok: false, error: 'Task id is required.' };
+        return { ok: false, error: 'Нужен номер задачи.' };
     }
     if (!/^[A-Za-z0-9._-]+$/.test(taskId)) {
         const preview = taskId.length > 40 ? taskId.slice(0, 40) + '…' : taskId;
         return {
             ok: false,
             error:
-                `Invalid task id "${preview}". ` +
-                'Expected only ASCII letters, digits, ".", "_", or "-" ' +
-                '(e.g. block_f.task-1_2).',
+                `Некорректный номер задачи «${preview}». ` +
+                'Допустимы только латинские буквы, цифры и символы ".", "_", "-" ' +
+                '(например, block_f.task-1_2).',
         };
     }
     return { ok: true };

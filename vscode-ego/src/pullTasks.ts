@@ -68,7 +68,7 @@ export async function pullTasksToWorkspace(
     statementBackups: number;
 }> {
     const wsFolder = vscode.workspace.workspaceFolders?.[0];
-    if (!wsFolder) throw new Error('No workspace folder open.');
+    if (!wsFolder) throw new Error('Папка проекта не открыта.');
 
     let pulled = 0;
     let errors = 0;
@@ -83,7 +83,7 @@ export async function pullTasksToWorkspace(
         (await manifestFileExists(wsFolder.uri)) &&
         existingManifest === undefined
     ) {
-        const message = 'manifest is invalid; repair/back it up before pulling tasks.';
+        const message = 'манифест повреждён: исправь его или сохрани копию перед скачиванием задач.';
         void vscode.window.showErrorMessage(`Cogito: ${message}`);
         throw new Error(message);
     }
@@ -214,9 +214,9 @@ export async function pullTasksToWorkspace(
             }, wsFolder.uri);
         } catch (error) {
             errors++;
-            const detail = error instanceof Error ? error.message : 'unknown error';
+            const detail = error instanceof Error ? error.message : 'неизвестная ошибка';
             void vscode.window.showWarningMessage(
-                `Cogito: Manifest write failed; files may be pulled but progress/catalog metadata is stale: ${detail}`
+                `Cogito: не удалось записать манифест; файлы могли скачаться, но данные о прогрессе и каталоге устарели: ${detail}`
             );
         }
     }
@@ -227,9 +227,9 @@ export async function pullTasksToWorkspace(
     } else {
         message = `Cogito: обновлено ${pulled}, уже актуальны ${upToDate}`;
         const details: string[] = [];
-        if (errors > 0) details.push(`${errors} errors`);
-        if (preservedStudentSolutions > 0) details.push(`preserved ${preservedStudentSolutions} student solutions`);
-        if (statementBackups > 0) details.push(`${statementBackups} statement backups`);
+        if (errors > 0) details.push(`ошибок: ${errors}`);
+        if (preservedStudentSolutions > 0) details.push(`сохранено твоих решений: ${preservedStudentSolutions}`);
+        if (statementBackups > 0) details.push(`копий условий: ${statementBackups}`);
         if (details.length > 0) message += `. ${details.join(', ')}.`;
         else message += '.';
     }

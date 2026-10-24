@@ -28,21 +28,21 @@ export async function switchMode(deps: ModeSwitchDeps): Promise<EgoMode | undefi
     const picked = await vscode.window.showQuickPick(
         [
             {
-                label: 'Server',
-                description: current === 'server' ? '(current)' : 'Connect / use ego-server',
+                label: 'Сервер',
+                description: current === 'server' ? '(сейчас)' : 'Подключиться к серверу Cogito',
                 mode: 'server' as const,
             },
             {
-                label: 'Offline',
-                description: current === 'offline' ? '(current)' : 'Local .ego/ + docs/tasks',
+                label: 'Локально',
+                description: current === 'offline' ? '(сейчас)' : 'Без сервера: .ego/ и docs/tasks',
                 mode: 'offline' as const,
             },
         ],
-        { placeHolder: 'Select Ego mode' }
+        { placeHolder: 'Выбери режим Cogito' }
     );
     if (!picked || picked.mode === current) {
         if (picked?.mode === current) {
-            vscode.window.showInformationMessage(`Cogito: Already in ${picked.label} mode.`);
+            vscode.window.showInformationMessage(`Cogito: режим «${picked.label}» уже включён.`);
         }
         return undefined;
     }
@@ -57,11 +57,11 @@ async function applyServerMode(deps: ModeSwitchDeps): Promise<EgoMode | undefine
     const token = await deps.getToken();
     if (!token) {
         const go = await vscode.window.showWarningMessage(
-            'Cogito: No login token. Run Init (Connect to Server) or Login?',
-            'Init',
-            'Cancel'
+            'Cogito: ты не вошёл в аккаунт. Подключить папку к серверу?',
+            'Подключить',
+            'Отмена'
         );
-        if (go === 'Init') {
+        if (go === 'Подключить') {
             await deps.runServerInit();
             return 'server';
         }
@@ -81,11 +81,11 @@ async function applyServerMode(deps: ModeSwitchDeps): Promise<EgoMode | undefine
         await api.me();
     } catch (e) {
         const fallback = await vscode.window.showWarningMessage(
-            `Cogito: Server unreachable (${(e as Error).message}). Stay Offline?`,
-            'Stay Offline',
-            'Retry later'
+            `Cogito: сервер недоступен (${(e as Error).message}). Остаться в локальном режиме?`,
+            'Остаться локально',
+            'Позже'
         );
-        if (fallback === 'Stay Offline') {
+        if (fallback === 'Остаться локально') {
             return undefined;
         }
         // Still switch config — user may fix server later.
@@ -99,7 +99,7 @@ async function applyServerMode(deps: ModeSwitchDeps): Promise<EgoMode | undefine
     deps.setModeUi('server');
     deps.refreshTree();
     await deps.refreshDashboard();
-    vscode.window.showInformationMessage('Cogito: Switched to Server mode.');
+    vscode.window.showInformationMessage('Cogito: включён режим «Сервер».');
     return 'server';
 }
 
@@ -150,7 +150,7 @@ async function applyOfflineMode(deps: ModeSwitchDeps): Promise<EgoMode> {
     deps.setModeUi('offline');
     deps.refreshTree();
     await deps.refreshDashboard();
-    vscode.window.showInformationMessage('Cogito: Switched to Offline mode.');
+    vscode.window.showInformationMessage('Cogito: включён режим «Локально».');
     return 'offline';
 }
 
@@ -168,5 +168,5 @@ export async function maybeFallbackOffline(
     deps.setModeUi('offline');
     deps.refreshTree();
     await deps.refreshDashboard();
-    vscode.window.showWarningMessage(`Cogito: ${reason} — switched to Offline mode.`);
+    vscode.window.showWarningMessage(`Cogito: ${reason} — переключаюсь в режим «Локально».`);
 }

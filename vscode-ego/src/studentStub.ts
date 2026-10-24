@@ -35,7 +35,7 @@ export function studentStubFromSolution(source: string): string {
       }
 
       if (!terminated) {
-        throw new Error("Unterminated top-level function signature");
+        throw new Error("Не закрыта сигнатура функции верхнего уровня");
       }
 
       output.push(...signature, "    pass");
@@ -47,7 +47,7 @@ export function studentStubFromSolution(source: string): string {
   }
 
   if (!foundDefinition) {
-    throw new Error("No top-level def found");
+    throw new Error("Не найдена функция верхнего уровня (def)");
   }
 
   return `${output.join("\n")}\n`;

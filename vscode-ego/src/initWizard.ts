@@ -32,7 +32,7 @@ export async function runServerInit(
         'http://localhost:8000'
     );
     const url = await vscode.window.showInputBox({
-        prompt: 'Ego server URL',
+        prompt: 'Адрес сервера Cogito',
         value: defaultUrl,
         placeHolder: 'http://localhost:8000',
         ignoreFocusOut: true,
@@ -44,11 +44,11 @@ export async function runServerInit(
         await probe.health();
     } catch (e) {
         const choice = await vscode.window.showWarningMessage(
-            `Cogito: Server unreachable (${(e as Error).message}). Use Offline instead?`,
-            'Use Offline',
-            'Cancel'
+            `Cogito: сервер недоступен (${(e as Error).message}). Работать локально?`,
+            'Работать локально',
+            'Отмена'
         );
-        if (choice === 'Use Offline') {
+        if (choice === 'Работать локально') {
             return runOfflineInit(context, deps);
         }
         return false;
@@ -62,7 +62,7 @@ export async function runServerInit(
     try {
         forgejoAuth = await forgejoLogin(probe);
     } catch (error) {
-        vscode.window.showErrorMessage(`Cogito: Login failed — ${(error as Error).message}`);
+        vscode.window.showErrorMessage(`Cogito: не удалось войти — ${(error as Error).message}`);
         return false;
     }
     if (forgejoAuth === undefined) return false;
@@ -72,21 +72,21 @@ export async function runServerInit(
     if (forgejoAuth === null) {
         authMode = await vscode.window.showQuickPick(
             [
-                { label: 'Existing user', description: 'Login', mode: 'login' as const },
-                { label: 'New user', description: 'Register', mode: 'register' as const },
+                { label: 'Я уже зарегистрирован', description: 'Войти', mode: 'login' as const },
+                { label: 'Я здесь впервые', description: 'Зарегистрироваться', mode: 'register' as const },
             ],
-            { placeHolder: 'Login or register?', ignoreFocusOut: true }
+            { placeHolder: 'Войти или зарегистрироваться?', ignoreFocusOut: true }
         );
         if (!authMode) return false;
 
         username = await vscode.window.showInputBox({
-            prompt: 'Username',
+            prompt: 'Логин',
             ignoreFocusOut: true,
         }) ?? '';
         if (!username) return false;
 
         password = await vscode.window.showInputBox({
-            prompt: 'Password',
+            prompt: 'Пароль',
             password: true,
             ignoreFocusOut: true,
         }) ?? '';
@@ -100,11 +100,11 @@ export async function runServerInit(
     return vscode.window.withProgress(
         {
             location: vscode.ProgressLocation.Notification,
-            title: 'Cogito: Initializing (server)…',
+            title: 'Cogito: подключаю к серверу…',
             cancellable: false,
         },
         async (progress) => {
-            progress.report({ message: 'Authenticating…' });
+            progress.report({ message: 'Вхожу в аккаунт…' });
             let auth = forgejoAuth;
             try {
                 if (!auth && authMode?.mode === 'register') {
@@ -119,19 +119,19 @@ export async function runServerInit(
                         auth = await probe.login(username, password);
                     } catch (e2) {
                         vscode.window.showErrorMessage(
-                            `Cogito: Auth failed — ${(e2 as Error).message}`
+                            `Cogito: не удалось авторизоваться — ${(e2 as Error).message}`
                         );
                         return false;
                     }
                 } else {
                     vscode.window.showErrorMessage(
-                        `Cogito: Login failed — ${(e as Error).message}`
+                        `Cogito: не удалось войти — ${(e as Error).message}`
                     );
                     return false;
                 }
             }
 
-            progress.report({ message: 'Creating .ego/…' });
+            progress.report({ message: 'Создаю .ego/…' });
             await context.secrets.store(SECRET_KEY, auth.access_token);
             probe.setToken(auth.access_token);
 
@@ -148,18 +148,18 @@ export async function runServerInit(
                 );
             } catch (e) {
                 vscode.window.showErrorMessage(
-                    `Cogito: Failed to create .ego/ — ${(e as Error).message}`
+                    `Cogito: не удалось создать .ego/ — ${(e as Error).message}`
                 );
                 return false;
             }
 
-            progress.report({ message: 'Pulling tasks…' });
+            progress.report({ message: 'Скачиваю задачи…' });
             try {
                 const tasks = await probe.listTasks();
                 await pullTasksToWorkspace(probe, tasks, { updateManifest: true });
             } catch (e) {
                 vscode.window.showWarningMessage(
-                    `Cogito: .ego/ created but pull failed — ${(e as Error).message}`
+                    `Cogito: .ego/ создана, но задачи скачать не удалось — ${(e as Error).message}`
                 );
             }
 
@@ -170,7 +170,7 @@ export async function runServerInit(
             deps.refreshTree();
 
             vscode.window.showInformationMessage(
-                `Cogito: Connected as ${auth.username} (${auth.role}).`
+                `Cogito: подключено, ты вошёл как ${auth.username} (${auth.role}).`
             );
             // Dashboard opens here once 8bv.9.5 lands.
             await vscode.commands.executeCommand('ego.dashboard');
@@ -187,13 +187,13 @@ export async function runOfflineInit(
     return vscode.window.withProgress(
         {
             location: vscode.ProgressLocation.Notification,
-            title: 'Cogito: Initializing (offline)…',
+            title: 'Cogito: настраиваю локальный режим…',
             cancellable: false,
         },
         async (progress) => {
             const root = vscode.workspace.workspaceFolders?.[0]?.uri;
             if (!root) {
-                vscode.window.showErrorMessage('Cogito: Open a workspace folder before starting offline setup.');
+                vscode.window.showErrorMessage('Cogito: сначала открой папку проекта, потом настраивай локальный режим.');
                 return false;
             }
 
@@ -209,17 +209,17 @@ export async function runOfflineInit(
                 const choice = await vscode.window.showQuickPick(
                     [
                         {
-                            label: 'Create empty workspace',
-                            description: 'Create docs/tasks/ and continue without tasks',
+                            label: 'Создать пустую папку',
+                            description: 'Создать docs/tasks/ и продолжить без задач',
                             action: 'create' as const,
                         },
                         {
-                            label: 'Import tasks folder',
-                            description: 'Copy task files into this workspace',
+                            label: 'Импортировать папку с задачами',
+                            description: 'Скопировать файлы задач в этот проект',
                             action: 'import' as const,
                         },
                     ],
-                    { placeHolder: 'Set up offline tasks', ignoreFocusOut: true }
+                    { placeHolder: 'Откуда взять задачи для локального режима?', ignoreFocusOut: true }
                 );
                 if (!choice) return false;
 
@@ -230,17 +230,17 @@ export async function runOfflineInit(
                         canSelectFiles: false,
                         canSelectFolders: true,
                         canSelectMany: false,
-                        openLabel: 'Import tasks folder',
+                        openLabel: 'Импортировать папку с задачами',
                     });
                     if (!pick?.[0]) return false;
                     try {
                         const result = await importTasksFolder(pick[0], root);
                         vscode.window.showInformationMessage(
-                            `Cogito: Imported ${result.imported} task files; skipped ${result.skipped} existing files.`
+                            `Cogito: импортировано файлов задач: ${result.imported}, пропущено существующих: ${result.skipped}.`
                         );
                     } catch (error) {
                         vscode.window.showErrorMessage(
-                            `Cogito: Could not import tasks folder — ${error instanceof Error ? error.message : 'unknown error'}. Original files were not modified.`
+                            `Cogito: не удалось импортировать папку с задачами — ${error instanceof Error ? error.message : 'неизвестная ошибка'}. Исходные файлы не изменены.`
                         );
                         return false;
                     }
@@ -252,16 +252,16 @@ export async function runOfflineInit(
                 }
             }
 
-            progress.report({ message: 'Scanning docs/tasks/…' });
+            progress.report({ message: 'Просматриваю docs/tasks/…' });
             let scanned;
             try {
                 scanned = await scanDocsTasks(root);
             } catch (error) {
-                vscode.window.showErrorMessage(`Cogito: Could not scan docs/tasks/ — ${error instanceof Error ? error.message : 'unknown error'}`);
+                vscode.window.showErrorMessage(`Cogito: не удалось просмотреть docs/tasks/ — ${error instanceof Error ? error.message : 'неизвестная ошибка'}`);
                 return false;
             }
 
-            progress.report({ message: 'Creating .ego/…' });
+            progress.report({ message: 'Создаю .ego/…' });
             let manifestExisted = false;
             try {
                 manifestExisted = await manifestFileExists(root);
@@ -278,7 +278,7 @@ export async function runOfflineInit(
                 );
             } catch (error) {
                 vscode.window.showErrorMessage(
-                    `Cogito: Failed to create .ego/ — ${error instanceof Error ? error.message : 'unknown error'}`
+                    `Cogito: не удалось создать .ego/ — ${error instanceof Error ? error.message : 'неизвестная ошибка'}`
                 );
                 return false;
             }
@@ -300,7 +300,7 @@ export async function runOfflineInit(
                 }, root);
             }
 
-            progress.report({ message: 'Generating student stubs…' });
+            progress.report({ message: 'Готовлю файлы для решений…' });
             const stubs = await generateStudentStubs(scanned, root);
             await vscode.commands.executeCommand('setContext', 'ego.loggedIn', false);
             await vscode.commands.executeCommand('setContext', 'ego.ready', true);
@@ -309,19 +309,19 @@ export async function runOfflineInit(
             deps.refreshTree();
 
             const warning = stubs.errors > 0
-                ? ` ${stubs.errors} stub errors — review the warnings and create those files manually.`
+                ? ` Ошибок при создании файлов: ${stubs.errors} — посмотри предупреждения и создай эти файлы вручную.`
                 : '';
             vscode.window.showInformationMessage(
-                `Cogito: Offline ready — ${scanned.length} tasks; generated ${stubs.generated} stubs, skipped ${stubs.skipped}.${warning}`
+                `Cogito: локальный режим готов — задач: ${scanned.length}, создано файлов: ${stubs.generated}, пропущено: ${stubs.skipped}.${warning}`
             );
 
             if (scanned.length > 0 && !(await isPythonEnvReady(root.fsPath))) {
                 const choice = await vscode.window.showInformationMessage(
-                    'Cogito: Python is not ready for offline checks. Set it up in this workspace now?',
-                    'Setup Python',
-                    'Later'
+                    'Cogito: Python ещё не готов к локальной проверке. Настроить его в этой папке сейчас?',
+                    'Настроить Python',
+                    'Позже'
                 );
-                if (choice === 'Setup Python') {
+                if (choice === 'Настроить Python') {
                     await vscode.commands.executeCommand('ego.setupPython');
                 }
             }

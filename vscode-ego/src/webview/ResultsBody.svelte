@@ -4,7 +4,7 @@
 	let {
 		result = null,
 		history = [],
-		emptyMessage = 'No results yet.'
+		emptyMessage = 'Результатов пока нет.'
 	}: {
 		result?: CheckResult | null;
 		history?: TaskRunSummary[];
@@ -49,7 +49,7 @@
 </script>
 
 {#if history && history.length > 0}
-	<section class="history" aria-label="Previous attempts">
+	<section class="history" aria-label="Прошлые попытки">
 		<h3>Предыдущие попытки</h3>
 		<table>
 			<thead><tr><th>Время</th><th>Статус</th><th>Тесты</th></tr></thead>

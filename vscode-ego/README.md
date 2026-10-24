@@ -1,67 +1,75 @@
-# Cogito for VS Code
+# Cogito для VS Code
 
-VSCode extension for the Ego practice platform — solve tasks, get auto-checked, track progress.
+Расширение VS Code для платформы Cogito: решай задачи, получай автоматическую проверку и следи за своим прогрессом.
 
-## Features
+## Возможности
 
-- **Cogito sidebar** — separate Activity Bar entry with tasks, statements, progressive hints and results on the left
-- **Tutor chat** — native Secondary Side Bar on the right; follows the active task, keeps its conversation, and reads current unsaved code without editing files
-- **Check Solution** — run your code against tests; results have a separate tab and a collapsed detailed log
-- **Pull Tasks** — download task statements and stubs from server
-- **Push Progress** — sync your progress to the server
-- **Hints** — progressive hints (rules → example → function signature)
-- **My Progress** — overview of all tasks with test counts and attempts
-- **Status Bar** — current task status at a glance
+- **Боковая панель Cogito** — отдельный значок в Activity Bar: задачи, условия, подсказки по шагам и результаты слева
+- **Учебный ассистент** — чат в правой боковой панели; следует за текущей задачей, хранит разговор и видит несохранённый код, не изменяя файлы
+- **Проверка решения** — запускает твой код на тестах; результаты открываются во вкладке, подробный лог свёрнут
+- **Скачивание задач** — условия и заготовки решений загружаются с сервера
+- **Отправка прогресса** — синхронизируй свой прогресс с сервером
+- **Подсказки** — по шагам: правила, пример, сигнатура функции
+- **Личный кабинет** — все задачи с числом пройденных тестов и попытками
+- **Строка состояния** — статус текущей задачи всегда на виду
 
-## Commands
+## Команды
 
-| Command | Description |
-|---------|-------------|
-| `Ego: Login` | Register/login to ego-server |
-| `Ego: Set Server URL` | Configure server endpoint |
-| `Ego: Check Current Task` | Run checker on active .py file |
-| `Ego: Pull Tasks` | Pull specific block or task from server |
-| `Ego: Pull All Tasks` | Pull all tasks from server |
-| `Ego: Push Progress to Server` | Sync local progress to server |
-| `Ego: List Tasks` | QuickPick with all tasks |
-| `Ego: Show Task Statement` | Open .md condition in preview |
-| `Ego: Show Hints` | Progressive hints for current task |
-| `Ego: My Progress` | Progress table in markdown preview |
+Все команды находятся в категории «Cogito» палитры команд.
 
-## Configuration
+| Команда | Описание |
+|---------|----------|
+| `Cogito: Войти` | Войти или зарегистрироваться на сервере |
+| `Cogito: Выйти` | Выйти из аккаунта |
+| `Cogito: Указать адрес сервера` | Настроить адрес сервера |
+| `Cogito: Подключить папку к курсу` | Подключить папку к серверу или включить локальный режим |
+| `Cogito: Переключить режим (сервер / локально)` | Переключиться между сервером и локальным режимом |
+| `Cogito: Настроить Python` | Подготовить окружение Python для локальной проверки |
+| `Cogito: Проверить текущую задачу` | Запустить проверку для открытого .py-файла |
+| `Cogito: Скачать задачи` | Скачать выбранный блок или задачу |
+| `Cogito: Скачать все задачи` | Скачать все задачи с сервера |
+| `Cogito: Отправить прогресс на сервер` | Отправить локальный прогресс на сервер |
+| `Cogito: Список задач` | Выбрать задачу из списка |
+| `Cogito: Показать условие` | Открыть условие задачи в предпросмотре |
+| `Cogito: Показать подсказки` | Подсказки к текущей задаче |
+| `Cogito: Личный кабинет` | Прогресс по всем задачам |
+| `Cogito: Учебный ассистент` | Открыть чат с ассистентом |
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `ego.serverUrl` | `http://localhost:8000` | Ego server URL |
-| `ego.autoCheckOnSave` | `false` | Auto-check when saving .py |
+## Настройки
 
-## Requirements
+| Настройка | По умолчанию | Описание |
+|-----------|--------------|----------|
+| `ego.serverUrl` | `http://localhost:8000` | Адрес сервера Cogito |
+| `ego.autoCheckOnSave` | `false` | Проверять задачу при сохранении .py-файла |
+| `ego.pythonPackageSpec` | `ego-trainer` | Python-пакет для локальных проверок |
 
-- VS Code **1.106+** (native Secondary Side Bar contributions)
-- An ego-server instance running (see [ego-trainer](https://github.com/ego-trainer) repo)
-- Python 3.11+ on server side
+## Требования
 
-## Layout and sign-in
+- VS Code **1.106+** (правая боковая панель для расширений)
+- Запущенный сервер Cogito (репозиторий [ego-trainer](https://github.com/ego-trainer))
+- Python 3.11+ на стороне сервера
 
-Open **Cogito** in the Activity Bar. Select a task: its condition stays in the
-left sidebar, the Python editor stays in the centre, and `Ego: Учебный ассистент`
-opens the chat on the right. VS Code can move these views through its native
-view context menu. The extension never rearranges other extensions' views.
+## Расположение панелей и вход
 
-Students need server-granted AI access, available budget and configured main
-and reviewing models. The sidebar shows why help is unavailable. Model calls,
-review before display, billing and understanding defense stay on the server.
+Открой **Cogito** в Activity Bar. Выбери задачу: её условие остаётся в левой
+панели, редактор Python — в центре, а команда `Cogito: Учебный ассистент`
+открывает чат справа. Панели можно переносить через контекстное меню VS Code.
+Расширение не перестраивает чужие панели.
 
-Forgejo login returns through the extension's VS Code URI handler. Choosing
-**Copy** in the external-link dialog keeps the attempt pending: paste that
-same URL into a browser, complete login and allow the return to VS Code.
-You can copy the link again or cancel through the login notification. The
-attempt expires after at most five minutes; reloading the window requires a
-new attempt.
+Чтобы пользоваться ассистентом, серверу нужно разрешить тебе доступ к ИИ,
+иметь свободный бюджет и настроенные основную и проверяющую модели. Если
+помощь недоступна, боковая панель объяснит почему. Запросы к моделям,
+проверка ответов перед показом, учёт расходов и защита решения выполняются на сервере.
 
-## Architecture
+Вход через Forgejo возвращается в VS Code через обработчик URI расширения.
+Если в диалоге внешней ссылки выбрать **Copy**, попытка входа остаётся
+активной: вставь ту же ссылку в браузер, войди и разреши возврат в VS Code.
+Ссылку можно скопировать ещё раз или отменить вход в уведомлении. Попытка
+действует не дольше пяти минут; после перезагрузки окна нужна новая.
 
-Extension = thin UI. All logic (parser, checker, runner, sandbox) lives on the
-ego-server (FastAPI). Extension communicates via HTTP/JSON.
+## Архитектура
 
-See ADR-0014 in the main repo for architecture details.
+Расширение — тонкий интерфейс. Вся логика (парсер, проверка, запуск, песочница)
+находится на сервере (FastAPI), расширение общается с ним по HTTP/JSON.
+
+Подробности архитектуры — в ADR-0014 основного репозитория.

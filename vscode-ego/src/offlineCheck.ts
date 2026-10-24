@@ -65,7 +65,7 @@ async function detectPythonCmd(cwd: string): Promise<string[]> {
         }
     }
     throw new Error(
-        'Offline check requires Python 3.11+ with ego-trainer installed (try: uv sync).'
+        'Для локальной проверки нужен Python 3.11+ с установленным ego-trainer (попробуй: uv sync).'
     );
 }
 
@@ -148,7 +148,7 @@ async function ensureStudentFile(
     }
     if (!target) {
         throw new Error(
-            `No .py stub for ${opts.taskId}. Create tasks/<block>/task_*.py first.`
+            `Для задачи ${opts.taskId} нет .py-файла. Сначала создай tasks/<блок>/task_*.py.`
         );
     }
     await vscode.workspace.fs.writeFile(target, Buffer.from(opts.code, 'utf-8'));
@@ -172,7 +172,7 @@ export async function runOfflineCheck(opts: OfflineCheckOptions): Promise<CheckR
         throw new Error(
             detail
                 ? `${detail}\n(${exitPart})`
-                : `Offline check produced no JSON output (${exitPart}).`
+                : `Локальная проверка не вернула результат (${exitPart}).`
         );
     }
 
@@ -180,11 +180,11 @@ export async function runOfflineCheck(opts: OfflineCheckOptions): Promise<CheckR
     try {
         parsed = JSON.parse(jsonLine) as CheckResponse;
     } catch {
-        throw new Error(`Offline check: invalid JSON — ${jsonLine.slice(0, 200)}`);
+        throw new Error(`Локальная проверка вернула некорректный JSON — ${jsonLine.slice(0, 200)}`);
     }
 
     if (!parsed.task_id || !Array.isArray(parsed.results)) {
-        throw new Error('Offline check: unexpected JSON shape from ego CLI.');
+        throw new Error('Локальная проверка вернула результат в неожиданном формате.');
     }
     return {
         task_id: parsed.task_id,

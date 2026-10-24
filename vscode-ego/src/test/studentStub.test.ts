@@ -83,13 +83,13 @@ def visible(value: str) -> str:
 test('throws when there is no top-level function definition', () => {
     assert.throws(
         () => studentStubFromSolution('import os\nVALUE = 1\nclass Example:\n    pass\n'),
-        /No top-level def found/
+        /Не найдена функция верхнего уровня/
     );
 });
 
 test('throws on an unterminated top-level function signature', () => {
     assert.throws(
         () => studentStubFromSolution('def broken(\n    value: int\n'),
-        /Unterminated top-level function signature/
+        /Не закрыта сигнатура функции/
     );
 });

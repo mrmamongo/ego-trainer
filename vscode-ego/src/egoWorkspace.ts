@@ -64,7 +64,7 @@ export async function readEgoConfig(root?: vscode.Uri): Promise<EgoConfigFile | 
 
 export async function writeEgoConfig(config: EgoConfigFile, root?: vscode.Uri): Promise<void> {
     const dir = egoDir(root);
-    if (!dir) throw new Error('No workspace folder open.');
+    if (!dir) throw new Error('Папка проекта не открыта.');
     await vscode.workspace.fs.writeFile(
         vscode.Uri.joinPath(dir, 'config.yaml'),
         Buffer.from(JSON.stringify(config, null, 2), 'utf-8')
@@ -77,7 +77,7 @@ export async function createEgoSkeleton(
     opts?: { root?: vscode.Uri }
 ): Promise<vscode.Uri> {
     const root = opts?.root ?? workspaceRoot();
-    if (!root) throw new Error('No workspace folder open.');
+    if (!root) throw new Error('Папка проекта не открыта.');
     const dir = vscode.Uri.joinPath(root, '.ego');
 
     // Ensure directories
@@ -194,7 +194,7 @@ export async function readManifest(root?: vscode.Uri): Promise<EgoManifest | und
 
 export async function writeManifest(manifest: EgoManifest, root?: vscode.Uri): Promise<void> {
     const dir = egoDir(root);
-    if (!dir) throw new Error('No workspace folder open.');
+    if (!dir) throw new Error('Папка проекта не открыта.');
     await vscode.workspace.fs.writeFile(
         vscode.Uri.joinPath(dir, 'manifest.yaml'),
         Buffer.from(JSON.stringify(manifest, null, 2), 'utf-8')
@@ -211,7 +211,7 @@ export async function importTasksFolder(
     root?: vscode.Uri
 ): Promise<ImportTasksResult> {
     const base = root ?? workspaceRoot();
-    if (!base) throw new Error('No workspace folder open.');
+    if (!base) throw new Error('Папка проекта не открыта.');
 
     const destination = vscode.Uri.joinPath(base, 'docs', 'tasks');
     const normalize = (uri: vscode.Uri) => uri.fsPath.replace(/[\\/]+$/, '').toLowerCase();
@@ -224,7 +224,7 @@ export async function importTasksFolder(
         sourcePath.startsWith(`${destinationPath}\\`) ||
         sourcePath.startsWith(`${destinationPath}/`)
     ) {
-        throw new Error('Select a tasks folder outside this workspace docs/tasks folder.');
+        throw new Error('Выбери папку с задачами за пределами docs/tasks этого проекта.');
     }
 
     const files: Array<{ relative: string; uri: vscode.Uri }> = [];
@@ -291,7 +291,7 @@ export async function generateStudentStubs(
     root?: vscode.Uri
 ): Promise<StudentStubResult> {
     const base = root ?? workspaceRoot();
-    if (!base) throw new Error('No workspace folder open.');
+    if (!base) throw new Error('Папка проекта не открыта.');
 
     let generated = 0;
     let skipped = 0;
@@ -330,9 +330,9 @@ export async function generateStudentStubs(
             generated += 1;
         } catch (error) {
             errors += 1;
-            const detail = error instanceof Error ? error.message : 'unknown error';
+            const detail = error instanceof Error ? error.message : 'неизвестная ошибка';
             void vscode.window.showWarningMessage(
-                `Cogito: Could not generate a student stub for ${task.id}: ${detail}`
+                `Cogito: не удалось создать файл для решения задачи ${task.id}: ${detail}`
             );
         }
     }
@@ -344,12 +344,12 @@ export async function scanDocsTasks(root?: vscode.Uri): Promise<
     Array<{ id: string; block: string; slug: string; md_path: string }>
 > {
     const base = root ?? workspaceRoot();
-    if (!base) throw new Error('No workspace folder open.');
+    if (!base) throw new Error('Папка проекта не открыта.');
     const docsTasks = vscode.Uri.joinPath(base, 'docs', 'tasks');
     try {
         await vscode.workspace.fs.stat(docsTasks);
     } catch {
-        throw new Error('No docs/tasks/ directory found in workspace.');
+        throw new Error('В проекте нет папки docs/tasks/.');
     }
 
     const mdFiles = await vscode.workspace.findFiles(

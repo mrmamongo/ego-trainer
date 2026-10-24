@@ -1,6 +1,6 @@
 /** Status bar helper — ADR-0015 / 8bv.9.8.
  *
- * Format: `Cogito: [Server|Offline] | <task_id> ✓ n/m`
+ * Format: `Cogito: [сервер|локально] | <task_id> ✓ n/m`
  * Click → Cogito: Личный кабинет.
  */
 
@@ -34,7 +34,7 @@ export class EgoStatusBar {
     constructor(command = 'ego.dashboard') {
         this.item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
         this.item.command = command;
-        this.item.tooltip = 'Cogito: Dashboard';
+        this.item.tooltip = 'Cogito: личный кабинет';
         this.render();
         this.item.show();
     }
@@ -88,7 +88,7 @@ export class EgoStatusBar {
     setError(message?: string): void {
         this.state.checking = false;
         this.state.error = true;
-        this.item.tooltip = message ? `Cogito: ${message}` : 'Cogito: check failed';
+        this.item.tooltip = message ? `Cogito: ${message}` : 'Cogito: проверка не удалась';
         this.render();
     }
 
@@ -103,14 +103,14 @@ export class EgoStatusBar {
     }
 
     private render(): void {
-        const modeLabel = this.state.mode === 'offline' ? 'Offline' : 'Server';
+        const modeLabel = this.state.mode === 'offline' ? 'локально' : 'сервер';
         if (this.state.checking) {
-            this.item.text = `$(loading~spin) Ego: ${modeLabel} | checking…`;
-            this.item.tooltip = 'Cogito: running check…';
+            this.item.text = `$(loading~spin) Cogito: ${modeLabel} | проверка…`;
+            this.item.tooltip = 'Cogito: идёт проверка…';
             return;
         }
         if (this.state.error) {
-            this.item.text = `$(error) Ego: ${modeLabel}`;
+            this.item.text = `$(error) Cogito: ${modeLabel}`;
             return;
         }
         if (this.state.taskId) {
@@ -120,10 +120,10 @@ export class EgoStatusBar {
                     ? ` ${this.state.passed}/${this.state.total}`
                     : '';
             this.item.text = `Cogito: ${modeLabel} | ${this.state.taskId} ${icon}${scores}`;
-            this.item.tooltip = `Ego Dashboard — ${this.state.taskId} (${this.state.status || 'new'})`;
+            this.item.tooltip = `Cogito: личный кабинет — ${this.state.taskId} (${this.state.status || 'new'})`;
             return;
         }
         this.item.text = `Cogito: ${modeLabel}`;
-        this.item.tooltip = 'Cogito: Dashboard';
+        this.item.tooltip = 'Cogito: личный кабинет';
     }
 }
