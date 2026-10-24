@@ -1,7 +1,7 @@
 ---
 id: L19
 title: "Наибольшее число"
-version: "1.0.0"
+version: "1.0.1"
 level: easy
 tags: [loops, write, best]
 breaking: false
@@ -14,7 +14,7 @@ theory: [l-best]
 
 ### Как это работает
 
-Шаблон «лучший на данный момент» для максимума:
+Шаблон «лучший на данный момент» на примере минимума (для максимума поменяй знак сравнения):
 
 ```python
 def smallest(numbers):
