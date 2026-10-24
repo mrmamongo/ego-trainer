@@ -18,6 +18,18 @@ export interface ForgejoCallback {
     query: string;
 }
 
+export const OPEN_TASK_PATH = '/open';
+const SAFE_TASK_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
+/** A browser deep link opens exactly one catalog task; other URIs stay login callbacks. */
+export function openTaskIdFromUri(uri: Pick<ForgejoCallback, 'path' | 'query'>): string | null {
+    if (uri.path !== OPEN_TASK_PATH) return null;
+    const params = new URLSearchParams(uri.query);
+    if (params.getAll('task').length !== 1) return null;
+    const taskId = params.get('task') ?? '';
+    return SAFE_TASK_ID.test(taskId) ? taskId : null;
+}
+
 export class ForgejoCallbacks {
     private readonly listeners = new Set<(uri: ForgejoCallback) => void>();
 

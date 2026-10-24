@@ -1,12 +1,19 @@
 import * as vscode from 'vscode';
 import { EgoApi, type AuthResponse } from './api';
-import { ForgejoCallbacks, FORGEJO_CALLBACK_PATH, FORGEJO_EXTENSION_ID, runForgejoFlow } from './forgejoFlow';
+import { ForgejoCallbacks, FORGEJO_CALLBACK_PATH, FORGEJO_EXTENSION_ID, openTaskIdFromUri, runForgejoFlow } from './forgejoFlow';
 
 const callbacks = new ForgejoCallbacks();
 
 export function registerForgejoUriHandler(context: vscode.ExtensionContext): void {
     context.subscriptions.push(vscode.window.registerUriHandler({
-        handleUri: uri => callbacks.handleUri(uri),
+        handleUri: uri => {
+            const taskId = openTaskIdFromUri(uri);
+            if (taskId) {
+                void vscode.commands.executeCommand('ego.openTaskById', taskId);
+                return;
+            }
+            callbacks.handleUri(uri);
+        },
     }));
 }
 
