@@ -36,6 +36,10 @@ EXPECTED_IDS = {
     "04_numbers": [f"N{n:02}" for n in range(1, 9)],
     "05_range_while": [f"R{n:02}" for n in range(1, 23)],
     "06_break_nested": [f"BK{n:02}" for n in range(1, 23)],
+    "07_strings": [f"S{n:02}" for n in range(1, 23)],
+    "08_lists": [f"LI{n:02}" for n in range(1, 23)],
+    "09_functions_deep": [f"FD{n:02}" for n in range(1, 21)],
+    "10_projects": [f"MP{n:02}" for n in range(1, 21)],
 }
 
 
@@ -88,7 +92,12 @@ def verify_task(item, timeout: float) -> dict:
     starter_path = item.md_path.with_suffix(".student.py")
     assert task.stub_py == starter_path.read_text(encoding="utf-8"), task.id
     assert task.tests_file is not None and task.tests_file.is_file(), task.id
-    assert task_signature(task.stub_py) == task_signature(task.solution_py), task.id
+    stub_sig, solution_sig = task_signature(task.stub_py), task_signature(task.solution_py)
+    # A modification task may change the signature (e.g. add a parameter with a default).
+    if "modify" in item.frontmatter.tags:
+        assert stub_sig[0] == solution_sig[0], task.id
+    else:
+        assert stub_sig == solution_sig, task.id
 
     is_trace = "trace" in item.frontmatter.tags
     reference = run_check(task, task.solution_py, level="all", timeout=timeout)
