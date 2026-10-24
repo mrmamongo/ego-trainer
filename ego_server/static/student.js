@@ -15,6 +15,7 @@
     tasks: [], progress: [], understanding: [], evidenceByTask: new Map(),
     evidenceAvailable: false, account: null, lessons: [], lessonDetails: new Map(),
     extension: null, registering: false, epoch: 0, taskEpoch: 0,
+    sidebarCollapsed: localStorage.getItem('ego_student_sidebar_collapsed') === 'true',
     course: { query: '', openOnly: false, defenseOnly: false }, theoryQuery: '',
   };
   let attempt = 0;
@@ -71,7 +72,8 @@
 
   function showAuth(error = '') {
     dashboard.classList.add('hidden');
-    $('main-nav').classList.add('hidden');
+    setSidebarOpen(false);
+    $('sidebar-toggle').classList.add('hidden');
     $('user-actions').classList.add('hidden');
     authScreen.classList.remove('hidden');
     authError.textContent = error;
@@ -82,7 +84,7 @@
   function showCabinet() {
     authScreen.classList.add('hidden');
     dashboard.classList.remove('hidden');
-    $('main-nav').classList.remove('hidden');
+    $('sidebar-toggle').classList.remove('hidden');
     $('user-actions').classList.remove('hidden');
     $('user-name').textContent = state.user?.username || '';
   }
@@ -180,6 +182,7 @@
   }
 
   function navigate(url, { replace = false, focus = true } = {}) {
+    setSidebarOpen(false);
     if (replace) history.replaceState({}, '', url);
     else history.pushState({}, '', url);
     renderRoute({ focus });
@@ -584,81 +587,157 @@
     root.replaceChildren(fragment);
   }
 
-  function attemptLabel(progress, taskStatus) {
-    if (!progress) return 'Проверок пока не было';
-    if (taskStatus === 'defense') return 'Тесты пройдены, ждёт защиты';
-    if (taskStatus === 'passed') return 'Все тесты пройдены';
-    if (['failed', 'error', 'timeout'].includes(L.normalizeStatus(progress.status))) return 'Есть ошибки — можно попробовать ещё раз';
-    return 'Попытка сохранена';
+  function isMobileSidebar() {
+    return window.matchMedia('(max-width: 760px)').matches;
   }
 
-  function renderTaskPage(meta, detail, hints) {
+  function syncSidebarVisibility() {
+    const mobile = isMobileSidebar();
+    dashboard.classList.toggle('sidebar-collapsed', state.sidebarCollapsed && !mobile);
+    const expanded = mobile ? document.body.classList.contains('sidebar-open') : !state.sidebarCollapsed;
+    const toggle = $('sidebar-toggle');
+    toggle.setAttribute('aria-expanded', String(expanded));
+    toggle.setAttribute('aria-label', expanded ? 'Скрыть список задач' : 'Показать список задач');
+    toggle.title = expanded ? 'Скрыть список задач' : 'Показать список задач';
+  }
+
+  function setSidebarOpen(open) {
+    document.body.classList.toggle('sidebar-open', Boolean(open));
+    syncSidebarVisibility();
+    if (open) $('sidebar-close').focus({ preventScroll: true });
+  }
+
+  function setSidebarCollapsed(collapsed) {
+    state.sidebarCollapsed = Boolean(collapsed);
+    localStorage.setItem('ego_student_sidebar_collapsed', String(state.sidebarCollapsed));
+    syncSidebarVisibility();
+  }
+
+  function applyTheme(theme, { persist = true } = {}) {
+    const dark = theme === 'dark';
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    if (persist) localStorage.setItem('ego_student_theme', dark ? 'dark' : 'light');
+    $('theme-color').content = dark ? '#111622' : '#f4f6fb';
+    const toggle = $('theme-toggle');
+    toggle.setAttribute('aria-label', dark ? 'Включить светлую тему' : 'Включить тёмную тему');
+    toggle.title = dark ? 'Включить светлую тему' : 'Включить тёмную тему';
+    const [icon, label] = toggle.querySelectorAll('span');
+    icon.textContent = dark ? '☀' : '☾';
+    label.textContent = dark ? 'Светлая' : 'Тёмная';
+  }
+
+  function sidebarTaskLink(task, route) {
+    const link = taskLink(task);
+    if (route.view === 'task' && route.taskId.toLowerCase() === task.id.toLowerCase()) {
+      link.classList.add('selected');
+      link.setAttribute('aria-current', 'page');
+    }
+    return link;
+  }
+
+  function sidebarLessonLink(lesson, route) {
+    const link = lessonLink(lesson);
+    if (route.view === 'theory' && route.lessonId === lesson.id) {
+      link.classList.add('selected');
+      link.setAttribute('aria-current', 'page');
+    }
+    return link;
+  }
+
+  function drawSidebarCatalog() {
+    const container = $('sidebar-catalog');
+    const route = readRoute();
+    const query = state.course.query.trim().toLocaleLowerCase('ru');
+    const tasks = state.tasks.filter((task) => !query || `${task.id} ${task.task_id || ''} ${task.title || ''}`.toLocaleLowerCase('ru').includes(query));
+    const hasMatchingLesson = (folder, folderTasks) => lessonsForFolder(folder, folderTasks).length > 0;
+    if (!tasks.length && !state.lessons.some((lesson) => `${lesson.id} ${lesson.title}`.toLocaleLowerCase('ru').includes(query))) {
+      container.replaceChildren(h('p', 'sidebar-empty', 'Ничего не нашлось. Попробуй другое название.'));
+      return;
+    }
     const fragment = document.createDocumentFragment();
-    const taskState = stateOf(meta);
-    const breadcrumbs = h('nav', 'breadcrumbs'); breadcrumbs.setAttribute('aria-label', 'Хлебные крошки');
-    const back = h('a', '', '← Курс'); back.href = viewUrl('course'); back.dataset.nav = 'course';
-    append(breadcrumbs, back, h('span', '', '/'), h('span', '', meta.id)); fragment.append(breadcrumbs);
-    const header = h('header', 'task-header');
-    const copy = h('div');
-    append(copy, h('p', 'eyebrow', [meta.project_name, meta.folder_name].filter(Boolean).join(' · ') || 'Задача курса'), h('h1', '', detail.title || meta.title || meta.id), h('p', 'task-header-meta', `${meta.id} · версия ${meta.version}`));
-    append(header, copy, statusBadge(taskState)); fragment.append(header);
-    const actions = h('div', 'task-actionbar card');
-    const open = h('a', 'button button-primary', taskState === 'defense' ? 'Защитить в VS Code ↗' : 'Открыть в VS Code ↗'); open.href = vscodeUrl(meta.id);
-    const install = h('a', 'download-note', 'Нет расширения? Скачай'); install.href = viewUrl('vscode'); install.dataset.nav = 'vscode';
-    append(actions, open, install); fragment.append(actions);
-    const layout = h('div', 'task-layout');
-    const statement = h('article', 'task-statement card');
-    const body = h('div'); markdown.render(detail.statement_md || 'У этой задачи пока нет описания.', body); statement.append(body);
-    const aside = h('aside', 'task-aside');
-    const progress = progressFor(meta);
-    const attempt = h('section', 'attempt-card card');
-    const attemptStatus = h('div', 'attempt-status');
-    attemptStatus.append(statusBadge(taskState));
-    attempt.append(h('h2', '', 'Последняя попытка'), attemptStatus);
-    const statusText = h('p', 'muted', attemptLabel(progress, taskState)); statusText.style.fontSize = '12px'; statusText.style.margin = '0 0 15px'; attempt.append(statusText);
-    const stats = h('div', 'attempt-stats');
-    const tests = h('div', 'attempt-stat'); append(tests, h('strong', '', progress ? `${progress.passed_tests}/${progress.total_tests}` : '—'), h('span', '', 'тестов пройдено'));
-    const attempts = h('div', 'attempt-stat'); append(attempts, h('strong', '', progress?.attempts ?? '0'), h('span', '', plural(progress?.attempts || 0, 'попытка', 'попытки', 'попыток')));
-    append(stats, tests, attempts); attempt.append(stats);
-    if (progress?.last_run_at) {
-      const date = new Date(progress.last_run_at);
-      if (!Number.isNaN(date.valueOf())) attempt.append(h('p', 'attempt-date', `Последняя проверка: ${date.toLocaleString('ru-RU')}`));
-    }
-    const note = h('section', 'task-aside-note card');
-    append(note, h('h3', '', taskState === 'defense' ? 'Объясни своё решение' : 'Где решать?'), h('p', '', taskState === 'defense' ? 'Тесты уже пройдены. Открой задачу в VS Code и пройди короткую защиту понимания.' : 'Код пишется в VS Code. Там же расширение запускает тесты и сохраняет результат в твоём кабинете.'));
-    append(aside, attempt, note); append(layout, statement, aside); fragment.append(layout);
-
-    const theoryIds = Array.isArray(detail.theory) ? detail.theory : (meta.theory || []);
-    if (theoryIds.length) {
-      const theory = h('section', 'task-theory card');
-      const title = h('div', 'section-title'); const titleCopy = h('div');
-      append(titleCopy, h('h2', '', 'Теория к этой задаче'), h('p', '', 'Сначала можно освежить правило, потом вернуться к условию.'));
-      title.append(titleCopy); theory.append(title);
-      const list = h('div', 'lesson-list');
-      for (const id of theoryIds) {
-        const lesson = state.lessons.find((item) => item.id === id) || { id, title: id, order: 0 };
-        const card = lessonCard(lesson, true);
-        list.append(card.details);
-        void loadLessonInto(lesson, card.body);
+    for (const project of groupCatalog(tasks).projects) {
+      const projectSection = h('section', 'sidebar-project');
+      projectSection.append(h('h3', 'sidebar-project-name', project.name));
+      for (const folder of project.folders) {
+        const lessons = lessonsForFolder(folder, folder.tasks);
+        if (!folder.tasks.length && !lessons.length) continue;
+        const selectedTask = route.view === 'task' && folder.tasks.some((task) => task.id.toLowerCase() === route.taskId.toLowerCase());
+        const selectedLesson = route.view === 'theory' && lessons.some((lesson) => lesson.id === route.lessonId);
+        const details = h('details', 'sidebar-folder');
+        details.open = Boolean(query || selectedTask || selectedLesson);
+        const summary = h('summary');
+        append(summary, h('span', 'folder-name', folder.name), h('span', 'folder-count', `${folder.passed}/${folder.total}`));
+        const items = h('div', 'sidebar-folder-items');
+        for (const lesson of lessons) items.append(sidebarLessonLink(lesson, route));
+        for (const task of folder.tasks) items.append(sidebarTaskLink(task, route));
+        details.append(summary, items);
+        projectSection.append(details);
       }
-      theory.append(list); fragment.append(theory);
+      if (projectSection.querySelector('.sidebar-folder')) fragment.append(projectSection);
     }
+    if (!fragment.childNodes.length) {
+      const matchingLessons = state.lessons.filter((lesson) => `${lesson.id} ${lesson.title}`.toLocaleLowerCase('ru').includes(query));
+      const section = h('section', 'sidebar-project');
+      section.append(h('h3', 'sidebar-project-name', 'Теория'));
+      for (const lesson of matchingLessons) section.append(sidebarLessonLink(lesson, route));
+      fragment.append(section);
+    }
+    container.replaceChildren(fragment);
+  }
 
-    const hintsPanel = h('section', 'task-hints card');
-    const hintsTitle = h('div', 'section-title'); const hintsCopy = h('div');
-    append(hintsCopy, h('h2', '', 'Подсказки'), h('p', '', 'Открывай по одной, если хочешь немного направления без готового решения.'));
-    hintsTitle.append(hintsCopy); hintsPanel.append(hintsTitle);
-    if (hints.length) {
-      const list = h('div', 'hint-list');
-      for (const hint of hints) {
-        const item = h('details', 'hint-item');
-        item.append(h('summary', '', `${hint.level}. ${hint.title}`));
-        const content = h('div'); markdown.render(hint.content || '', content); item.append(content); list.append(item);
-      }
-      hintsPanel.append(list);
-    } else hintsPanel.append(h('p', 'muted', 'Для этой задачи пока нет отдельных подсказок. Попробуй перечитать пример и теорию выше.'));
-    fragment.append(hintsPanel);
-    root.replaceChildren(fragment);
+  function renderSidebar() {
+    const passed = state.tasks.filter((task) => stateOf(task) === 'passed').length;
+    const total = state.tasks.length;
+    const progress = $('sidebar-progress');
+    const head = h('div', 'sidebar-progress-head');
+    append(head, h('span', '', 'Пройдено'), h('strong', '', `${passed} из ${total}`));
+    progress.replaceChildren(head, progressBar(passed, total, 'Общий прогресс по курсу'));
+    $('sidebar-search').value = state.course.query;
+    drawSidebarCatalog();
+  }
+
+  function renderTaskPage(meta, detail) {
+    const article = h('article', 'reader-page');
+    const header = h('header', 'reader-header');
+    const copy = h('div', 'reader-heading');
+    append(copy, h('p', 'eyebrow', [meta.project_name, meta.folder_name].filter(Boolean).join(' · ') || 'Задача курса'), h('h1', '', detail.title || meta.title || meta.id));
+    const metaLine = h('div', 'reader-meta');
+    append(metaLine, h('span', '', `${meta.id} · версия ${meta.version}`), statusBadge(meta));
+    copy.append(metaLine);
+    const open = h('a', 'button button-primary reader-vscode', stateOf(meta) === 'defense' ? 'Защитить в VS Code ↗' : 'Открыть в VS Code ↗');
+    open.href = vscodeUrl(meta.id);
+    append(header, copy, open);
+    const body = h('div', 'reader-statement');
+    markdown.render(detail.statement_md || 'У этой задачи пока нет описания.', body);
+    append(article, header, body);
+    root.replaceChildren(article);
+  }
+
+  async function renderLessonReader(route) {
+    const meta = state.lessons.find((lesson) => lesson.id === route.lessonId);
+    document.title = `${meta?.title || 'Теория'} — Cogito`;
+    if (!meta) {
+      root.replaceChildren(h('div', 'empty-state', 'Эта карточка теории недоступна. Выбери другую в списке слева.'));
+      return;
+    }
+    const current = ++state.taskEpoch;
+    loading('Открываю теорию…');
+    try {
+      const full = state.lessonDetails.get(meta.id) || await request(`/lessons/${encodeURIComponent(meta.id)}`);
+      if (current !== state.taskEpoch || readRoute().view !== 'theory' || readRoute().lessonId !== route.lessonId) return;
+      state.lessonDetails.set(meta.id, full);
+      const article = h('article', 'reader-page');
+      const header = h('header', 'reader-header');
+      const copy = h('div', 'reader-heading');
+      append(copy, h('p', 'eyebrow', 'Теория · почитать в своём темпе'), h('h1', '', full.title || meta.title || meta.id));
+      append(header, copy);
+      const body = h('div', 'reader-statement');
+      markdown.render(full.body_md || 'В этой карточке пока нет текста.', body);
+      append(article, header, body);
+      root.replaceChildren(article);
+    } catch (error) {
+      if (current === state.taskEpoch) errorState(error, () => void renderLessonReader(route));
+    }
   }
 
   async function renderTask(route) {
@@ -666,33 +745,44 @@
     document.title = `${meta?.title || route.taskId || 'Задача'} — Cogito`;
     if (!meta) {
       const empty = h('div', 'empty-state card');
-      append(empty, h('h2', '', 'Такой задачи не нашлось'), h('p', '', 'Возможно, ссылка устарела. Все доступные задачи собраны в курсе.'));
-      const back = h('a', 'button button-primary', 'Перейти к курсу'); back.href = viewUrl('course'); back.dataset.nav = 'course'; empty.append(back);
+      append(empty, h('h2', '', 'Такой задачи не нашлось'), h('p', '', 'Возможно, ссылка устарела. Выбери другую задачу в списке слева.'));
       root.replaceChildren(empty); return;
     }
     const current = ++state.taskEpoch;
     loading('Открываю условие задачи…');
-    const [detailResult, hintsResult] = await Promise.allSettled([
-      request(`/tasks/${encodeURIComponent(meta.id)}`),
-      request(`/tasks/${encodeURIComponent(meta.id)}/hints?level=3`),
-    ]);
-    if (current !== state.taskEpoch || readRoute().view !== 'task' || readRoute().taskId !== route.taskId) return;
-    if (detailResult.status === 'rejected') {
-      errorState(detailResult.reason, () => void renderTask(route));
-      return;
+    try {
+      const detail = await request(`/tasks/${encodeURIComponent(meta.id)}`);
+      if (current !== state.taskEpoch || readRoute().view !== 'task' || readRoute().taskId !== route.taskId) return;
+      renderTaskPage(meta, detail);
+    } catch (error) {
+      if (current === state.taskEpoch) errorState(error, () => void renderTask(route));
     }
-    renderTaskPage(meta, detailResult.value, hintsResult.status === 'fulfilled' ? (hintsResult.value.hints || []) : []);
   }
 
   function renderRoute({ focus = false } = {}) {
     if (!state.user) return;
-    const route = readRoute();
+    let route = readRoute();
+    if (route.view === 'today' || route.view === 'course') {
+      const next = L.pickNextTask(state.tasks, stateOf) || state.tasks[0];
+      if (next) {
+        history.replaceState({}, '', taskUrl(next.id));
+        route = readRoute();
+      }
+    } else if (route.view === 'theory' && !route.lessonId && state.lessons.length) {
+      history.replaceState({}, '', viewUrl('theory', state.lessons[0].id));
+      route = readRoute();
+    }
+    root.dataset.view = route.view;
     setActiveNav(route);
+    renderSidebar();
     if (route.view === 'task') void renderTask(route);
-    else if (route.view === 'course') renderCourse();
-    else if (route.view === 'theory') renderTheory();
+    else if (route.view === 'theory') void renderLessonReader(route);
     else if (route.view === 'vscode') renderVSCode();
-    else renderToday();
+    else {
+      const empty = h('div', 'empty-state');
+      append(empty, h('h2', '', 'Задачи скоро появятся'), h('p', '', 'Как только преподаватель добавит задания, они появятся в списке слева.'));
+      root.replaceChildren(empty);
+    }
     if (focus) {
       window.scrollTo({ top: 0, behavior: 'instant' });
       root.focus({ preventScroll: true });
@@ -703,6 +793,11 @@
     state.user = null; state.tasks = []; state.progress = []; state.understanding = [];
     state.evidenceByTask = new Map(); state.evidenceAvailable = false; state.account = null;
     state.lessons = []; state.lessonDetails = new Map(); state.taskEpoch++;
+    state.course = { query: '', openOnly: false, defenseOnly: false };
+    setSidebarOpen(false);
+    $('sidebar-search').value = '';
+    $('sidebar-progress').replaceChildren();
+    $('sidebar-catalog').replaceChildren();
     root.replaceChildren();
   }
 
@@ -824,6 +919,33 @@
   $('forgejo-cancel').addEventListener('click', cancelForgejo);
   window.addEventListener('pagehide', cancelForgejo);
 
+  $('sidebar-toggle').addEventListener('click', () => {
+    if (isMobileSidebar()) setSidebarOpen(!document.body.classList.contains('sidebar-open'));
+    else setSidebarCollapsed(!state.sidebarCollapsed);
+  });
+  $('theme-toggle').addEventListener('click', () => {
+    applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+  });
+  window.matchMedia('(max-width: 760px)').addEventListener('change', () => setSidebarOpen(false));
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (event) => {
+    if (!localStorage.getItem('ego_student_theme')) applyTheme(event.matches ? 'dark' : 'light', { persist: false });
+  });
+  $('sidebar-close').addEventListener('click', () => {
+    setSidebarOpen(false);
+    $('sidebar-toggle').focus({ preventScroll: true });
+  });
+  $('sidebar-backdrop').addEventListener('click', () => setSidebarOpen(false));
+  $('sidebar-search').addEventListener('input', (event) => {
+    state.course.query = event.target.value;
+    drawSidebarCatalog();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && document.body.classList.contains('sidebar-open')) {
+      setSidebarOpen(false);
+      $('sidebar-toggle').focus({ preventScroll: true });
+    }
+  });
+
   document.addEventListener('click', (event) => {
     const taskAnchor = event.target.closest('[data-task-link]');
     if (taskAnchor && isPlainNavigation(event)) {
@@ -869,6 +991,8 @@
       }
     }).catch(() => {});
 
+  applyTheme(document.documentElement.dataset.theme || 'light', { persist: false });
+  syncSidebarVisibility();
   if (state.token) void enter(state.token);
   else showAuth();
 })();
