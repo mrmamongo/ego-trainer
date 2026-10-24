@@ -26,6 +26,7 @@ export type ExtMessage =
 	| { type: 'taskView.openPy'; taskId: string }
 	| { type: 'taskView.refresh' }
 	| { type: 'taskView.toggleRead'; taskId: string; read: boolean }
+	| { type: 'taskView.openLink'; target: string }
 	| { type: 'trainer.load'; kind: 'trace' | 'parsons'; taskId: string }
 	| { type: 'trainer.submit'; taskId: string; answers?: Record<string, string>; lines?: { id: number; level: number }[] };
 

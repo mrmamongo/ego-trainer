@@ -37,13 +37,20 @@
     function statusLabel(status: string) {
         return ({new:'Не начато',passed:'Пройдено',partial:'Частично',failed:'Есть ошибки',error:'Ошибка',timeout:'Таймаут'} as Record<string,string>)[status] || status;
     }
+    /** `task:XL-A02` / `lesson:l-roles` links in rendered markdown open inside the extension. */
+    function onLinkClick(event: MouseEvent) {
+        const anchor = (event.target as HTMLElement | null)?.closest?.('a');
+        const href = anchor?.getAttribute('href') || '';
+        if (/^(task|lesson):/.test(href)) { event.preventDefault(); postToHost({ type: 'taskView.openLink', target: href }); }
+    }
     function taskTitle(id: string, title: string) {
         return title.toUpperCase().startsWith(id.toUpperCase())
             ? title.slice(id.length).trim().replace(/^[:·—-]\s*/, '') || title : title;
     }
 </script>
 
-<main class="task-view">
+<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+<main class="task-view" onclick={onLinkClick}>
     {#if !$taskViewData}
         <div class="empty"><span aria-hidden="true">⌘</span><h1>Выбери задачу</h1>
             <p>Открой задачу в списке выше или её Python файл. Здесь появятся условие, подсказки и результаты.</p></div>

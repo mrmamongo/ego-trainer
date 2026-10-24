@@ -228,6 +228,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return TaskViewPanel.showLesson(lesson);
             })
         ),
+        // Targets of `task:<id>` / `lesson:<id>` links in statements and theory cards.
+        vscode.commands.registerCommand('ego.openTaskById', (id: string) =>
+            withReady(async () => {
+                const task = (await api.listTasks()).find((t) => t.id.toLowerCase() === String(id).toLowerCase());
+                if (!task) {
+                    vscode.window.showWarningMessage(`Ego: задача ${id} не найдена.`);
+                    return;
+                }
+                return cmdOpenTask(task);
+            })
+        ),
+        vscode.commands.registerCommand('ego.openLessonById', (id: string) =>
+            withReady(async () => {
+                const lesson = (await api.listLessons()).find((l) => l.id === id);
+                if (!lesson) {
+                    vscode.window.showWarningMessage(`Ego: карточка ${id} не найдена.`);
+                    return;
+                }
+                return TaskViewPanel.showLesson(lesson);
+            })
+        ),
         vscode.commands.registerCommand('ego.switchMode', () =>
             withReady(() => cmdSwitchMode(context))
         ),

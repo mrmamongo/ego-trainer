@@ -138,6 +138,10 @@ export class TaskViewPanel {
     private static async onMessage(msg: { type?: string; taskId?: string; read?: boolean }): Promise<void> {
         const cur = this.current, deps = this.deps;
         if (!deps) return;
+        if (msg.type === 'taskView.openLink' && typeof (msg as { target?: unknown }).target === 'string') {
+            await openTaskLink((msg as { target: string }).target);
+            return;
+        }
         if (isTrainerMessage(msg)) {
             const trainer = await this.trainer();
             if (trainer && await handleTrainerMessage(msg as Parameters<typeof handleTrainerMessage>[0], trainer)) return;
@@ -220,6 +224,14 @@ export class TaskViewPanel {
     }
 }
 
+/** `task:<id>` / `lesson:<id>` links inside statements and theory cards. */
+async function openTaskLink(target: string): Promise<void> {
+    const match = /^(task|lesson):(.+)$/.exec(target.trim());
+    if (!match) return;
+    const id = decodeURIComponent(match[2]);
+    await vscode.commands.executeCommand(match[1] === 'task' ? 'ego.openTaskById' : 'ego.openLessonById', id);
+}
+
 /** Lesson mode: the card body rendered like a statement, plus its read flag. */
 async function loadLessonViewData(api: EgoApi, ref: TaskRef, readState: LessonReadState): Promise<TaskViewData> {
     const lesson = await api.getLesson(ref.id);
@@ -228,7 +240,7 @@ async function loadLessonViewData(api: EgoApi, ref: TaskRef, readState: LessonRe
         title: lesson.title,
         status: 'new',
         version: lesson.version,
-        statement_html: renderStatementHtml(lesson.body_md),
+        statement_html: renderMarkdownHtml(lesson.body_md),
         hints: [],
         history: [],
         mode: 'server',
@@ -260,7 +272,7 @@ async function loadTaskViewData(api: EgoApi, ref: TaskRef, theoryCache: Map<stri
             const theory = await resolveTheory(full.theory ?? [], {
                 listLessons: () => api.listLessons(),
                 getLesson: (id) => api.getLesson(id),
-                render: renderStatementHtml,
+                render: renderMarkdownHtml,
             }, theoryCache);
             return {
                 id: full.id,
