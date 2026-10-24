@@ -165,3 +165,18 @@ def test_temp_dir_isolated():
     r = run_code("import os\nprint(os.getcwd())")
     # blocked_import warning for os, but cwd should be in ego-runner-* temp dir
     assert "ego-runner" in r.stdout.lower() or r.blocked_import == "os"
+
+
+def test_run_function_does_not_start_main_block():
+    """`if __name__ == "__main__": main()` must not run during checks (it may wait for input)."""
+    code = (
+        "def main():\n"
+        "    input('> ')\n"
+        "def task_x(n):\n"
+        "    return n + 1\n"
+        "if __name__ == '__main__':\n"
+        "    main()\n"
+    )
+    r = run_function(code, "task_x", args=(1,), timeout=10)
+    assert r.returncode == 0, r.stderr
+    assert parse_return_value(r.stdout) == "2"
