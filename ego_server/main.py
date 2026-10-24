@@ -21,6 +21,7 @@ from ego_server.routers import (
     admin_settings,
     auth,
     check,
+    extension,
     forgejo_auth,
     lessons,
     progress,
@@ -74,6 +75,8 @@ app.include_router(ai_router.admin_router, prefix="/admin/ai", tags=["ai-admin"]
 app.include_router(admin_router.router, prefix="/admin", tags=["admin"])
 app.include_router(admin_settings.router, prefix="/admin", tags=["admin-settings"])
 app.include_router(admin_assistant.router, prefix="/admin", tags=["admin-assistant"])
+# Public extension distribution (no auth: needed before a student can log in).
+app.include_router(extension.router, prefix="/extension", tags=["extension"])
 
 
 @app.exception_handler(RequestValidationError)

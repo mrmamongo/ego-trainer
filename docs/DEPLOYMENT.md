@@ -105,6 +105,80 @@ Remote Git checkout, authentication and cron-based sync are not implemented
 (`ego-trainer-8di.2`). A local mount and explicit manual sync are the current
 pilot path.
 
+## Раздача расширения VS Code
+
+Расширение Cogito (`vscode-ego/`) публикуется нашим же сервером: студент
+скачивает его до входа в аккаунт, а установленное расширение само проверяет
+обновления. Публичные эндпоинты, без JWT:
+
+- `GET /extension/latest` — `{"version", "sha256", "size", "published_at",
+  "download_url", "notes"?}`, 404 с понятным `detail`, если ничего не
+  опубликовано;
+- `GET /extension/download` — текущий `cogito-<version>.vsix`
+  (`application/octet-stream`, `Cache-Control: no-store`).
+
+Файлы лежат в каталоге `EGO_EXTENSION_DIR` (по умолчанию — `extension/` рядом с
+базой данных, в контейнере из `EGO_DB_PATH=/var/lib/ego/ego.db` это
+`/var/lib/ego/extension`): `latest.json` и `cogito-<version>.vsix`. Сервер
+отдаёт только файл с простым именем из `latest.json` внутри этого каталога;
+пути с `../` и абсолютные пути отклоняются.
+
+Сборка пакета (на машине разработчика, зависимости уже установлены):
+
+```sh
+cd vscode-ego
+npm run -s compile
+npx @vscode/vsce package --allow-missing-repository -o ../dist-extension/cogito-0.2.0.vsix
+```
+
+Версия берётся из `vscode-ego/package.json` — подними её перед выпуском (CLI
+отказывается публиковать не более новую версию). Compose монтирует каталог
+`EGO_EXTENSION_INCOMING` (по умолчанию `./dist-extension`) в контейнер только
+для чтения как `/var/lib/ego/incoming`. Публикация — через CLI внутри
+контейнера:
+
+```sh
+docker compose exec cogito-server ego-server admin publish-extension \
+  --vsix /var/lib/ego/incoming/cogito-0.2.0.vsix
+```
+
+Команда читает версию из `extension/package.json` внутри `.vsix`, копирует файл
+в `EGO_EXTENSION_DIR` как `cogito-<version>.vsix`, считает sha256 и атомарно
+заменяет `latest.json`, затем печатает одну строку со сводкой. Если версия не
+новее опубликованной, команда отказывает; `--force` публикует принудительно,
+`--notes "..."` добавляет текст для кнопки «Что нового» в расширении.
+
+Проверка:
+
+```sh
+curl -fsS http://127.0.0.1:8000/extension/latest
+curl -fsS -o /tmp/cogito.vsix http://127.0.0.1:8000/extension/download
+sha256sum /tmp/cogito.vsix   # должен совпасть с полем sha256
+```
+
+Студенты ставят расширение из `/student` (блок «Расширение для VS Code»),
+командой `code --install-extension cogito-<version>.vsix` или через
+«Extensions → ⋯ → Install from VSIX…» в VS Code. Дальше расширение раз в сутки
+само проверяет обновления (и по команде «Cogito: Проверить обновления»); в
+локальном режиме проверка выключена.
+
+**Reverse proxy.** Если перед сервером стоит nginx, Caddy или другой прокси с
+обязательным JWT, пути `/extension/*` нужно пропускать без аутентификации — как
+`/student`, `/static` и `/` (панель администратора). Иначе новый студент не
+сможет скачать расширение, а установленное расширение получит 401 при проверке
+обновлений. Пример для nginx:
+
+```nginx
+location /extension/ {
+    proxy_pass http://ego-server:8000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+Эндпоинты сами отдают только опубликованный `.vsix` и его метаданные — токены и
+студенческие данные там не нужны.
+
 ## Configure service settings and AI
 
 Sign in as an administrator and open **Settings**. Operational values stored

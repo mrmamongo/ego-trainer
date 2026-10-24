@@ -488,6 +488,21 @@
     if (!providers.local && !providers.forgejo) showAuth('Вход пока не настроен. Обратись к наставнику.');
   }).catch(error => showAuth(error.message));
 
+  // «Скачать расширение для VS Code»: public endpoint, hidden quietly when
+  // nothing is published (404) or the server is unreachable.
+  function showExtension(release) {
+    const version = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(release?.version || '') ? release.version : '';
+    if (!version) return;
+    $('extension-version').textContent = `Версия ${version}`;
+    $('extension-install-hint').innerHTML = `Установка: <code>code --install-extension cogito-${version}.vsix</code> или «Extensions → ⋯ → Install from VSIX…» в VS Code.`;
+    $('extension-link').href = release.download_url || '/extension/download';
+    $('extension-download').classList.remove('hidden');
+  }
+  fetch('/extension/latest', { headers: { Accept: 'application/json' } })
+    .then(response => (response.ok ? response.json() : null))
+    .then(release => { if (release) showExtension(release); })
+    .catch(() => {});
+
   if (state.token) enter(state.token);
   else showAuth();
 })();

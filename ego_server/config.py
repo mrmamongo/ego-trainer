@@ -12,6 +12,9 @@ class Settings(BaseSettings):
 
     environment: Literal["development", "test", "production"] = "development"
     db_path: Path = Path(".ego-server/ego.db")
+    # Published VS Code extension (latest.json + cogito-<version>.vsix).
+    # Empty means "extension/" next to the database file.
+    extension_dir: Path | None = None
     jwt_secret: str = "dev-secret-change-in-production"
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60 * 24 * 7  # 7 days

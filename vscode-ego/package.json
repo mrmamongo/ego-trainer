@@ -2,7 +2,7 @@
   "name": "ego-trainer",
   "displayName": "Cogito",
   "description": "Cogito: тренажёр для начинающих разработчиков — решай задачи, проверяй код и отслеживай прогресс",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "publisher": "ego-trainer",
   "engines": {
     "vscode": "^1.106.0"
@@ -41,6 +41,11 @@
       {
         "command": "ego.setupPython",
         "title": "Настроить Python",
+        "category": "Cogito"
+      },
+      {
+        "command": "ego.checkUpdate",
+        "title": "Проверить обновления",
         "category": "Cogito"
       },
       {

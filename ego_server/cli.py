@@ -92,6 +92,21 @@ def main(argv=None) -> int:
 
     admin_sub.add_parser("list-users", help="List all users")
 
+    p_publish_ext = admin_sub.add_parser(
+        "publish-extension",
+        help="Publish a VS Code .vsix for GET /extension/latest + /extension/download",
+    )
+    p_publish_ext.add_argument(
+        "--vsix", required=True, help="Path to the built extension package (.vsix)"
+    )
+    p_publish_ext.add_argument(
+        "--force", action="store_true", help="Publish even if not newer than the current release"
+    )
+    p_publish_ext.add_argument("--notes", default=None, help="Optional release notes (one line)")
+    p_publish_ext.add_argument(
+        "--mandatory", action="store_true", help="Mark the release as required"
+    )
+
     p_role = admin_sub.add_parser("set-role", help="Trusted bootstrap/recovery of a local role")
     p_role.add_argument("--user-id", required=True)
     p_role.add_argument("--role", required=True, choices=["student", "mentor", "admin"])
@@ -125,6 +140,8 @@ def main(argv=None) -> int:
             return _cmd_sync_tasks(args)
         if args.admin_command == "list-users":
             return _cmd_list_users(args)
+        if args.admin_command == "publish-extension":
+            return _cmd_publish_extension(args)
         if args.admin_command in {"set-role", "link-forgejo"}:
             return _cmd_external_account(args)
 
@@ -437,6 +454,39 @@ def _cmd_sync_tasks(args) -> int:
         return 0 if result.status != "failed" else 1
     finally:
         conn.close()
+
+
+def _cmd_publish_extension(args) -> int:
+    """Publish a built ``.vsix`` as the current release (``admin publish-extension``).
+
+    The version is read from ``extension/package.json`` inside the package.
+    The file is copied as ``cogito-<version>.vsix``, its sha256 is computed and
+    ``latest.json`` is replaced atomically, so the public endpoints never see a
+    half-written release.
+    """
+    from ego_server import config
+    from ego_server.extension_dist import (
+        ExtensionPublishError,
+        extension_dir,
+        publish_vsix,
+    )
+
+    try:
+        result = publish_vsix(
+            Path(args.vsix),
+            extension_dir(config.settings),
+            force=args.force,
+            notes=args.notes,
+            mandatory=args.mandatory,
+        )
+    except ExtensionPublishError as exc:
+        print(f"Not published: {exc}", file=sys.stderr)
+        return 1
+    except OSError as exc:
+        print(f"Not published: {exc}", file=sys.stderr)
+        return 1
+    print(result.summary())
+    return 0
 
 
 # === Internal helpers ===

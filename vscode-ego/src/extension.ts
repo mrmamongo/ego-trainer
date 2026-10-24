@@ -28,6 +28,12 @@ import { switchMode } from './modeSwitch';
 import { AssistantPanel } from './assistantPanel';
 import { setupPythonEnv } from './pythonSetup';
 import { taskIdFromFilePath } from './taskContext';
+import {
+    checkForUpdatesManually,
+    currentExtensionVersion,
+    scheduleUpdateCheck,
+    type UpdateCheckDeps,
+} from './updateCheck';
 
 const SECRET_KEY = 'ego.token';
 
@@ -145,6 +151,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('ego.logout', () => cmdLogout(context)),
         vscode.commands.registerCommand('ego.setServer', () => cmdSetServer(context)),
         vscode.commands.registerCommand('ego.setupPython', () => cmdSetupPython()),
+        vscode.commands.registerCommand('ego.checkUpdate', () => cmdCheckUpdate(context)),
         vscode.commands.registerCommand('ego.showWelcome', () =>
             WelcomeView.show(context, welcomeDeps())
         ),
@@ -355,6 +362,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (await WelcomeView.shouldAutoOpen(context)) {
         WelcomeView.show(context, welcomeDeps());
     }
+
+    // Update notification: ~10 s after activation, at most once per 24 h,
+    // never in offline mode (see updateCheck.ts). Fires after activation ends.
+    context.subscriptions.push(scheduleUpdateCheck(updateDeps(context)));
 }
 
 export function deactivate(): void {
@@ -551,8 +562,24 @@ async function cmdSetupPython(): Promise<void> {
     );
 }
 
-async function cmdSetServer(context: vscode.ExtensionContext): Promise<void> {
-    AssistantPanel.close();
+/** Dependencies of the update check: server URL, version and workspace mode. */
+function updateDeps(context: vscode.ExtensionContext): UpdateCheckDeps {
+    return {
+        context,
+        currentVersion: currentExtensionVersion(context),
+        serverUrl: vscode.workspace
+            .getConfiguration('ego')
+            .get<string>('serverUrl', 'http://localhost:8000'),
+        mode: async () => (await readEgoConfig())?.mode,
+    };
+}
+
+/** «Cogito: Проверить обновления» — reachable from the Command Palette. */
+async function cmdCheckUpdate(context: vscode.ExtensionContext): Promise<void> {
+    await checkForUpdatesManually(updateDeps(context));
+}
+
+async function cmdSetServer(context: vscode.ExtensionContext): Promise<void> {    AssistantPanel.close();
     const url = await vscode.window.showInputBox({
         prompt: 'Адрес сервера',
         value: vscode.workspace.getConfiguration('ego').get('serverUrl', 'http://localhost:8000'),

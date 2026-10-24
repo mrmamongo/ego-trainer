@@ -49,7 +49,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 RUN groupadd --gid 10001 ego \
     && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin ego \
-    && mkdir -p /var/lib/ego /content \
+    && mkdir -p /var/lib/ego /content /var/lib/ego/incoming \
     && chown -R ego:ego /var/lib/ego /content
 
 COPY --from=builder /wheels /wheels

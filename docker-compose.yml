@@ -24,6 +24,9 @@ services:
       # Persist SQLite database across container restarts.
       - ego-data:/var/lib/ego
       - ${EGO_CONTENT_PATH:-./docs/tasks}:/content
+      # Built .vsix packages for `ego-server admin publish-extension --vsix
+      # /var/lib/ego/incoming/cogito-<version>.vsix` (docs/DEPLOYMENT.md).
+      - ${EGO_EXTENSION_INCOMING:-./dist-extension}:/var/lib/ego/incoming:ro
     env_file:
       - path: .env
         required: false
