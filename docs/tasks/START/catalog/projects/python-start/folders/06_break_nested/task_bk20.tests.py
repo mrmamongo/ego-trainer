@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=([4, 8, 3, 2], 10),
@@ -62,5 +62,9 @@ from ego.testing import case
     description='мелкие, лимит двух',
     level="full",
 )
+
+
+@rules(forbid_names=["sum", "max", "min", "sorted"])
+
 def task_bk20_take_skip_too_big(prices, budget):
     ...

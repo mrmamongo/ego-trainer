@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=(5,),
@@ -62,5 +62,16 @@ from ego.testing import case
     description='на единицу больше 1024',
     level='full',
 )
+
+
+@rules(
+    forbid_imports=["math"],
+    forbid_nodes=["Pow"],
+    messages={
+        "Pow": "Оператор ** использовать нельзя: умножай на 2 в цикле while",
+        "math": "Модуль math использовать нельзя: умножай на 2 в цикле while",
+    },
+)
+
 def task_r20_power_of_two_at_least(n):
     ...

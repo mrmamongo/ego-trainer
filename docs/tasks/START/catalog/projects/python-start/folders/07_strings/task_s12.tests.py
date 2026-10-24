@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=("раз два три",),
@@ -41,5 +41,9 @@ from ego.testing import case
     description="пробелы по краям",
     level="full",
 )
+
+
+@rules(forbid_names=["count"])
+
 def task_s12_count_words(text):
     ...

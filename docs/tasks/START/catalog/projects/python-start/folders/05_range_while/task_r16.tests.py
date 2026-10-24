@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=(507,),
@@ -48,5 +48,9 @@ from ego.testing import case
     description='четыре цифры',
     level='full',
 )
+
+
+@rules(forbid_names=["str", "sum"])
+
 def task_r16_digit_sum(n):
     ...

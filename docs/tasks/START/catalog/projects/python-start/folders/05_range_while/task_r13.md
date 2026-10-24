@@ -1,7 +1,7 @@
 ---
 id: R13
 title: "Сколько цифр"
-version: "1.0.0"
+version: "1.1.0"
 level: medium
 tags: [range-while, write, counter]
 breaking: false

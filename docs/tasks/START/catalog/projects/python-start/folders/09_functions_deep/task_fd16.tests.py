@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=([1, 2, 3], 'double'),
@@ -47,6 +47,9 @@ from ego.testing import case
     level="full",
     check_inputs_unchanged=True,
 )
+
+
+@rules(forbid_nodes=["Lambda"])
 
 def task_fd16_apply(nums, rule):
     ...

@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 HELP = (
     'Команды:\n'
@@ -88,6 +88,9 @@ HELP = (
     description='неизвестная команда не меняет сумму',
     level="full",
 )
+
+
+@rules(forbid_names=["sum"])
 
 def task_px02_session(lines):
     ...

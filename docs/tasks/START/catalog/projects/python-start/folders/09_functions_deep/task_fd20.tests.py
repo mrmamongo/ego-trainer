@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=(['кот', 'слон', 'мышь'],),
@@ -48,6 +48,9 @@ from ego.testing import case
     description='одинаковые слова',
     level="full",
 )
+
+
+@rules(forbid_names=["max", "sorted"])
 
 def task_fd20_summary(words):
     ...

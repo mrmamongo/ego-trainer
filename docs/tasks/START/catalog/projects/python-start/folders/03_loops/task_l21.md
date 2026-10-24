@@ -1,7 +1,7 @@
 ---
 id: L21
 title: "Среднее арифметическое"
-version: "1.0.0"
+version: "1.1.0"
 level: easy
 tags: [loops, write, accumulator]
 breaking: false

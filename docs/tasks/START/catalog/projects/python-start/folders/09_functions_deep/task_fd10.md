@@ -1,7 +1,7 @@
 ---
 id: FD10
 title: "Сумма до нуля без минусов"
-version: "1.0.0"
+version: "1.1.0"
 level: medium
 tags: [functions-deep, modify, break-continue]
 breaking: false

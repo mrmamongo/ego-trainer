@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=(7,),
@@ -69,5 +69,15 @@ from ego.testing import case
     description='ещё одно простое',
     level='full',
 )
+
+
+@rules(
+    forbid_imports=["itertools", "math"],
+    messages={
+        "itertools": "Готовые проверки простоты (itertools.isqrt) использовать нельзя: цикл",
+        "math": "Модуль math использовать нельзя: ищи делитель циклом",
+    },
+)
+
 def task_r07_is_prime(n):
     ...

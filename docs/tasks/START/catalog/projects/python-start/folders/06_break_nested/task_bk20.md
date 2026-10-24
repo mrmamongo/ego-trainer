@@ -1,7 +1,7 @@
 ---
 id: BK20
 title: "Пропускаем то, что не влезло"
-version: "1.0.0"
+version: "1.1.0"
 level: medium
 tags: [break-continue, write, continue, accumulator, collector]
 breaking: false

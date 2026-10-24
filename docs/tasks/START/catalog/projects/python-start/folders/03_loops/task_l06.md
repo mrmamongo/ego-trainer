@@ -1,7 +1,7 @@
 ---
 id: L06
 title: "Считает только первое число"
-version: "1.0.0"
+version: "1.1.0"
 level: easy
 tags: [loops, bug, accumulator]
 breaking: false

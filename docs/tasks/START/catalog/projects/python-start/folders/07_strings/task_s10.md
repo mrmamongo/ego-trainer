@@ -1,7 +1,7 @@
 ---
 id: S10
 title: "Палиндром"
-version: "1.0.0"
+version: "1.1.0"
 level: medium
 tags: [strings, write, slices, collector]
 breaking: false

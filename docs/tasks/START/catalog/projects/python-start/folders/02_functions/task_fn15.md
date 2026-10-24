@@ -1,7 +1,7 @@
 ---
 id: FN15
 title: "Большее из трёх"
-version: "1.0.0"
+version: "1.1.0"
 level: easy
 tags: [functions, write, running-best]
 breaking: false

@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=(6,),
@@ -69,6 +69,9 @@ from ego.testing import case
     description='большое число',
     level="full",
 )
+
+
+@rules(forbid_names=["bin", "format", "oct", "hex"])
 
 def task_mp16_to_binary(n):
     ...

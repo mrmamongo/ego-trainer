@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=("кот пёс слон",),
@@ -48,5 +48,9 @@ from ego.testing import case
     description="все одинаковой длины",
     level="full",
 )
+
+
+@rules(forbid_names=["max", "sorted"])
+
 def task_s13_longest_word(text):
     ...

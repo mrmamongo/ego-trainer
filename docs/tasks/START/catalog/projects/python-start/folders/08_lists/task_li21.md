@@ -1,7 +1,7 @@
 ---
 id: LI21
 title: "Слияние двух отсортированных"
-version: "1.0.0"
+version: "1.1.0"
 level: medium
 tags: [lists, write, while, index]
 breaking: false

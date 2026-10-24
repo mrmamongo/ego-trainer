@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 
 @case(
@@ -56,5 +56,9 @@ from ego.testing import case
     description='ноль среди отрицательных',
     level="full",
 )
+
+
+@rules(forbid_names=["max", "min"])
+
 def task_fn15_max3(a, b, c):
     ...

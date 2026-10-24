@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=([1, 2, 1, 3], 1),
@@ -62,6 +62,9 @@ from ego.testing import case
     check_inputs_unchanged=True,
     check_result_isolated=True,
 )
+
+
+@rules(forbid_methods=["remove"])
 
 def task_li07_remove_all(nums, x):
     ...

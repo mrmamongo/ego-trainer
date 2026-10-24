@@ -1,7 +1,7 @@
 ---
 id: S03
 title: "Гласные в тексте"
-version: "1.0.0"
+version: "1.1.0"
 level: easy
 tags: [strings, write, counter]
 breaking: false

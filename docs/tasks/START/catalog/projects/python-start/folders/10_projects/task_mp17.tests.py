@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=(10, 2),
@@ -76,6 +76,9 @@ from ego.testing import case
     description='единица',
     level="full",
 )
+
+
+@rules(forbid_names=["bin", "oct", "hex", "format"])
 
 def task_mp17_to_base(n, base):
     ...

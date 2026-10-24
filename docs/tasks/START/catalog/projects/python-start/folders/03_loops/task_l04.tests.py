@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=(['кот', 'пёс'],),
@@ -41,5 +41,9 @@ from ego.testing import case
     description='три слова',
     level="full",
 )
+
+
+@rules(forbid_names=["sum"])
+
 def task_l04_total_length(words):
     ...

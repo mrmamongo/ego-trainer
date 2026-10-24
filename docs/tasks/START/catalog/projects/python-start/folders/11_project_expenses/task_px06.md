@@ -1,7 +1,7 @@
 ---
 id: PX06
 title: "Отчёт: сначала дорогие и с процентами"
-version: "1.0.0"
+version: "1.1.0"
 level: medium
 tags: [projects, modify, report]
 breaking: false

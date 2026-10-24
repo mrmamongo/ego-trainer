@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=(['слон', 'кот', 'мышь'],),
@@ -48,5 +48,9 @@ from ego.testing import case
     description='короткое в конце',
     level="full",
 )
+
+
+@rules(forbid_names=["min"])
+
 def task_l20_shortest_word(words):
     ...

@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=(507,),
@@ -55,5 +55,9 @@ from ego.testing import case
     description='миллион',
     level='full',
 )
+
+
+@rules(forbid_names=["str", "len"])
+
 def task_r13_count_digits(n):
     ...

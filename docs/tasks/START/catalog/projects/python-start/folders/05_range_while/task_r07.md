@@ -1,7 +1,7 @@
 ---
 id: R07
 title: "Простое число"
-version: "1.0.0"
+version: "1.1.0"
 level: easy
 tags: [range-while, write, flag]
 breaking: false

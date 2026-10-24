@@ -1,7 +1,7 @@
 ---
 id: R16
 title: "Первая цифра пропала"
-version: "1.0.0"
+version: "1.1.0"
 level: medium
 tags: [range-while, bug, accumulator]
 breaking: false

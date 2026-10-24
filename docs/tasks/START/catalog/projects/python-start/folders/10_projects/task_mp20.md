@@ -1,7 +1,7 @@
 ---
 id: MP20
 title: "Конвертер систем счисления"
-version: "1.0.0"
+version: "1.1.0"
 level: medium
 tags: [projects, write, bases]
 breaking: false

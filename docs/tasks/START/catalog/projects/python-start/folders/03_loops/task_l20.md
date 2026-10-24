@@ -1,7 +1,7 @@
 ---
 id: L20
 title: "Самое короткое слово"
-version: "1.0.0"
+version: "1.1.0"
 level: easy
 tags: [loops, write, best]
 breaking: false

@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=([3, 9, 2],),
@@ -48,5 +48,9 @@ from ego.testing import case
     description='максимум в начале',
     level="full",
 )
+
+
+@rules(forbid_names=["max"])
+
 def task_l19_max_value(numbers):
     ...

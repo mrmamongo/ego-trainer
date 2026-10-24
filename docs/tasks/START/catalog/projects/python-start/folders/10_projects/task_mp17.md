@@ -1,7 +1,7 @@
 ---
 id: MP17
 title: "Любое основание от 2 до 16"
-version: "1.0.0"
+version: "1.1.0"
 level: medium
 tags: [projects, write, bases]
 breaking: false

@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=([1, 4], [2, 3, 5]),
@@ -71,6 +71,9 @@ from ego.testing import case
     check_inputs_unchanged=True,
     check_result_isolated=True,
 )
+
+
+@rules(forbid_names=["sorted"], forbid_methods=["sort"])
 
 def task_li21_merge_sorted(a, b):
     ...

@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=("banana", "an", "AN"),
@@ -62,5 +62,12 @@ from ego.testing import case
     description="удаление символа",
     level="full",
 )
+
+
+@rules(
+    forbid_methods=["replace", "split", "join"],
+    messages={"replace": "Метод replace() использовать нельзя: заменяй циклом и срезами"},
+)
+
 def task_s16_replace_all(text, old, new):
     ...

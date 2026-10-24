@@ -1,7 +1,7 @@
 ---
 id: S16
 title: "Заменить без replace"
-version: "1.0.0"
+version: "1.1.0"
 level: medium
 tags: [strings, write, slices, while]
 breaking: false

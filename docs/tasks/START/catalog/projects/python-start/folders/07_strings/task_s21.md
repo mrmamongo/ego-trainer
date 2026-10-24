@@ -1,7 +1,7 @@
 ---
 id: S21
 title: "Каждое слово с заглавной"
-version: "1.0.0"
+version: "1.1.0"
 level: medium
 tags: [strings, write, split, collector]
 breaking: false

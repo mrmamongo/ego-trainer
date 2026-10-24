@@ -1,7 +1,7 @@
 ---
 id: L05
 title: "Сумма равна последнему числу"
-version: "1.0.0"
+version: "1.1.0"
 level: easy
 tags: [loops, bug, accumulator]
 breaking: false

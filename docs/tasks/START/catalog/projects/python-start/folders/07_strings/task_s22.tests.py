@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=("abc123!",),
@@ -48,5 +48,9 @@ from ego.testing import case
     description="только буквы",
     level="full",
 )
+
+
+@rules(forbid_names=["sum"], forbid_methods=["count"])
+
 def task_s22_count_char_types(text):
     ...

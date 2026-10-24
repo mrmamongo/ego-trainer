@@ -1,7 +1,7 @@
 ---
 id: FD20
 title: "Сводка по словам"
-version: "1.0.0"
+version: "1.1.0"
 level: medium
 tags: [functions-deep, write, compose, strings]
 breaking: false

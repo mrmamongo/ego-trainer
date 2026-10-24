@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=(38,),
@@ -69,5 +69,9 @@ from ego.testing import case
     description='493193 -> 29 -> 11 -> 2',
     level='full',
 )
+
+
+@rules(forbid_names=["str", "sum"])
+
 def task_r21_digital_root(n):
     ...

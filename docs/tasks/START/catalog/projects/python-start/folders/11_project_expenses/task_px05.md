@@ -1,7 +1,7 @@
 ---
 id: PX05
 title: "Отмена последнего расхода"
-version: "1.0.0"
+version: "1.1.0"
 level: medium
 tags: [projects, write, undo]
 breaking: false

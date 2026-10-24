@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=([1, 3, 5], 4),
@@ -61,6 +61,13 @@ from ego.testing import case
     level="full",
     check_inputs_unchanged=True,
     check_result_isolated=True,
+)
+
+
+@rules(
+    forbid_names=["sorted"],
+    forbid_methods=["sort", "insert"],
+    messages={"insert": "Метод insert использовать нельзя: позицию ищи сам и склеивай куски"},
 )
 
 def task_li10_insert_sorted(nums, x):

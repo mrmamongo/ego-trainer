@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=(1, 100, 50),
@@ -75,6 +75,18 @@ from ego.testing import case
     expected=-1,
     description='число ниже отрезка',
     level="full",
+)
+
+
+@rules(
+    forbid_names=["min", "max"],
+    forbid_imports=["math"],
+    allow_in=["game_report", "check_guess"],
+    messages={
+        "max": "max использовать нельзя: решай циклом",
+        "min": "min использовать нельзя: решай циклом",
+        "math": "Модуль math использовать нельзя: решай циклом",
+    },
 )
 
 def task_mp05_best_strategy_steps(low, high, secret):

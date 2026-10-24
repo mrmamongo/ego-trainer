@@ -1,7 +1,7 @@
 ---
 id: MP14
 title: "Два новых правила"
-version: "1.0.0"
+version: "1.1.0"
 level: medium
 tags: [projects, modify, password]
 breaking: false

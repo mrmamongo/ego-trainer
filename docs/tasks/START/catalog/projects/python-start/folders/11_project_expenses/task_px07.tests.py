@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 HELP = (
     'Команды:\n'
@@ -135,6 +135,9 @@ HELP = (
     description='отмена возвращает сумму категории назад',
     level="full",
 )
+
+
+@rules(forbid_names=["sum", "sorted", "max"])
 
 def task_px07_session(lines):
     ...

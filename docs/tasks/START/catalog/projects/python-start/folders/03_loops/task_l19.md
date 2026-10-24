@@ -1,7 +1,7 @@
 ---
 id: L19
 title: "Наибольшее число"
-version: "1.0.1"
+version: "1.1.0"
 level: easy
 tags: [loops, write, best]
 breaking: false

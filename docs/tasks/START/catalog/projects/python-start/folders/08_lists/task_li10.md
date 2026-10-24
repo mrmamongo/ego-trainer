@@ -1,7 +1,7 @@
 ---
 id: LI10
 title: "Вставка в отсортированный список"
-version: "1.0.0"
+version: "1.1.0"
 level: medium
 tags: [lists, write, methods, while]
 breaking: false

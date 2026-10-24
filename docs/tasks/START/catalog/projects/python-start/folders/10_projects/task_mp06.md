@@ -1,7 +1,7 @@
 ---
 id: MP06
 title: "Сдвиг одной буквы"
-version: "1.0.0"
+version: "1.1.0"
 level: easy
 tags: [projects, write, caesar]
 breaking: false

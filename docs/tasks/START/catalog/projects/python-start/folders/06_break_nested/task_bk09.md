@@ -1,7 +1,7 @@
 ---
 id: BK09
 title: "Команды до стоп-слова"
-version: "1.0.0"
+version: "1.1.0"
 level: easy
 tags: [break-continue, write, break, counter]
 breaking: false

@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=('Привет, привет! Мир.',),
@@ -61,6 +61,12 @@ from ego.testing import case
     expected=2,
     description='английские слова',
     level="full",
+)
+
+
+@rules(
+    forbid_names=["set"],
+    messages={"set": "Множества использовать нельзя: храни увиденные слова в списке"},
 )
 
 def task_fd13_count_unique_words(text):

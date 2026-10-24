@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=("1234567812345678",),
@@ -41,5 +41,9 @@ from ego.testing import case
     description="пустая строка",
     level="full",
 )
+
+
+@rules(forbid_methods=["replace"])
+
 def task_s14_mask_card(number):
     ...

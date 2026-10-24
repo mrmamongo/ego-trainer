@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=('a', 3),
@@ -83,6 +83,9 @@ from ego.testing import case
     description='знак',
     level="full",
 )
+
+
+@rules(forbid_names=["ord", "chr"], forbid_methods=["translate", "maketrans"])
 
 def task_mp06_shift_letter(ch, k):
     ...

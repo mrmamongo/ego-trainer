@@ -1,7 +1,7 @@
 ---
 id: MP09
 title: "Добавим русский алфавит"
-version: "1.0.0"
+version: "1.1.0"
 level: medium
 tags: [projects, modify, caesar]
 breaking: false

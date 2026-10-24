@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=("Привет",),
@@ -55,5 +55,9 @@ from ego.testing import case
     description="цифры и знаки",
     level="full",
 )
+
+
+@rules(forbid_methods=["count"])
+
 def task_s03_count_vowels(text):
     ...

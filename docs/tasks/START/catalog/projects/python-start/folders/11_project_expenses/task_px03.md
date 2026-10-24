@@ -1,7 +1,7 @@
 ---
 id: PX03
 title: "Проверка суммы и категории"
-version: "1.0.0"
+version: "1.1.0"
 level: medium
 tags: [projects, modify, parsing]
 breaking: false

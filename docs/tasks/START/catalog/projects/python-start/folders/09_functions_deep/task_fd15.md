@@ -1,7 +1,7 @@
 ---
 id: FD15
 title: "Статистика одним вызовом"
-version: "1.0.0"
+version: "1.1.0"
 level: medium
 tags: [functions-deep, write, return-many, compose]
 breaking: false

@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=([60, 70, 80], 60),
@@ -48,5 +48,9 @@ from ego.testing import case
     description='на единицу ниже порога',
     level="full",
 )
+
+
+@rules(forbid_names=["all", "any"])
+
 def task_l16_all_passed(scores, threshold):
     ...

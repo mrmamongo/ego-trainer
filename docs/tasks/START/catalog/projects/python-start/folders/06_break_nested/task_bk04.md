@@ -1,7 +1,7 @@
 ---
 id: BK04
 title: "Сумма останавливается на минусе"
-version: "1.0.0"
+version: "1.1.0"
 level: easy
 tags: [break-continue, bug, continue]
 breaking: false

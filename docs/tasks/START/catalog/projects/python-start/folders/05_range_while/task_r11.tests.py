@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=(4,),
@@ -41,5 +41,12 @@ from ego.testing import case
     description='одиннадцать степеней',
     level='full',
 )
+
+
+@rules(
+    forbid_nodes=["Pow"],
+    messages={"Pow": "Оператор ** использовать нельзя: умножай предыдущую степень на 2"},
+)
+
 def task_r11_powers_of_two(k):
     ...

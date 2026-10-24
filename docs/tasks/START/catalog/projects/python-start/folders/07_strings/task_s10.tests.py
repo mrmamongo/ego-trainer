@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=("level",),
@@ -62,5 +62,9 @@ from ego.testing import case
     description="фраза, которая не читается наоборот",
     level="full",
 )
+
+
+@rules(forbid_methods=["replace"])
+
 def task_s10_is_palindrome(text):
     ...
