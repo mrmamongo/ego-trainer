@@ -1,0 +1,6 @@
+id: 06_break_nested
+code: BK
+name: "Управление циклом: break, continue, вложенные циклы"
+description: "Остановить цикл (break), пропустить элемент (continue), else у цикла, вложенные циклы и обход с конца. Лесенка от «стоп» к «пропусти и смотри дальше»."
+order: 6
+level: medium
