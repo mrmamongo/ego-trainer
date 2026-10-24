@@ -1,0 +1,14 @@
+{
+  "name": "cogito-student-preview",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "test:ui": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.1",
+    "vite": "^7.1.12"
+  }
+}
