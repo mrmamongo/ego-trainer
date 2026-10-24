@@ -78,3 +78,49 @@ export function mergeManifestEntries(
         a.id.localeCompare(b.id)
     );
 }
+
+/** Server task fields the planner needs (`TaskMeta` is a superset). */
+export type PullTaskMeta = {
+    id: string;
+    version: string;
+    content_hash: string;
+};
+
+export type PullPlan<T extends PullTaskMeta> = {
+    /** New or changed tasks — download via GET /tasks/{id}. */
+    fetch: T[];
+    /** Manifest matches server and local .md/.py exist — leave untouched. */
+    upToDate: T[];
+};
+
+/**
+ * Decide which server tasks need a download. A task is up to date when the
+ * manifest has an entry with the same id (case-insensitive), the same
+ * `version` and `content_hash`, and its `.md` and `.py` files still exist.
+ * Everything else (new, changed, missing files, no manifest entry) is fetched.
+ *
+ * `localFilesExist` receives the manifest entry (for its `md_path`) and the
+ * server task; it returns whether both task files are on disk.
+ */
+export function planPull<T extends PullTaskMeta>(
+    serverTasks: readonly T[],
+    manifestEntries: readonly ManifestTaskEntry[],
+    localFilesExist: (entry: ManifestTaskEntry, task: T) => boolean
+): PullPlan<T> {
+    const byId = new Map<string, ManifestTaskEntry>();
+    for (const entry of manifestEntries) {
+        byId.set(entry.id.toLowerCase(), entry);
+    }
+
+    const plan: PullPlan<T> = { fetch: [], upToDate: [] };
+    for (const task of serverTasks) {
+        const entry = byId.get(task.id.toLowerCase());
+        const current =
+            entry !== undefined &&
+            entry.version === task.version &&
+            entry.content_hash === task.content_hash &&
+            localFilesExist(entry, task);
+        (current ? plan.upToDate : plan.fetch).push(task);
+    }
+    return plan;
+}

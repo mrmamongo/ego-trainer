@@ -64,6 +64,11 @@
         "category": "Ego"
       },
       {
+        "command": "ego.pullAllForce",
+        "title": "Ego: Перескачать все задачи",
+        "category": "Ego"
+      },
+      {
         "command": "ego.pullTask",
         "title": "Ego: Pull Task",
         "category": "Ego"

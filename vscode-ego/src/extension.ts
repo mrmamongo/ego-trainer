@@ -178,6 +178,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ),
         vscode.commands.registerCommand('ego.pull', () => withReady(() => cmdPull())),
         vscode.commands.registerCommand('ego.pullAll', () => withReady(() => cmdPullAll())),
+        vscode.commands.registerCommand('ego.pullAllForce', () => withReady(() => cmdPullAllForce())),
         vscode.commands.registerCommand('ego.pullTask', (arg?: TaskMeta | TaskItem) =>
             withReady(async () => {
                 const task = resolveTaskMeta(arg);
@@ -186,7 +187,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     return;
                 }
                 try {
-                    await pullTasksToWorkspace(api, [task]);
+                    // Single-task pull always fetches, bypassing the incremental planner.
+                    await pullTasksToWorkspace(api, [task], { force: true });
                     treeProvider.refresh();
                     if (DashboardView.isOpen()) await DashboardView.refresh();
                 } catch (e) {
@@ -699,6 +701,23 @@ async function cmdPullAll(): Promise<void> {
     try {
         const tasks = await api.listTasks();
         await pullTasksToWorkspace(api, tasks);
+        treeProvider.refresh();
+    } catch (e) {
+        vscode.window.showErrorMessage(`Ego: Pull failed — ${(e as Error).message}`);
+    }
+}
+
+/** Re-download every task regardless of manifest freshness (ego.pullAllForce). */
+async function cmdPullAllForce(): Promise<void> {
+    const confirm = await vscode.window.showWarningMessage(
+        'Ego: Перескачать все задачи заново? Актуальные задачи тоже будут загружены; изменённые локально файлы сохранятся как .server.py или резервные копии.',
+        { modal: true },
+        'Перескачать'
+    );
+    if (confirm !== 'Перескачать') return;
+    try {
+        const tasks = await api.listTasks();
+        await pullTasksToWorkspace(api, tasks, { force: true });
         treeProvider.refresh();
     } catch (e) {
         vscode.window.showErrorMessage(`Ego: Pull failed — ${(e as Error).message}`);
