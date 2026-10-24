@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=(['go', 'go', 'stop', 'go'],),
@@ -48,5 +48,9 @@ from ego.testing import case
     description='стоп в конце',
     level="full",
 )
+
+
+@rules(forbid_names=["len"])
+
 def task_bk09_count_commands(commands):
     ...

@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=('abc', 1),
@@ -76,6 +76,9 @@ from ego.testing import case
     description='сдвиг больше круга',
     level="full",
 )
+
+
+@rules(forbid_names=["ord", "chr"], forbid_methods=["translate", "maketrans"])
 
 def task_mp07_encode(text, k):
     ...

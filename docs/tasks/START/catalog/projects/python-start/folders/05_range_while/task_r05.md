@@ -1,7 +1,7 @@
 ---
 id: R05
 title: "Факториал"
-version: "1.0.0"
+version: "1.1.0"
 level: easy
 tags: [range-while, write, accumulator]
 breaking: false

@@ -1,7 +1,7 @@
 ---
 id: BK06
 title: "Сумма положительных"
-version: "1.0.0"
+version: "1.1.0"
 level: easy
 tags: [break-continue, write, continue, accumulator]
 breaking: false

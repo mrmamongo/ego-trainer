@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=(5, [3, 8, 5, 9]),
@@ -55,6 +55,9 @@ from ego.testing import case
     description='десятая попытка',
     level="full",
 )
+
+
+@rules(forbid_names=["enumerate"])
 
 def task_mp02_count_tries(secret, guesses):
     ...

@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=(3,),
@@ -48,5 +48,16 @@ from ego.testing import case
     description='2!',
     level='full',
 )
+
+
+@rules(
+    forbid_names=["factorial"],
+    forbid_imports=["math"],
+    messages={
+        "factorial": "math.factorial использовать нельзя: только цикл for и range",
+        "math": "Модуль math использовать нельзя: факториал считай циклом for",
+    },
+)
+
 def task_r05_factorial(n):
     ...

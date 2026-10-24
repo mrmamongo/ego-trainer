@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=(386,),
@@ -41,5 +41,15 @@ from ego.testing import case
     description='ноль в середине',
     level="full",
 )
+
+
+@rules(
+    forbid_names=["str", "round"],
+    messages={
+        "str": "Тексты использовать нельзя: цифры доставай через // и %",
+        "round": "round использовать нельзя: сумма цифр — уже целое число",
+    },
+)
+
 def task_n03_digit_sum3(n):
     ...

@@ -1,7 +1,7 @@
 ---
 id: FD16
 title: "Применить правило"
-version: "1.0.0"
+version: "1.1.0"
 level: medium
 tags: [functions-deep, write, compose, collector, pure]
 breaking: false

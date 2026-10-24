@@ -1,7 +1,7 @@
 ---
 id: R11
 title: "Степени двойки"
-version: "1.0.0"
+version: "1.1.0"
 level: easy
 tags: [range-while, write, collector]
 breaking: false

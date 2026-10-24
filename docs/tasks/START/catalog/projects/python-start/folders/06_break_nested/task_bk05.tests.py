@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=([3, 4, 0, 5],),
@@ -48,5 +48,9 @@ from ego.testing import case
     description='только ноль',
     level="full",
 )
+
+
+@rules(forbid_names=["sum"])
+
 def task_bk05_sum_until_zero(numbers):
     ...

@@ -1,7 +1,7 @@
 ---
 id: MP19
 title: "Отрицательные числа"
-version: "1.0.0"
+version: "1.1.0"
 level: medium
 tags: [projects, modify, bases]
 breaking: false

@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 HELP = (
     'Команды:\n'
@@ -347,6 +347,9 @@ HELP = (
     description='отчёт пересчитывается после каждой команды',
     level="full",
 )
+
+
+@rules(forbid_names=["sum", "sorted", "max", "count", "dict"], forbid_methods=["sort"])
 
 def task_px08_session(lines):
     ...

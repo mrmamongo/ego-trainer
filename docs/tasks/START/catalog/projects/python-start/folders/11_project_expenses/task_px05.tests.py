@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 HELP = (
     'Команды:\n'
@@ -101,6 +101,12 @@ HELP = (
     expected=['Сумма должна быть целым числом больше нуля', 'Нечего отменять'],
     description='ошибочный add нечего отменять',
     level="full",
+)
+
+
+@rules(
+    forbid_methods=["remove"],
+    messages={"remove": "Метод remove() использовать нельзя: используй pop() без индекса"},
 )
 
 def task_px05_session(lines):

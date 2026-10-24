@@ -1,7 +1,7 @@
 ---
 id: FD13
 title: "Слова без повторов"
-version: "1.0.0"
+version: "1.1.0"
 level: medium
 tags: [functions-deep, write, compose, strings]
 breaking: false

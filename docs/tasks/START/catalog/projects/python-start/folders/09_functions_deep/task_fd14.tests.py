@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=([3, 1, 4, 1, 5],),
@@ -41,6 +41,9 @@ from ego.testing import case
     description='список по убыванию',
     level="full",
 )
+
+
+@rules(forbid_names=["min", "max"])
 
 def task_fd14_min_max(nums):
     ...

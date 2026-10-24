@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 
 @case(
@@ -49,5 +49,12 @@ from ego.testing import case
     description='ровно одна упаковка',
     level="full",
 )
+
+
+@rules(
+    forbid_imports=["math"],
+    messages={"math": "Модуль math использовать нельзя: решай через //, % и if"},
+)
+
 def task_fn14_packs(items, per_pack):
     ...

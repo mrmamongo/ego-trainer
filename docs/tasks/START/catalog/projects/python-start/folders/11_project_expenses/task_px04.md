@@ -1,7 +1,7 @@
 ---
 id: PX04
 title: "Отчёт по категориям"
-version: "1.0.0"
+version: "1.1.0"
 level: medium
 tags: [projects, write, report]
 breaking: false

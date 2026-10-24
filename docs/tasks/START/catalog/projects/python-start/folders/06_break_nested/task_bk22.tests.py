@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=([5, 4, 3, 2], 10),
@@ -62,5 +62,9 @@ from ego.testing import case
     description='влезли все',
     level="full",
 )
+
+
+@rules(forbid_names=["sum", "max", "min", "sorted"])
+
 def task_bk22_take_with_required_first(prices, budget):
     ...

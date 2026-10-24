@@ -1,7 +1,7 @@
 ---
 id: BK05
 title: "Сумма до нуля"
-version: "1.0.0"
+version: "1.1.0"
 level: easy
 tags: [break-continue, write, break, accumulator]
 breaking: false

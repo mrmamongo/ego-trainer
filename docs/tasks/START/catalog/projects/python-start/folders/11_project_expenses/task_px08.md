@@ -1,7 +1,7 @@
 ---
 id: PX08
 title: "Целиком: учёт расходов"
-version: "1.0.0"
+version: "1.1.0"
 level: medium
 tags: [projects, write]
 breaking: false

@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=(12, 18),
@@ -69,5 +69,12 @@ from ego.testing import case
     description='большие числа',
     level='full',
 )
+
+
+@rules(
+    forbid_imports=["math"],
+    messages={"math": "Модуль math использовать нельзя: нужен цикл while по Евклиду"},
+)
+
 def task_r22_gcd(a, b):
     ...

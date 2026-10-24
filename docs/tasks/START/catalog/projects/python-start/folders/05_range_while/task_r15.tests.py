@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=(123,),
@@ -55,5 +55,9 @@ from ego.testing import case
     description='палиндром',
     level='full',
 )
+
+
+@rules(forbid_names=["str", "int"], forbid_nodes=["Subscript"])
+
 def task_r15_reverse_number(n):
     ...

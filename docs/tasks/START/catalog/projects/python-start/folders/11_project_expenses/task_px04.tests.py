@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 HELP = (
     'Команды:\n'
@@ -104,6 +104,9 @@ HELP = (
     description='повторный report даёт тот же отчёт',
     level="full",
 )
+
+
+@rules(forbid_names=["sum", "sorted"], forbid_methods=["count"])
 
 def task_px04_session(lines):
     ...

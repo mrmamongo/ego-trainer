@@ -1,7 +1,7 @@
 ---
 id: MP16
 title: "Двоичная запись числа"
-version: "1.0.0"
+version: "1.1.0"
 level: easy
 tags: [projects, write, bases]
 breaking: false

@@ -1,7 +1,7 @@
 ---
 id: LI07
 title: "Убрать все вхождения"
-version: "1.0.0"
+version: "1.1.0"
 level: medium
 tags: [lists, write, mutable, collector]
 breaking: false

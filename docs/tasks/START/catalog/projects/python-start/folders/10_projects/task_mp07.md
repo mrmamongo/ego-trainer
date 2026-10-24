@@ -1,7 +1,7 @@
 ---
 id: MP07
 title: "Шифруем целое сообщение"
-version: "1.0.0"
+version: "1.1.0"
 level: medium
 tags: [projects, write, caesar]
 breaking: false

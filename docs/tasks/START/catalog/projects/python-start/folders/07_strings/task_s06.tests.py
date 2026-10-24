@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=("привет",),
@@ -48,5 +48,9 @@ from ego.testing import case
     description="уже с заглавной",
     level="full",
 )
+
+
+@rules(forbid_methods=["capitalize", "title"])
+
 def task_s06_upper_first(text):
     ...

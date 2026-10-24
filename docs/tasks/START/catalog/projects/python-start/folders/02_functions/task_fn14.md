@@ -1,7 +1,7 @@
 ---
 id: FN14
 title: "Сколько упаковок купить"
-version: "1.0.0"
+version: "1.1.0"
 level: easy
 tags: [functions, write, division]
 breaking: false

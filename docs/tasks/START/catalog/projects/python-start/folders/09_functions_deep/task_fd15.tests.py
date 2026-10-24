@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=([2, 4, 6],),
@@ -47,6 +47,9 @@ from ego.testing import case
     level="full",
     comparison="value",
 )
+
+
+@rules(forbid_names=["len", "sum"])
 
 def task_fd15_stats(nums):
     ...

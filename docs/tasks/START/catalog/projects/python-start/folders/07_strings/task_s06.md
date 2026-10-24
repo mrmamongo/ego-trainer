@@ -1,7 +1,7 @@
 ---
 id: S06
 title: "Заглавная в начале: ошибка"
-version: "1.0.0"
+version: "1.1.0"
 level: easy
 tags: [strings, bug, immutable]
 breaking: false

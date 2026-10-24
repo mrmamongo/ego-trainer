@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=('привет', 1),
@@ -83,6 +83,9 @@ from ego.testing import case
     description='латиница после правки',
     level="full",
 )
+
+
+@rules(forbid_names=["ord", "chr"], forbid_methods=["translate", "maketrans"])
 
 def task_mp09_encode(text, k):
     ...

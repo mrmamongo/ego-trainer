@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=([3, 1, 3, 2, 1],),
@@ -61,6 +61,12 @@ from ego.testing import case
     level="full",
     check_inputs_unchanged=True,
     check_result_isolated=True,
+)
+
+
+@rules(
+    forbid_names=["set", "dict"],
+    messages={"set": "Множества и словари использовать нельзя: решай сборщиком и проверкой in"},
 )
 
 def task_li16_unique_in_order(nums):

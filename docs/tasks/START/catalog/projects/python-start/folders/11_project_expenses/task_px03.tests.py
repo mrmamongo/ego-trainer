@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 HELP = (
     'Команды:\n'
@@ -92,6 +92,12 @@ HELP = (
     expected=['Сумма должна быть целым числом больше нуля', 'Записал: 50 ₽ — кафе', 'Всего: 50 ₽'],
     description='после ошибки можно записать правильный расход',
     level="full",
+)
+
+
+@rules(
+    forbid_nodes=["Try"],
+    messages={"Try": "try/except использовать нельзя: проверяй строку через isdigit()"},
 )
 
 def task_px03_session(lines):

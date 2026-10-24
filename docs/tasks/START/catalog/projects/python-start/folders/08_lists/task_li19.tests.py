@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=([[1, 2], [3, 4]],),
@@ -62,6 +62,9 @@ from ego.testing import case
     check_inputs_unchanged=True,
     check_result_isolated=True,
 )
+
+
+@rules(forbid_names=["sum"])
 
 def task_li19_row_sums(matrix):
     ...

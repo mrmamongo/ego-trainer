@@ -1,7 +1,7 @@
 ---
 id: BK22
 title: "Первая цена обязательна"
-version: "1.0.0"
+version: "1.1.0"
 level: medium
 tags: [break-continue, write, continue, reversed, collector]
 breaking: false

@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=([1, 2, 3],),
@@ -55,5 +55,9 @@ from ego.testing import case
     description='дробное среднее двух чисел',
     level="full",
 )
+
+
+@rules(forbid_names=["sum", "len"])
+
 def task_l21_average(numbers):
     ...

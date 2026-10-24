@@ -1,7 +1,7 @@
 ---
 id: R04
 title: "Сумма от 1 до n"
-version: "1.0.0"
+version: "1.1.0"
 level: easy
 tags: [range-while, write, accumulator]
 breaking: false

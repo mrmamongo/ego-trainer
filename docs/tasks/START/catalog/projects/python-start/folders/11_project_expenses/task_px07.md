@@ -1,7 +1,7 @@
 ---
 id: PX07
 title: "Лимит на категорию"
-version: "1.0.0"
+version: "1.1.0"
 level: medium
 tags: [projects, write, limit]
 breaking: false

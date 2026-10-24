@@ -1,4 +1,4 @@
-from ego.testing import case
+from ego.testing import case, rules
 
 @case(
     args=('Abcdefg1!',),
@@ -83,6 +83,9 @@ from ego.testing import case
     description='собака как спецсимвол',
     level="full",
 )
+
+
+@rules(forbid_names=["any", "all"])
 
 def task_mp14_find_problems(pw):
     ...
