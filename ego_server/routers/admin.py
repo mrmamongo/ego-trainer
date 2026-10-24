@@ -22,6 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from ego.content_repo import DiscoveredTask, discover_repo
 from ego_server import config
+from ego_server.analytics import analytics_snapshot
 from ego_server.catalog_visibility import ACTIVE_TASK_FILTER
 from ego_server.auth import generate_user_id, hash_password
 from ego_server.authoring import (
@@ -248,6 +249,17 @@ async def get_sync_status(db: DbDep) -> SyncLogRow | None:
     if row is None:
         return None
     return SyncLogRow(**dict(row))
+
+
+@router.get(
+    "/analytics",
+    dependencies=[Depends(require_role("mentor", "admin"))],
+)
+async def get_analytics(db: DbDep, days: int = 30) -> dict:
+    """Daily privacy-preserving traffic counters plus existing learning activity."""
+    if days < 1 or days > 365:
+        raise HTTPException(status_code=422, detail="days must be between 1 and 365")
+    return analytics_snapshot(db, days)
 
 
 @router.get(

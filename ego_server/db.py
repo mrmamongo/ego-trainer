@@ -65,6 +65,7 @@ def _migrate_add_columns(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE oauth_flows ADD COLUMN callback_uri TEXT")
 
     _migrate_add_lessons_table(conn)
+    _migrate_add_analytics_table(conn)
 
 
 def _migrate_add_lessons_table(conn: sqlite3.Connection) -> None:
@@ -91,6 +92,22 @@ def _migrate_add_lessons_table(conn: sqlite3.Connection) -> None:
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_lessons_project ON lessons(project_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_lessons_folder ON lessons(folder_id)")
+
+
+def _migrate_add_analytics_table(conn: sqlite3.Connection) -> None:
+    """Add daily, privacy-preserving counters without changing existing tables."""
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS analytics_daily (
+          day       TEXT NOT NULL,
+          metric    TEXT NOT NULL,
+          key       TEXT NOT NULL DEFAULT '',
+          count     INTEGER NOT NULL DEFAULT 0,
+          PRIMARY KEY(day, metric, key)
+        )"""
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_analytics_metric_day ON analytics_daily(metric, day)"
+    )
 
 
 def init_db() -> None:

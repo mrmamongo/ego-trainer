@@ -1,0 +1,6 @@
+{
+  "name": "Cogito",
+  "description": "Курс Python с автопроверкой прямо в VS Code — от первой переменной до продуктовых задач.",
+  "mark": "<img src=\"/static/branding/cogito-mark.png\" alt=\"\" width=\"64\" height=\"64\">",
+  "logo_url": "/static/branding/cogito-logo.png"
+}

@@ -201,8 +201,31 @@ export async function deleteUser(userId: string): Promise<void> {
 
 // === Overview & Catalog ===
 
+export interface AnalyticsDTO {
+	days: number;
+	start_day: string;
+	end_day: string;
+	daily: Array<{ day: string; metric: string; key: string; count: number }>;
+	totals: {
+		landing_views: number;
+		student_views: number;
+		extension_downloads: number;
+		active_installations_today: number;
+	};
+	learning: {
+		active_students_today: number;
+		active_students_week: number;
+		tasks_passed: number;
+		new_students: number;
+	};
+}
+
 export async function getOverview(): Promise<OverviewDTO> {
 	return request<OverviewDTO>('GET', '/admin/overview');
+}
+
+export async function getAnalytics(days = 30): Promise<AnalyticsDTO> {
+	return request<AnalyticsDTO>('GET', `/admin/analytics?days=${days}`);
 }
 
 export async function getCatalog(q?: string): Promise<CatalogDTO> {

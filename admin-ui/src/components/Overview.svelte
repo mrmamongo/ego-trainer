@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { getOverview, type OverviewDTO, type SyncLogRow } from '../api';
+	import { getAnalytics, getOverview, type AnalyticsDTO, type OverviewDTO, type SyncLogRow } from '../api';
 
 	let overview = $state<OverviewDTO | null>(null);
+	let analytics = $state<AnalyticsDTO | null>(null);
 	let loading = $state(true);
 	let error = $state('');
 
@@ -10,7 +11,7 @@
 		loading = true;
 		error = '';
 		try {
-			overview = await getOverview();
+			[overview, analytics] = await Promise.all([getOverview(), getAnalytics(30)]);
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
@@ -91,6 +92,23 @@
 			</div>
 		</div>
 
+		{#if analytics}
+			<div class="analytics-block">
+				<h3>Analytics · last {analytics.days} days</h3>
+				<div class="grid analytics-grid">
+					<div class="card"><span class="card-label">Landing views</span><span class="card-value">{analytics.totals.landing_views}</span></div>
+					<div class="card"><span class="card-label">Student views</span><span class="card-value">{analytics.totals.student_views}</span></div>
+					<div class="card"><span class="card-label">VSIX downloads</span><span class="card-value">{analytics.totals.extension_downloads}</span></div>
+					<div class="card"><span class="card-label">Live installs today</span><span class="card-value">{analytics.totals.active_installations_today}</span></div>
+					<div class="card"><span class="card-label">Active students today</span><span class="card-value">{analytics.learning.active_students_today}</span></div>
+					<div class="card"><span class="card-label">Active students · 7 days</span><span class="card-value">{analytics.learning.active_students_week}</span></div>
+					<div class="card"><span class="card-label">Tasks passed</span><span class="card-value">{analytics.learning.tasks_passed}</span></div>
+					<div class="card"><span class="card-label">New students</span><span class="card-value">{analytics.learning.new_students}</span></div>
+				</div>
+				<p class="analytics-note">Daily aggregates only. No cookies, IP addresses or full user agents are stored.</p>
+			</div>
+		{/if}
+
 		<div class="sync-block">
 			<h3>Latest sync</h3>
 			<dl>
@@ -131,6 +149,9 @@
 	.status-ok { color: #22c55e; }
 	.status-err { color: #f87171; }
 
+	.analytics-block { margin-top: 26px; }
+	.analytics-grid { grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); }
+	.analytics-note { margin: 10px 0 0; color: #858585; font-size: 0.72rem; }
 	.sync-block { margin-top: 8px; }
 	dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 0; }
 	dl div { display: contents; }

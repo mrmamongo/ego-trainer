@@ -58,13 +58,16 @@ class UpdateError extends Error {
     }
 }
 
-async function fetchLatest(serverUrl: string): Promise<LatestRelease> {
+async function fetchLatest(serverUrl: string, currentVersion: string): Promise<LatestRelease> {
     const base = normalizedBaseUrl(serverUrl);
     if (!base) throw new UpdateError('не указан адрес сервера Cogito (настройка ego.serverUrl).');
     let response: Response;
     try {
         response = await fetch(`${base}${LATEST_PATH}`, {
-            headers: { Accept: 'application/json' },
+            headers: {
+                Accept: 'application/json',
+                'X-Cogito-Extension-Version': currentVersion,
+            },
             signal: AbortSignal.timeout(10_000),
         });
     } catch (error) {
@@ -102,7 +105,7 @@ async function checkLatest(
     quiet: boolean
 ): Promise<LatestRelease | null> {
     try {
-        return await fetchLatest(deps.serverUrl);
+        return await fetchLatest(deps.serverUrl, deps.currentVersion);
     } catch (error) {
         const message = (error as Error).message;
         deps.log?.(`update check failed: ${message}`);

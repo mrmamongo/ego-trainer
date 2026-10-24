@@ -17,11 +17,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from ego_server import config
+from ego_server.analytics import record_event
+from ego_server.deps import DbDep
 from ego_server.extension_dist import (
     DOWNLOAD_PATH,
     ExtensionPublishError,
@@ -83,9 +85,12 @@ def _current_release_file():
 
 
 @router.get("/latest", response_model=ExtensionLatestDTO)
-async def extension_latest() -> ExtensionLatestDTO:
+async def extension_latest(request: Request, db: DbDep) -> ExtensionLatestDTO:
     """Metadata of the newest published extension build."""
     release, _path = _current_release_file()
+    installed_version = request.headers.get("x-cogito-extension-version", "")
+    if installed_version.strip():
+        record_event(db, request, "extension_active", installed_version)
     return ExtensionLatestDTO(
         version=release.version,
         sha256=release.sha256,
@@ -98,7 +103,7 @@ async def extension_latest() -> ExtensionLatestDTO:
 
 
 @router.get("/download", response_class=FileResponse)
-async def extension_download() -> FileResponse:
+async def extension_download(request: Request, db: DbDep) -> FileResponse:
     """Serve the current ``cogito-<version>.vsix`` (never cached)."""
     release, path = _current_release_file()
     if not path.is_file():
@@ -106,6 +111,7 @@ async def extension_download() -> FileResponse:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"The published extension file {release.file} is missing on the server",
         )
+    record_event(db, request, "extension_download", release.version)
     return FileResponse(
         path,
         media_type="application/octet-stream",

@@ -3,17 +3,20 @@
 from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from ego_server import __version__
+from ego_server.analytics import record_event
+from ego_server.branding import render_landing
 from ego_server.config import settings, validate_runtime_settings
 from ego_server.db import init_db
+from ego_server.deps import DbDep
 from ego_server.routers import ai as ai_router
 from ego_server.routers import admin as admin_router
 from ego_server.routers import (
@@ -93,18 +96,26 @@ async def health() -> dict:
     return {"status": "ok", "version": __version__}
 
 
-# === Admin panel (static HTML + JS) ===
+# === Public landing, student cabinet and mentor panel ===
 
 
 @app.get("/", include_in_schema=False)
-async def admin_panel_root() -> FileResponse:
-    """Serve the mentor admin panel at the site root."""
+async def landing_page(request: Request, db: DbDep) -> HTMLResponse:
+    """Serve the public landing; the mentor panel lives outside ForwardAuth paths."""
+    record_event(db, request, "landing_view")
+    return HTMLResponse(render_landing(), headers={"Cache-Control": "no-store"})
+
+
+@app.get("/panel", include_in_schema=False)
+@app.get("/panel/", include_in_schema=False)
+async def admin_panel() -> FileResponse:
     return FileResponse(_STATIC_DIR / "admin.html", headers={"Cache-Control": "no-store"})
 
 
 @app.get("/student", include_in_schema=False)
 @app.get("/student/", include_in_schema=False)
-async def student_panel() -> FileResponse:
+async def student_panel(request: Request, db: DbDep) -> FileResponse:
+    record_event(db, request, "student_view")
     return FileResponse(_STATIC_DIR / "student.html", headers={"Cache-Control": "no-store"})
 
 
@@ -137,8 +148,9 @@ async def ide_room_deeplink(room_id: str) -> FileResponse:
 
 
 @app.get("/student/tasks/{task_id:path}", include_in_schema=False)
-async def student_task_page(task_id: str) -> FileResponse:
+async def student_task_page(task_id: str, request: Request, db: DbDep) -> FileResponse:
     """Serve bookmarkable task pages; task data keeps its authenticated API boundary."""
+    record_event(db, request, "student_view")
     return FileResponse(_STATIC_DIR / "student.html", headers={"Cache-Control": "no-store"})
 
 

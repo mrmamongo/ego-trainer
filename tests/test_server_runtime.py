@@ -41,15 +41,19 @@ def test_production_accepts_explicit_runtime_settings() -> None:
     )
 
 
-def test_admin_ui_is_only_at_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_admin_ui_at_panel_and_landing_at_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("ego_server.config.settings.db_path", tmp_path / "runtime.db")
     from ego_server.main import app
 
     with TestClient(app, base_url="http://testserver") as client:
         root = client.get("/")
         assert root.status_code == 200
-        assert "Cogito — Панель управления" in root.text
-        assert "/static/admin/bundle.js" in root.text
+        assert "Твой первый код" in root.text
+        assert 'href="/panel"' in root.text
+        panel = client.get("/panel")
+        assert panel.status_code == 200
+        assert "Cogito — Панель управления" in panel.text
+        assert "/static/admin/bundle.js" in panel.text
 
         assert client.get("/admin", follow_redirects=False).status_code == 404
         student = client.get("/student")
