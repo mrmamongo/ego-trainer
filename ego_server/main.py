@@ -96,7 +96,7 @@ async def health() -> dict:
 @app.get("/", include_in_schema=False)
 async def admin_panel_root() -> FileResponse:
     """Serve the mentor admin panel at the site root."""
-    return FileResponse(_STATIC_DIR / "admin.html")
+    return FileResponse(_STATIC_DIR / "admin.html", headers={"Cache-Control": "no-store"})
 
 
 @app.get("/student", include_in_schema=False)
