@@ -270,3 +270,30 @@ database; use it only when intentionally resetting the pilot.
 This setup is a private pilot, not a production-readiness claim. Hardened
 subprocess isolation is still required before public launch (`ego-trainer-41s`)
 and remote content-repository sync/cron remain open (`ego-trainer-8di.2`).
+
+## Реестр образов и откат (с 2026-10-24)
+
+Образы Cogito хранятся в реестре Forgejo `git.born-in-july.ru/mrmamongo/cogito`
+(Docker на сервере залогинен в нём токеном с правами на пакеты). На сервере держится
+только текущий образ, предыдущие удаляются после успешной выкатки.
+
+Каждая выкатка после переключения:
+
+```bash
+R=git.born-in-july.ru/mrmamongo/cogito
+docker tag ego-trainer:<релиз> $R:<релиз> && docker push $R:<релиз>
+```
+
+Тег git-релиза (например `v2026.10.24`) ставится на тот же образ: `$R:v2026.10.24`.
+
+Откат на предыдущий релиз:
+
+```bash
+R=git.born-in-july.ru/mrmamongo/cogito
+docker pull $R:<прошлый релиз> && docker tag $R:<прошлый релиз> ego-trainer:<прошлый релиз>
+# в /opt/cogito/.env: COGITO_IMAGE=ego-trainer:<прошлый релиз>
+docker compose --project-directory /opt/cogito -f /opt/cogito/compose.yaml up -d --no-deps cogito-server
+```
+
+Бэкап базы перед каждым переключением лежит в `/opt/cogito/releases/<релиз>/backup/`;
+миграции только добавляют таблицы и колонки, поэтому откат образа данные не требует.
