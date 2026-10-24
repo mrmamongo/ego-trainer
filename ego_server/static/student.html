@@ -3,8 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light">
-  <meta name="theme-color" content="#f4f6fb">
+  <meta name="color-scheme" content="light dark">
+  <meta id="theme-color" name="theme-color" content="#f4f6fb">
+  <script>
+    (() => {
+      const saved = localStorage.getItem('ego_student_theme');
+      document.documentElement.dataset.theme = saved === 'dark' || saved === 'light'
+        ? saved : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    })();
+  </script>
   <title>Мой курс — Cogito</title>
   <link rel="icon" href="/static/branding/favicon.ico" sizes="any">
   <link rel="stylesheet" href="/static/student.css">
@@ -18,6 +25,7 @@
         <img class="brand-mark" src="/static/branding/cogito-mark.png" alt="" width="40" height="40">
         <span class="brand-copy"><strong data-brand-name>Cogito</strong><small>твой курс Python</small></span>
       </a>
+      <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Включить тёмную тему" title="Переключить тему"><span aria-hidden="true">☾</span><span>Тёмная</span></button>
       <div id="user-actions" class="user-actions hidden">
         <span id="user-name" class="user-name"></span>
         <button id="logout" class="icon-button" type="button" title="Выйти из аккаунта" aria-label="Выйти из аккаунта">Выйти</button>

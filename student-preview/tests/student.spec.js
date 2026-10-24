@@ -94,9 +94,27 @@ test('desktop sidebar selects, searches and opens a clean task page', async ({ p
   await expect(page).toHaveURL(/\/student\/tasks\/V02$/);
   await expect(page.locator('#course-sidebar')).toBeVisible();
   await expect(page.locator('[data-task-link="V02"]')).toHaveAttribute('aria-current', 'page');
+  const contentBox = await page.locator('#view-content').boundingBox();
+  const sidebarBox = await page.locator('#course-sidebar').boundingBox();
+  expect(contentBox.x + contentBox.width).toBeLessThan(sidebarBox.x);
   await expect(page.locator('.reader-vscode')).toHaveAttribute('href', 'vscode://ego-trainer.ego-trainer/open?task=V02');
   await expect(page.locator('.reader-statement')).toContainText('Напиши функцию и проверь пример.');
   await expect(page.locator('.task-theory, .attempt-card, .hint-item, .next-card')).toHaveCount(0);
+  await page.locator('#sidebar-toggle').click();
+  await expect(page.locator('#course-sidebar')).toBeHidden();
+  await expect(page.locator('#dashboard')).toHaveClass(/sidebar-collapsed/);
+  const expandedBox = await page.locator('#view-content').boundingBox();
+  expect(expandedBox.width).toBeGreaterThan(contentBox.width + sidebarBox.width);
+  await page.screenshot({ path: 'test-results/task-expanded-desktop.png', fullPage: true });
+  await page.locator('#sidebar-toggle').click();
+  await expect(page.locator('#course-sidebar')).toBeVisible();
+  const folder = page.locator('.sidebar-folder').filter({ hasText: 'Функции' });
+  const transition = await folder.evaluate((node) => getComputedStyle(node, '::details-content').transitionProperty);
+  expect(transition).toContain('height');
+  await folder.locator('summary').click();
+  await expect(folder).toHaveAttribute('open', '');
+  await folder.locator('summary').click();
+  await expect(folder).not.toHaveAttribute('open', '');
   await page.screenshot({ path: 'test-results/task-desktop.png', fullPage: true });
   await page.getByRole('searchbox', { name: 'Поиск по задачам и теории' }).fill('F10');
   await expect(page.locator('#sidebar-catalog .task-link')).toHaveCount(1);
@@ -128,6 +146,28 @@ test('theory opens separately and keeps self-check answers and VS Code guide', a
   expect(errors).toEqual([]);
 });
 
+test('dark theme persists and keeps the reader usable', async ({ page }) => {
+  const errors = await mockApi(page);
+  await signIn(page);
+  await page.goto('/student/tasks/V02');
+  await expect(page.getByRole('heading', { name: 'Переменные и типы', exact: true })).toBeVisible();
+  const lightBackground = await page.locator('body').evaluate((node) => getComputedStyle(node).backgroundColor);
+  await page.locator('#theme-toggle').click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  const darkBackground = await page.locator('body').evaluate((node) => getComputedStyle(node).backgroundColor);
+  expect(darkBackground).not.toBe(lightBackground);
+  await page.screenshot({ path: 'test-results/task-dark-desktop.png', fullPage: true });
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(page.getByRole('heading', { name: 'Переменные и типы', exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expectNoOverflow(page);
+  await page.screenshot({ path: 'test-results/task-dark-mobile.png', fullPage: true, animations: 'disabled' });
+  await page.locator('#theme-toggle').click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  expect(errors).toEqual([]);
+});
+
 test('mobile drawer closes after task selection and supports Escape', async ({ page }) => {
   const errors = await mockApi(page);
   await signIn(page);
@@ -139,6 +179,9 @@ test('mobile drawer closes after task selection and supports Escape', async ({ p
   await page.locator('#sidebar-toggle').click();
   await expect(page.locator('body')).toHaveClass(/sidebar-open/);
   await expect(page.locator('#course-sidebar')).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)');
+  const drawerBox = await page.locator('#course-sidebar').boundingBox();
+  expect(drawerBox.x).toBeGreaterThan(0);
+  expect(drawerBox.x + drawerBox.width).toBe(375);
   await page.screenshot({ path: 'test-results/sidebar-mobile.png', fullPage: true, animations: 'disabled' });
   await page.getByRole('searchbox', { name: 'Поиск по задачам и теории' }).fill('F10');
   await page.locator('[data-task-link="F10"]').click();

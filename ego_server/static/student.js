@@ -15,6 +15,7 @@
     tasks: [], progress: [], understanding: [], evidenceByTask: new Map(),
     evidenceAvailable: false, account: null, lessons: [], lessonDetails: new Map(),
     extension: null, registering: false, epoch: 0, taskEpoch: 0,
+    sidebarCollapsed: localStorage.getItem('ego_student_sidebar_collapsed') === 'true',
     course: { query: '', openOnly: false, defenseOnly: false }, theoryQuery: '',
   };
   let attempt = 0;
@@ -586,10 +587,43 @@
     root.replaceChildren(fragment);
   }
 
+  function isMobileSidebar() {
+    return window.matchMedia('(max-width: 760px)').matches;
+  }
+
+  function syncSidebarVisibility() {
+    const mobile = isMobileSidebar();
+    dashboard.classList.toggle('sidebar-collapsed', state.sidebarCollapsed && !mobile);
+    const expanded = mobile ? document.body.classList.contains('sidebar-open') : !state.sidebarCollapsed;
+    const toggle = $('sidebar-toggle');
+    toggle.setAttribute('aria-expanded', String(expanded));
+    toggle.setAttribute('aria-label', expanded ? 'Скрыть список задач' : 'Показать список задач');
+    toggle.title = expanded ? 'Скрыть список задач' : 'Показать список задач';
+  }
+
   function setSidebarOpen(open) {
     document.body.classList.toggle('sidebar-open', Boolean(open));
-    $('sidebar-toggle').setAttribute('aria-expanded', String(Boolean(open)));
+    syncSidebarVisibility();
     if (open) $('sidebar-close').focus({ preventScroll: true });
+  }
+
+  function setSidebarCollapsed(collapsed) {
+    state.sidebarCollapsed = Boolean(collapsed);
+    localStorage.setItem('ego_student_sidebar_collapsed', String(state.sidebarCollapsed));
+    syncSidebarVisibility();
+  }
+
+  function applyTheme(theme, { persist = true } = {}) {
+    const dark = theme === 'dark';
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    if (persist) localStorage.setItem('ego_student_theme', dark ? 'dark' : 'light');
+    $('theme-color').content = dark ? '#111622' : '#f4f6fb';
+    const toggle = $('theme-toggle');
+    toggle.setAttribute('aria-label', dark ? 'Включить светлую тему' : 'Включить тёмную тему');
+    toggle.title = dark ? 'Включить светлую тему' : 'Включить тёмную тему';
+    const [icon, label] = toggle.querySelectorAll('span');
+    icon.textContent = dark ? '☀' : '☾';
+    label.textContent = dark ? 'Светлая' : 'Тёмная';
   }
 
   function sidebarTaskLink(task, route) {
@@ -885,7 +919,17 @@
   $('forgejo-cancel').addEventListener('click', cancelForgejo);
   window.addEventListener('pagehide', cancelForgejo);
 
-  $('sidebar-toggle').addEventListener('click', () => setSidebarOpen(!document.body.classList.contains('sidebar-open')));
+  $('sidebar-toggle').addEventListener('click', () => {
+    if (isMobileSidebar()) setSidebarOpen(!document.body.classList.contains('sidebar-open'));
+    else setSidebarCollapsed(!state.sidebarCollapsed);
+  });
+  $('theme-toggle').addEventListener('click', () => {
+    applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+  });
+  window.matchMedia('(max-width: 760px)').addEventListener('change', () => setSidebarOpen(false));
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (event) => {
+    if (!localStorage.getItem('ego_student_theme')) applyTheme(event.matches ? 'dark' : 'light', { persist: false });
+  });
   $('sidebar-close').addEventListener('click', () => {
     setSidebarOpen(false);
     $('sidebar-toggle').focus({ preventScroll: true });
@@ -947,6 +991,8 @@
       }
     }).catch(() => {});
 
+  applyTheme(document.documentElement.dataset.theme || 'light', { persist: false });
+  syncSidebarVisibility();
   if (state.token) void enter(state.token);
   else showAuth();
 })();
