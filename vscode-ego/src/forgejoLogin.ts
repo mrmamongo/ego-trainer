@@ -25,7 +25,7 @@ export async function forgejoLogin(api: EgoApi): Promise<AuthResponse | null | u
         throw new Error('Forgejo sign-in requires desktop VS Code or VS Code Insiders.');
     }
     return vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: 'Ego: Sign in through Forgejo in your browser', cancellable: true },
+        { location: vscode.ProgressLocation.Notification, title: 'Cogito: Sign in through Forgejo in your browser', cancellable: true },
         async (progress, cancellation) => {
             let active = true;
             let cancelled = false;
@@ -44,7 +44,7 @@ export async function forgejoLogin(api: EgoApi): Promise<AuthResponse | null | u
                             await vscode.env.clipboard.writeText(url);
                             if (active && !isCancelled()) progress.report({ message: 'Ссылка скопирована. Открой её в браузере; я жду подтверждения входа…' });
                         } catch {
-                            if (active && !isCancelled()) void vscode.window.showErrorMessage('Не удалось скопировать ссылку. Повтори Ego: Login.');
+                            if (active && !isCancelled()) void vscode.window.showErrorMessage('Не удалось скопировать ссылку. Повтори Cogito: Войти.');
                         }
                     }
                 }, () => undefined);

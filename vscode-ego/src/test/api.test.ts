@@ -24,7 +24,7 @@ test('401 throws EgoApiError with path and login message', async () => {
             assert.ok(error instanceof EgoApiError);
             assert.equal(error.status, 401);
             assert.equal(error.path, '/auth/me');
-            assert.match(error.message, /Ego: Login/);
+            assert.match(error.message, /Cogito: Войти/);
             return true;
         }
     );

@@ -156,7 +156,7 @@ export class EgoApi {
         if (!resp.ok) {
             const data = await resp.json().catch(() => ({ detail: '' })) as { detail?: string };
             const message = resp.status === 401
-                ? 'Authentication required. Run "Ego: Login" first.'
+                ? 'Нужно войти: выполни «Cogito: Войти».'
                 : resp.status === 403
                   ? data.detail || 'Forbidden. Your role does not allow this action.'
                   : data.detail || (resp.status === 404 ? 'Not found' : `HTTP ${resp.status}`);

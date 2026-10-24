@@ -84,7 +84,7 @@ export async function pullTasksToWorkspace(
         existingManifest === undefined
     ) {
         const message = 'manifest is invalid; repair/back it up before pulling tasks.';
-        void vscode.window.showErrorMessage(`Ego: ${message}`);
+        void vscode.window.showErrorMessage(`Cogito: ${message}`);
         throw new Error(message);
     }
 
@@ -128,7 +128,7 @@ export async function pullTasksToWorkspace(
         await vscode.window.withProgress(
             {
                 location: vscode.ProgressLocation.Notification,
-                title: `Ego: Обновление задач: ${toFetch.length} из ${tasks.length}...`,
+                title: `Cogito: Обновление задач: ${toFetch.length} из ${tasks.length}...`,
                 cancellable: false,
             },
             async (progress) => {
@@ -216,16 +216,16 @@ export async function pullTasksToWorkspace(
             errors++;
             const detail = error instanceof Error ? error.message : 'unknown error';
             void vscode.window.showWarningMessage(
-                `Ego: Manifest write failed; files may be pulled but progress/catalog metadata is stale: ${detail}`
+                `Cogito: Manifest write failed; files may be pulled but progress/catalog metadata is stale: ${detail}`
             );
         }
     }
 
     let message: string;
     if (tasks.length > 0 && upToDate === tasks.length) {
-        message = `Ego: все задачи уже актуальны (${upToDate})`;
+        message = `Cogito: все задачи уже актуальны (${upToDate})`;
     } else {
-        message = `Ego: обновлено ${pulled}, уже актуальны ${upToDate}`;
+        message = `Cogito: обновлено ${pulled}, уже актуальны ${upToDate}`;
         const details: string[] = [];
         if (errors > 0) details.push(`${errors} errors`);
         if (preservedStudentSolutions > 0) details.push(`preserved ${preservedStudentSolutions} student solutions`);

@@ -18,14 +18,14 @@ export class TestResultsPanel {
     static show(result: CheckResponse): void {
         const extensionUri = TestResultsPanel.extensionUri;
         if (!extensionUri) {
-            vscode.window.showErrorMessage('Ego: TestResultsPanel not configured (missing extensionUri)');
+            vscode.window.showErrorMessage('Cogito: TestResultsPanel not configured (missing extensionUri)');
             return;
         }
 
         TestResultsPanel.pending = result;
 
         if (TestResultsPanel.panel) {
-            TestResultsPanel.panel.title = `Ego: ${result.task_id} Results`;
+            TestResultsPanel.panel.title = `Cogito: ${result.task_id} Results`;
             TestResultsPanel.panel.reveal(vscode.ViewColumn.Two);
             if (TestResultsPanel.ready) {
                 TestResultsPanel.postResult(result);
@@ -36,7 +36,7 @@ export class TestResultsPanel {
         TestResultsPanel.ready = false;
         TestResultsPanel.panel = vscode.window.createWebviewPanel(
             'egoTestResults',
-            `Ego: ${result.task_id} Results`,
+            `Cogito: ${result.task_id} Results`,
             vscode.ViewColumn.Two,
             {
                 enableScripts: true,
@@ -49,7 +49,7 @@ export class TestResultsPanel {
             webview: TestResultsPanel.panel.webview,
             extensionUri,
             bundleName: 'results.js',
-            title: `Ego: ${result.task_id} Results`,
+            title: `Cogito: ${result.task_id} Results`,
         });
 
         TestResultsPanel.panel.webview.onDidReceiveMessage((msg: { type?: string }) => {

@@ -38,7 +38,7 @@ export class DashboardView {
         const extensionUri = DashboardView.extensionUri;
         const deps = DashboardView.deps;
         if (!extensionUri || !deps) {
-            vscode.window.showErrorMessage('Ego: Dashboard not configured.');
+            vscode.window.showErrorMessage('Cogito: Dashboard not configured.');
             return;
         }
 
@@ -117,7 +117,7 @@ export class DashboardView {
                 // «Продолжить»: first not-passed task in catalog order.
                 const nextId = DashboardView.lastData?.cabinet?.next_task_id;
                 if (nextId) await DashboardView.openRow(nextId);
-                else vscode.window.showInformationMessage('Ego: все задачи пройдены.');
+                else vscode.window.showInformationMessage('Cogito: все задачи пройдены.');
                 break;
             }
             case 'dashboard.defend':
@@ -142,7 +142,7 @@ export class DashboardView {
             case 'dashboard.pullAll': {
                 const cfg = await readEgoConfig();
                 if (cfg?.mode === 'offline') {
-                    vscode.window.showWarningMessage('Ego: Pull All is unavailable in offline mode.');
+                    vscode.window.showWarningMessage('Cogito: Pull All is unavailable in offline mode.');
                     return;
                 }
                 await deps.pullAll();
@@ -154,7 +154,7 @@ export class DashboardView {
                 const cfg = await readEgoConfig();
                 if (cfg?.mode === 'offline') {
                     vscode.window.showWarningMessage(
-                        'Ego: Push Progress is unavailable in offline mode. Switch to Server first.'
+                        'Cogito: Push Progress is unavailable in offline mode. Switch to Server first.'
                     );
                     return;
                 }
@@ -170,7 +170,7 @@ export class DashboardView {
     private static async openRow(taskId: string): Promise<void> {
         const row = DashboardView.rowsById.get(taskId);
         if (!row) {
-            vscode.window.showWarningMessage(`Ego: Unknown task ${taskId}`);
+            vscode.window.showWarningMessage(`Cogito: Unknown task ${taskId}`);
             return;
         }
         await openTaskById({

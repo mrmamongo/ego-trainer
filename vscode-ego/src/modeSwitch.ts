@@ -1,4 +1,4 @@
-/** Ego: Switch Mode — Server ↔ Offline (8bv.9.4). */
+/** Cogito: Переключить режим — Server ↔ Offline (8bv.9.4). */
 
 import * as vscode from 'vscode';
 import { EgoApi } from './api';
@@ -42,7 +42,7 @@ export async function switchMode(deps: ModeSwitchDeps): Promise<EgoMode | undefi
     );
     if (!picked || picked.mode === current) {
         if (picked?.mode === current) {
-            vscode.window.showInformationMessage(`Ego: Already in ${picked.label} mode.`);
+            vscode.window.showInformationMessage(`Cogito: Already in ${picked.label} mode.`);
         }
         return undefined;
     }
@@ -57,7 +57,7 @@ async function applyServerMode(deps: ModeSwitchDeps): Promise<EgoMode | undefine
     const token = await deps.getToken();
     if (!token) {
         const go = await vscode.window.showWarningMessage(
-            'Ego: No login token. Run Init (Connect to Server) or Login?',
+            'Cogito: No login token. Run Init (Connect to Server) or Login?',
             'Init',
             'Cancel'
         );
@@ -81,7 +81,7 @@ async function applyServerMode(deps: ModeSwitchDeps): Promise<EgoMode | undefine
         await api.me();
     } catch (e) {
         const fallback = await vscode.window.showWarningMessage(
-            `Ego: Server unreachable (${(e as Error).message}). Stay Offline?`,
+            `Cogito: Server unreachable (${(e as Error).message}). Stay Offline?`,
             'Stay Offline',
             'Retry later'
         );
@@ -99,7 +99,7 @@ async function applyServerMode(deps: ModeSwitchDeps): Promise<EgoMode | undefine
     deps.setModeUi('server');
     deps.refreshTree();
     await deps.refreshDashboard();
-    vscode.window.showInformationMessage('Ego: Switched to Server mode.');
+    vscode.window.showInformationMessage('Cogito: Switched to Server mode.');
     return 'server';
 }
 
@@ -150,7 +150,7 @@ async function applyOfflineMode(deps: ModeSwitchDeps): Promise<EgoMode> {
     deps.setModeUi('offline');
     deps.refreshTree();
     await deps.refreshDashboard();
-    vscode.window.showInformationMessage('Ego: Switched to Offline mode.');
+    vscode.window.showInformationMessage('Cogito: Switched to Offline mode.');
     return 'offline';
 }
 
@@ -168,5 +168,5 @@ export async function maybeFallbackOffline(
     deps.setModeUi('offline');
     deps.refreshTree();
     await deps.refreshDashboard();
-    vscode.window.showWarningMessage(`Ego: ${reason} — switched to Offline mode.`);
+    vscode.window.showWarningMessage(`Cogito: ${reason} — switched to Offline mode.`);
 }

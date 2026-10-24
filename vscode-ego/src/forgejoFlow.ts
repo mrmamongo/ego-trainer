@@ -85,7 +85,7 @@ export async function runForgejoFlow(
             if (!('pending' in result)) return result;
         }
         if (isCancelled()) return undefined;
-        throw new Error('Forgejo login timed out. Run Ego: Login again.');
+        throw new Error('Forgejo login timed out. Run «Cogito: Войти» ещё раз.');
     } finally {
         unsubscribe();
     }

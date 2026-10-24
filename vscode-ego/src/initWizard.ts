@@ -1,4 +1,4 @@
-/** Ego: Init wizard — server + offline modes (8bv.9.2 / 8bv.9.3). */
+/** «Cogito: Подключить папку к курсу» — server + offline modes (8bv.9.2 / 8bv.9.3). */
 
 import * as vscode from 'vscode';
 import { EgoApi, TaskMeta, type AuthResponse } from './api';
@@ -44,7 +44,7 @@ export async function runServerInit(
         await probe.health();
     } catch (e) {
         const choice = await vscode.window.showWarningMessage(
-            `Ego: Server unreachable (${(e as Error).message}). Use Offline instead?`,
+            `Cogito: Server unreachable (${(e as Error).message}). Use Offline instead?`,
             'Use Offline',
             'Cancel'
         );
@@ -62,7 +62,7 @@ export async function runServerInit(
     try {
         forgejoAuth = await forgejoLogin(probe);
     } catch (error) {
-        vscode.window.showErrorMessage(`Ego: Login failed — ${(error as Error).message}`);
+        vscode.window.showErrorMessage(`Cogito: Login failed — ${(error as Error).message}`);
         return false;
     }
     if (forgejoAuth === undefined) return false;
@@ -100,7 +100,7 @@ export async function runServerInit(
     return vscode.window.withProgress(
         {
             location: vscode.ProgressLocation.Notification,
-            title: 'Ego: Initializing (server)…',
+            title: 'Cogito: Initializing (server)…',
             cancellable: false,
         },
         async (progress) => {
@@ -119,13 +119,13 @@ export async function runServerInit(
                         auth = await probe.login(username, password);
                     } catch (e2) {
                         vscode.window.showErrorMessage(
-                            `Ego: Auth failed — ${(e2 as Error).message}`
+                            `Cogito: Auth failed — ${(e2 as Error).message}`
                         );
                         return false;
                     }
                 } else {
                     vscode.window.showErrorMessage(
-                        `Ego: Login failed — ${(e as Error).message}`
+                        `Cogito: Login failed — ${(e as Error).message}`
                     );
                     return false;
                 }
@@ -148,7 +148,7 @@ export async function runServerInit(
                 );
             } catch (e) {
                 vscode.window.showErrorMessage(
-                    `Ego: Failed to create .ego/ — ${(e as Error).message}`
+                    `Cogito: Failed to create .ego/ — ${(e as Error).message}`
                 );
                 return false;
             }
@@ -159,7 +159,7 @@ export async function runServerInit(
                 await pullTasksToWorkspace(probe, tasks, { updateManifest: true });
             } catch (e) {
                 vscode.window.showWarningMessage(
-                    `Ego: .ego/ created but pull failed — ${(e as Error).message}`
+                    `Cogito: .ego/ created but pull failed — ${(e as Error).message}`
                 );
             }
 
@@ -170,7 +170,7 @@ export async function runServerInit(
             deps.refreshTree();
 
             vscode.window.showInformationMessage(
-                `Ego: Connected as ${auth.username} (${auth.role}).`
+                `Cogito: Connected as ${auth.username} (${auth.role}).`
             );
             // Dashboard opens here once 8bv.9.5 lands.
             await vscode.commands.executeCommand('ego.dashboard');
@@ -187,13 +187,13 @@ export async function runOfflineInit(
     return vscode.window.withProgress(
         {
             location: vscode.ProgressLocation.Notification,
-            title: 'Ego: Initializing (offline)…',
+            title: 'Cogito: Initializing (offline)…',
             cancellable: false,
         },
         async (progress) => {
             const root = vscode.workspace.workspaceFolders?.[0]?.uri;
             if (!root) {
-                vscode.window.showErrorMessage('Ego: Open a workspace folder before starting offline setup.');
+                vscode.window.showErrorMessage('Cogito: Open a workspace folder before starting offline setup.');
                 return false;
             }
 
@@ -236,11 +236,11 @@ export async function runOfflineInit(
                     try {
                         const result = await importTasksFolder(pick[0], root);
                         vscode.window.showInformationMessage(
-                            `Ego: Imported ${result.imported} task files; skipped ${result.skipped} existing files.`
+                            `Cogito: Imported ${result.imported} task files; skipped ${result.skipped} existing files.`
                         );
                     } catch (error) {
                         vscode.window.showErrorMessage(
-                            `Ego: Could not import tasks folder — ${error instanceof Error ? error.message : 'unknown error'}. Original files were not modified.`
+                            `Cogito: Could not import tasks folder — ${error instanceof Error ? error.message : 'unknown error'}. Original files were not modified.`
                         );
                         return false;
                     }
@@ -257,7 +257,7 @@ export async function runOfflineInit(
             try {
                 scanned = await scanDocsTasks(root);
             } catch (error) {
-                vscode.window.showErrorMessage(`Ego: Could not scan docs/tasks/ — ${error instanceof Error ? error.message : 'unknown error'}`);
+                vscode.window.showErrorMessage(`Cogito: Could not scan docs/tasks/ — ${error instanceof Error ? error.message : 'unknown error'}`);
                 return false;
             }
 
@@ -278,7 +278,7 @@ export async function runOfflineInit(
                 );
             } catch (error) {
                 vscode.window.showErrorMessage(
-                    `Ego: Failed to create .ego/ — ${error instanceof Error ? error.message : 'unknown error'}`
+                    `Cogito: Failed to create .ego/ — ${error instanceof Error ? error.message : 'unknown error'}`
                 );
                 return false;
             }
@@ -312,12 +312,12 @@ export async function runOfflineInit(
                 ? ` ${stubs.errors} stub errors — review the warnings and create those files manually.`
                 : '';
             vscode.window.showInformationMessage(
-                `Ego: Offline ready — ${scanned.length} tasks; generated ${stubs.generated} stubs, skipped ${stubs.skipped}.${warning}`
+                `Cogito: Offline ready — ${scanned.length} tasks; generated ${stubs.generated} stubs, skipped ${stubs.skipped}.${warning}`
             );
 
             if (scanned.length > 0 && !(await isPythonEnvReady(root.fsPath))) {
                 const choice = await vscode.window.showInformationMessage(
-                    'Ego: Python is not ready for offline checks. Set it up in this workspace now?',
+                    'Cogito: Python is not ready for offline checks. Set it up in this workspace now?',
                     'Setup Python',
                     'Later'
                 );

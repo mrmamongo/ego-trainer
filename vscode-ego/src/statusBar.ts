@@ -1,7 +1,7 @@
 /** Status bar helper — ADR-0015 / 8bv.9.8.
  *
- * Format: `Ego: [Server|Offline] | <task_id> ✓ n/m`
- * Click → Ego: Dashboard.
+ * Format: `Cogito: [Server|Offline] | <task_id> ✓ n/m`
+ * Click → Cogito: Личный кабинет.
  */
 
 import * as vscode from 'vscode';
@@ -34,7 +34,7 @@ export class EgoStatusBar {
     constructor(command = 'ego.dashboard') {
         this.item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
         this.item.command = command;
-        this.item.tooltip = 'Ego: Dashboard';
+        this.item.tooltip = 'Cogito: Dashboard';
         this.render();
         this.item.show();
     }
@@ -88,7 +88,7 @@ export class EgoStatusBar {
     setError(message?: string): void {
         this.state.checking = false;
         this.state.error = true;
-        this.item.tooltip = message ? `Ego: ${message}` : 'Ego: check failed';
+        this.item.tooltip = message ? `Cogito: ${message}` : 'Cogito: check failed';
         this.render();
     }
 
@@ -106,7 +106,7 @@ export class EgoStatusBar {
         const modeLabel = this.state.mode === 'offline' ? 'Offline' : 'Server';
         if (this.state.checking) {
             this.item.text = `$(loading~spin) Ego: ${modeLabel} | checking…`;
-            this.item.tooltip = 'Ego: running check…';
+            this.item.tooltip = 'Cogito: running check…';
             return;
         }
         if (this.state.error) {
@@ -119,11 +119,11 @@ export class EgoStatusBar {
                 this.state.passed !== undefined && this.state.total !== undefined
                     ? ` ${this.state.passed}/${this.state.total}`
                     : '';
-            this.item.text = `Ego: ${modeLabel} | ${this.state.taskId} ${icon}${scores}`;
+            this.item.text = `Cogito: ${modeLabel} | ${this.state.taskId} ${icon}${scores}`;
             this.item.tooltip = `Ego Dashboard — ${this.state.taskId} (${this.state.status || 'new'})`;
             return;
         }
-        this.item.text = `Ego: ${modeLabel}`;
-        this.item.tooltip = 'Ego: Dashboard';
+        this.item.text = `Cogito: ${modeLabel}`;
+        this.item.tooltip = 'Cogito: Dashboard';
     }
 }

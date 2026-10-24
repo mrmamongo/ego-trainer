@@ -13,7 +13,7 @@ export class WelcomeView {
     /**
      * Auto-open when a workspace folder is open but Ego has not been
      * initialized (no readable `.ego/config.yaml`). Skip suppresses
-     * auto-open until Ego: Show Welcome / Init.
+     * auto-open until Cogito: Приветствие / Init.
      *
      * Offline init is enough (no JWT required). Server mode without a token
      * still counts as initialized — login is separate.
@@ -45,7 +45,7 @@ export class WelcomeView {
             vscode.window.showWarningMessage(opts.reason);
         } else {
             vscode.window.showWarningMessage(
-                'Ego: Workspace not initialized. Connect to a server or use Offline mode.'
+                'Cogito: Workspace not initialized. Connect to a server or use Offline mode.'
             );
         }
         WelcomeView.show(context, deps);

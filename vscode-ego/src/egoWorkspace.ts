@@ -332,7 +332,7 @@ export async function generateStudentStubs(
             errors += 1;
             const detail = error instanceof Error ? error.message : 'unknown error';
             void vscode.window.showWarningMessage(
-                `Ego: Could not generate a student stub for ${task.id}: ${detail}`
+                `Cogito: Could not generate a student stub for ${task.id}: ${detail}`
             );
         }
     }

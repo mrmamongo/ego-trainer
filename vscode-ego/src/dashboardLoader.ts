@@ -358,7 +358,7 @@ async function loadServer(api: EgoApi): Promise<DashboardData> {
         // Fall back to local manifest if server unreachable but .ego/ exists.
         const offline = await loadOffline();
         if (isAuthenticationError(e)) {
-            const error = 'Сессия истекла — выполните «Ego: Login»';
+            const error = 'Сессия истекла — выполните «Cogito: Войти»';
             if (offline.rows.length > 0) return { ...offline, mode: 'server', error };
             return emptyData('server', error);
         }
@@ -385,7 +385,7 @@ async function loadOffline(): Promise<DashboardData> {
         vscode.Uri.joinPath(dir, 'progress.json')
     );
     if (!manifest) {
-        return emptyData('offline', 'Нет .ego/manifest.yaml — выполните «Ego: Init» для offline-режима.');
+        return emptyData('offline', 'Нет .ego/manifest.yaml — выполните «Cogito: Подключить папку к курсу» для offline-режима.');
     }
 
     const progressMap = new Map(

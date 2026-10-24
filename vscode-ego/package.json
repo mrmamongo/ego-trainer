@@ -20,128 +20,129 @@
     "commands": [
       {
         "command": "ego.assistant",
-        "title": "Ego: Учебный ассистент",
-        "category": "Ego"
+        "title": "Учебный ассистент",
+        "category": "Cogito"
       },
       {
         "command": "ego.login",
-        "title": "Ego: Login",
-        "category": "Ego"
+        "title": "Войти",
+        "category": "Cogito"
       },
       {
         "command": "ego.logout",
-        "title": "Ego: Выйти",
-        "category": "Ego"
+        "title": "Выйти",
+        "category": "Cogito"
       },
       {
         "command": "ego.setServer",
-        "title": "Ego: Set Server URL",
-        "category": "Ego"
+        "title": "Указать адрес сервера",
+        "category": "Cogito"
       },
       {
         "command": "ego.setupPython",
-        "title": "Ego: Setup Python",
-        "category": "Ego"
+        "title": "Настроить Python",
+        "category": "Cogito"
       },
       {
         "command": "ego.check",
-        "title": "Ego: Check Current Task",
-        "category": "Ego"
+        "title": "Проверить текущую задачу",
+        "category": "Cogito"
       },
       {
         "command": "ego.checkTask",
-        "title": "Ego: Check Task",
-        "category": "Ego"
+        "title": "Проверить задачу",
+        "category": "Cogito"
       },
       {
         "command": "ego.pull",
-        "title": "Ego: Pull Tasks",
-        "category": "Ego"
+        "title": "Скачать задачи",
+        "category": "Cogito"
       },
       {
         "command": "ego.pullAll",
-        "title": "Ego: Pull All Tasks",
-        "category": "Ego"
+        "title": "Скачать все задачи",
+        "category": "Cogito"
       },
       {
         "command": "ego.pullAllForce",
-        "title": "Ego: Перескачать все задачи",
-        "category": "Ego"
+        "title": "Перескачать все задачи",
+        "category": "Cogito"
       },
       {
         "command": "ego.pullTask",
-        "title": "Ego: Pull Task",
-        "category": "Ego"
+        "title": "Скачать задачу",
+        "category": "Cogito"
       },
       {
         "command": "ego.list",
-        "title": "Ego: List Tasks",
-        "category": "Ego"
+        "title": "Список задач",
+        "category": "Cogito"
       },
       {
         "command": "ego.showTask",
-        "title": "Ego: Show Task Statement",
-        "category": "Ego"
+        "title": "Показать условие",
+        "category": "Cogito"
       },
       {
         "command": "ego.hints",
-        "title": "Ego: Show Hints",
-        "category": "Ego"
+        "title": "Показать подсказки",
+        "category": "Cogito"
       },
       {
         "command": "ego.hintsForTask",
-        "title": "Ego: Show Hints for Task",
-        "category": "Ego"
+        "title": "Подсказки к задаче",
+        "category": "Cogito"
       },
       {
         "command": "ego.myProgress",
-        "title": "Ego: My Progress",
-        "category": "Ego"
+        "title": "Мой прогресс",
+        "category": "Cogito"
       },
       {
         "command": "ego.push",
-        "title": "Ego: Push Progress to Server",
-        "category": "Ego"
+        "title": "Отправить прогресс на сервер",
+        "category": "Cogito"
       },
       {
         "command": "ego.refreshTree",
-        "title": "Ego: Refresh Task List",
+        "category": "Cogito",
+        "title": "Обновить список задач",
         "icon": "$(refresh)"
       },
       {
         "command": "ego.openTask",
-        "title": "Ego: Open Task",
-        "category": "Ego"
+        "title": "Открыть задачу",
+        "category": "Cogito"
       },
       {
         "command": "ego.openLesson",
-        "title": "Ego: Open Lesson",
-        "category": "Ego"
+        "title": "Открыть теорию",
+        "category": "Cogito"
       },
       {
         "command": "ego.showWelcome",
-        "title": "Ego: Show Welcome",
-        "category": "Ego"
+        "title": "Приветствие",
+        "category": "Cogito"
       },
       {
         "command": "ego.init",
-        "title": "Ego: Init",
-        "category": "Ego"
+        "title": "Подключить папку к курсу",
+        "category": "Cogito"
       },
       {
         "command": "ego.dashboard",
-        "title": "Ego: Dashboard",
-        "category": "Ego"
+        "title": "Личный кабинет",
+        "category": "Cogito"
       },
       {
         "command": "ego.openTaskView",
-        "title": "Ego: Open Task View",
-        "category": "Ego"
+        "title": "Открыть панель задания",
+        "category": "Cogito"
       },
       {
         "command": "ego.switchMode",
-        "title": "Ego: Switch Mode",
-        "category": "Ego"
+        "title": "Переключить режим (сервер / локально)",
+        "category": "Cogito"
       }
     ],
     "viewsContainers": {
@@ -212,7 +213,7 @@
       ]
     },
     "configuration": {
-      "title": "Ego",
+      "title": "Cogito",
       "properties": {
         "ego.serverUrl": {
           "type": "string",
