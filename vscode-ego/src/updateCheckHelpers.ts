@@ -7,6 +7,23 @@
 
 import * as crypto from 'crypto';
 
+/** VS Code commands may reject with strings or arrays, rather than Error. */
+export function updateErrorMessage(error: unknown): string {
+    const seen = new Set<object>();
+    function describe(value: unknown): string {
+        if (typeof value === 'string') return value.trim();
+        if (!value || typeof value !== 'object' || seen.has(value)) return '';
+        seen.add(value);
+        if (Array.isArray(value)) return value.map(describe).filter(Boolean).join('; ');
+        const detail = value as { message?: unknown; errors?: unknown; code?: unknown };
+        const message = typeof detail.message === 'string' ? detail.message.trim() : '';
+        const errors = Array.isArray(detail.errors) ? describe(detail.errors) : '';
+        const code = typeof detail.code === 'string' ? detail.code.trim() : '';
+        return [message, errors].filter(Boolean).join('; ') || code;
+    }
+    return describe(error) || 'неизвестная ошибка';
+}
+
 /** Global state key: ISO timestamp of the last check attempt. */
 export const LAST_CHECK_KEY = 'ego.updateCheck.lastCheck';
 
