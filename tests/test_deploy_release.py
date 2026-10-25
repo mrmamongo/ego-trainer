@@ -885,6 +885,28 @@ def test_live_counter_change_rolls_back(tmp_path, capsys, monkeypatch):
     assert not (root / "content" / "projects" / "python-list").exists()
 
 
+def test_dry_run_vsix_does_not_publish_or_check_unpublished_metadata(tmp_path, capsys):
+    root = _make_prod(tmp_path)
+    vsix = tmp_path / "cogito-0.2.3.vsix"
+    vsix.write_bytes(b"PK")
+    cfg = release.Config(
+        name="extension-0.2.3", expect_current="ego-trainer:cur",
+        publish_vsix=vsix, root=root,
+    )
+    fake = FakeRunner(_docker_outputs())
+    fetch = FakeFetch()
+    code = release.run_release(
+        cfg, run=as_runner(fake, dry_run=True), fetch=fetch, dry_run=True
+    )
+    assert code == release.EXIT_OK
+    assert "DRY RUN OK" in capsys.readouterr().out
+    assert fetch.calls == []
+    assert not cfg.incoming_vsix().exists()
+    assert not cfg.release_dir.exists()
+    assert not cfg.lock_path.exists()
+    assert not any("publish-extension" in argv for argv in fake.calls)
+
+
 def test_publish_vsix_checks_extension_latest(tmp_path, capsys):
     root = _make_prod(tmp_path)
     vsix = tmp_path / "cogito-0.2.0.vsix"

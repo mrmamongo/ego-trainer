@@ -1063,8 +1063,9 @@ class Release:
         assert cfg.publish_vsix is not None
         self.step(f"publish extension {cfg.publish_vsix.name}")
         dest = cfg.incoming_vsix()
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(cfg.publish_vsix, dest)
+        if not self.dry_run:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(cfg.publish_vsix, dest)
         argv = [
             "docker", "exec", LIVE_CONTAINER, "ego-server", "admin",
             "publish-extension", "--vsix", str(cfg.incoming_remote()),
@@ -1072,6 +1073,9 @@ class Release:
         if cfg.notes:
             argv += ["--notes", cfg.notes]
         print(f"  {self.run(argv, read_empty='(publish skipped in dry run)')}")
+        if self.dry_run:
+            print("  would check /extension/latest after publishing")
+            return
         body = self.require(LIVE_PORT, "/extension/latest", "live", tries=5)
         try:
             payload = json.loads(body.decode("utf-8"))
