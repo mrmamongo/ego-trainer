@@ -7,16 +7,20 @@ import { sha256Hex } from '../updateCheckHelpers';
 import type { UpdateCheckDeps } from '../updateCheck';
 
 /** Exercise the public update command, including its real catch/notification path. */
-async function runUpdate(installError?: unknown) {
+async function runUpdate(installError?: unknown, storageScheme = 'file') {
     const errors: string[] = [];
     const logs: string[] = [];
-    const installed: unknown[] = [];
+    const installed: Array<{ scheme: string; fsPath: string }> = [];
     const notices: string[] = [];
     const body = Buffer.from('verified-vsix');
     const sourcePath = require.resolve('../updateCheck');
     const localRequire = createRequire(sourcePath);
     const fakeVscode = {
-        Uri: { joinPath: (base: string, name: string) => `${base}/${name}` },
+        Uri: {
+            joinPath: (base: { scheme: string; fsPath: string }, name: string) =>
+                ({ scheme: base.scheme, fsPath: `${base.fsPath}/${name}` }),
+            file: (fsPath: string) => ({ scheme: 'file', fsPath }),
+        },
         ProgressLocation: { Notification: 15 },
         window: {
             withProgress: async (_options: unknown, work: () => Promise<Buffer>) => work(),
@@ -30,7 +34,7 @@ async function runUpdate(installError?: unknown) {
             createDirectory: async () => {},
             writeFile: async () => {},
         } },
-        commands: { executeCommand: async (command: string, target: unknown) => {
+        commands: { executeCommand: async (command: string, target: { scheme: string; fsPath: string }) => {
             assert.equal(command, 'workbench.extensions.installExtension');
             installed.push(target);
             if (installError !== undefined) throw installError;
@@ -48,7 +52,7 @@ async function runUpdate(installError?: unknown) {
     }, { filename: sourcePath });
     await module.exports.checkForUpdatesManually({
         context: {
-            globalStorageUri: '/storage',
+            globalStorageUri: { scheme: storageScheme, fsPath: '/storage' },
             globalState: { get: () => undefined, update: async () => {} },
         },
         currentVersion: '0.2.0',
@@ -80,6 +84,16 @@ test('update installation preserves multiple installer errors', async () => {
 test('successful installation still offers a window reload', async () => {
     const result = await runUpdate();
     assert.deepEqual(result.errors, []);
-    assert.deepEqual(result.installed, ['/storage/updates/cogito-0.2.2.vsix']);
+    assert.deepEqual(result.installed, [{ scheme: 'file', fsPath: '/storage/updates/cogito-0.2.2.vsix' }]);
     assert.ok(result.notices.some(message => message.includes('версия 0.2.2 установлена.')));
+});
+
+test('update installation translates vscode-userdata storage into a file URI for VS Code', async () => {
+    const result = await runUpdate(undefined, 'vscode-userdata');
+    assert.deepEqual(result.installed, [{ scheme: 'file', fsPath: '/storage/updates/cogito-0.2.2.vsix' }]);
+});
+
+test('update installation preserves remote storage URIs', async () => {
+    const result = await runUpdate(undefined, 'vscode-remote');
+    assert.equal(result.installed[0].scheme, 'vscode-remote');
 });

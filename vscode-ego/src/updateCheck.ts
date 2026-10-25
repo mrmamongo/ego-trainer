@@ -159,9 +159,14 @@ async function installRelease(deps: UpdateCheckDeps, release: LatestRelease): Pr
         const target = vscode.Uri.joinPath(updatesDir, vsixFileName(release.version));
         await vscode.workspace.fs.writeFile(target, data);
         stage = 'install';
+        // Recent desktop hosts expose globalStorageUri through vscode-userdata.
+        // The VSIX installer routes only file / vscode-remote resources.
+        const installTarget = target.scheme === 'vscode-userdata'
+            ? vscode.Uri.file(target.fsPath)
+            : target;
         await vscode.commands.executeCommand(
             'workbench.extensions.installExtension',
-            target
+            installTarget
         );
         stage = 'state';
         await deps.context.globalState.update(SNOOZED_KEY, undefined);
