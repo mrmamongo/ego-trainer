@@ -1,1 +1,3 @@
 node_modules/
+# Scratch output of `npm run check` (a fresh build compared with the committed one).
+.build-check/

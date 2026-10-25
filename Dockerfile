@@ -6,6 +6,42 @@
 #
 # Canonical task content is mounted at /content; it is never baked into the
 # image. SQLite is stored in /var/lib/ego/ego.db on a persistent volume.
+#
+# Stages:
+#   web     admin-ui build (Node): /panel bundle, theme, /ide bundle -> /static
+#   builder Python wheel; receives the full ego_server/static/admin/ output
+#   runtime Python 3.11 runtime image
+
+# === Web assets: mentor/admin panel (/panel) and browser IDE (/ide) ===
+# Pinned Node LTS major (20) matches admin-ui/package.json requirements.
+FROM node:20-slim AS web
+
+WORKDIR /web
+
+# Dependencies first so source-only changes reuse the npm layer.
+COPY admin-ui/package.json admin-ui/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+
+# Sources: everything except node_modules and the build's own scratch output.
+COPY admin-ui/build.mjs ./
+COPY admin-ui/src ./src
+
+# The icon is referenced by the admin login page from /static/branding.
+COPY ego_server/static/branding /static/branding
+
+# build.mjs resolves its output as ../ego_server/static/admin relative to
+# /web, i.e. /ego_server/static/admin. The committed generated files (tracked
+# on purpose) are the baseline, so a git-only build context still starts from
+# them; the build then overwrites them in place.
+COPY ego_server/static/admin /ego_server/static/admin
+
+# Builds bundle.js/css, theme.css, ide.js/css, workers/ and assets/; fails if
+# a shell asset the HTML pages load was not emitted.
+RUN npm run build \
+    && for f in bundle.js bundle.css theme.css ide.js ide.css workers/editor.worker.js; do \
+         test -s "/ego_server/static/admin/$f" \
+           || { echo "missing admin/$f" >&2; exit 1; }; \
+       done
 
 FROM python:3.11-slim AS builder
 
@@ -28,6 +64,11 @@ COPY pyproject.toml README.md ./
 COPY ego/ ego/
 COPY ego_server/ ego_server/
 COPY ego_tui/ ego_tui/
+
+# Ship the built panel/IDE assets: replace ego_server/static/admin entirely so
+# the wheel holds exactly what the web stage produced (no stale files).
+RUN rm -rf ego_server/static/admin
+COPY --from=web /ego_server/static/admin/ ego_server/static/admin/
 
 # Build the application and all runtime dependencies as wheels. Development
 # tools and canonical task solutions are deliberately absent from the image.

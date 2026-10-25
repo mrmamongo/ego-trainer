@@ -31,6 +31,7 @@ from ego_server.routers import (
     run as run_router,
     tasks,
 )
+from ego_server.static_pages import static_page_response
 
 _STATIC_DIR = Path(__file__).parent / "static"
 _mcp_http_app = None
@@ -108,8 +109,8 @@ async def landing_page(request: Request, db: DbDep) -> HTMLResponse:
 
 @app.get("/panel", include_in_schema=False)
 @app.get("/panel/", include_in_schema=False)
-async def admin_panel() -> FileResponse:
-    return FileResponse(_STATIC_DIR / "admin.html", headers={"Cache-Control": "no-store"})
+async def admin_panel() -> HTMLResponse:
+    return static_page_response("admin.html")
 
 
 @app.get("/student", include_in_schema=False)
@@ -121,30 +122,30 @@ async def student_panel(request: Request, db: DbDep) -> FileResponse:
 
 @app.get("/ide", include_in_schema=False)
 @app.get("/ide/", include_in_schema=False)
-async def ide_panel() -> FileResponse:
+async def ide_panel() -> HTMLResponse:
     """Serve the in-browser IDE workspace (per-user, browser-persisted)."""
-    return FileResponse(_STATIC_DIR / "ide.html", headers={"Cache-Control": "no-store"})
+    return static_page_response("ide.html")
 
 
 @app.get("/ide/task/{task_id:path}", include_in_schema=False)
-async def ide_task_deeplink(task_id: str) -> FileResponse:
+async def ide_task_deeplink(task_id: str) -> HTMLResponse:
     """Serve the IDE shell for task deep links (`/ide/task/<id>`).
 
     Same shell as /ide; the client resolves the task after login and
     imports/opens the bound workspace file. Task data stays behind the
     authenticated API boundary.
     """
-    return FileResponse(_STATIC_DIR / "ide.html", headers={"Cache-Control": "no-store"})
+    return static_page_response("ide.html")
 
 
 @app.get("/ide/room/{room_id}", include_in_schema=False)
-async def ide_room_deeplink(room_id: str) -> FileResponse:
+async def ide_room_deeplink(room_id: str) -> HTMLResponse:
     """Serve the IDE shell for shared collab rooms (`/ide/room/<id>`).
 
     The opaque room id is a capability: metadata and ws access are checked
     against collab_share_rooms by the collab API/handshake.
     """
-    return FileResponse(_STATIC_DIR / "ide.html", headers={"Cache-Control": "no-store"})
+    return static_page_response("ide.html")
 
 
 @app.get("/student/tasks/{task_id:path}", include_in_schema=False)

@@ -2,3 +2,16 @@
 ego_server/static/admin/bundle.js -text linguist-generated=true whitespace=-blank-at-eol
 ego_server/static/admin/workers/*.js -text linguist-generated=true whitespace=-blank-at-eol
 ego_server/static/admin/bundle.css -text linguist-generated=true
+ego_server/static/admin/theme.css -text linguist-generated=true
+ego_server/static/admin/ide.css -text linguist-generated=true
+ego_server/static/admin/*.LICENSE.txt -text
+
+# admin-ui sources and build config always check out with LF. The bundles embed
+# source strings (template literals, CSS, comments) verbatim, so CRLF checkouts
+# on Windows/autocrlf would make `npm run build` output differ byte-for-byte
+# from an LF checkout (Docker builds on Linux) — and the committed bundles.
+admin-ui/build.mjs text eol=lf
+admin-ui/package.json text eol=lf
+admin-ui/package-lock.json text eol=lf
+admin-ui/*.test.mjs text eol=lf
+admin-ui/src/** text eol=lf

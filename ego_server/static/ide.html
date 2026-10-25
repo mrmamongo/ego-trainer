@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Cogito — Workspace</title>
 <meta name="theme-color" content="#09090b">
-<link rel="icon" href="/favicon.ico?v=1" sizes="16x 32x">
+<link rel="icon" href="/favicon.ico?v={{STATIC_ASSET_VERSION}}" sizes="16x 32x">
 
-<link rel="icon" type="image/svg+xml" href="/static/branding/cogito-mark.svg?v=1" sizes="any">
-<link rel="stylesheet" href="/static/admin/theme.css">
-<link rel="stylesheet" href="/static/admin/ide.css">
+<link rel="icon" type="image/svg+xml" href="/static/branding/cogito-mark.svg?v={{STATIC_ASSET_VERSION}}" sizes="any">
+<link rel="stylesheet" href="/static/admin/theme.css?v={{STATIC_ASSET_VERSION}}">
+<link rel="stylesheet" href="/static/admin/ide.css?v={{STATIC_ASSET_VERSION}}">
 <style>
 html, body { min-height: 100%; margin: 0; background: var(--background, #09090b); color: var(--foreground, #fafafa); }
 #app { min-height: 100dvh; }
@@ -17,6 +17,6 @@ html, body { min-height: 100%; margin: 0; background: var(--background, #09090b)
 </head>
 <body>
 <div id="app"></div>
-<script src="/static/admin/ide.js"></script>
+<script src="/static/admin/ide.js?v={{STATIC_ASSET_VERSION}}"></script>
 </body>
 </html>

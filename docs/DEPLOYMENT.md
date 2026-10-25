@@ -84,6 +84,54 @@ Open the admin console at <http://127.0.0.1:8000/>. Swagger is at
 <http://127.0.0.1:8000/docs>; health is at
 <http://127.0.0.1:8000/health>.
 
+## Admin panel and IDE static assets
+
+The mentor panel (`/panel`) and the browser IDE (`/ide`) are Svelte bundles
+built from `admin-ui/` into `ego_server/static/admin/`: `bundle.js`,
+`bundle.css`, `theme.css`, `ide.js`, `ide.css`, `workers/editor.worker.js`,
+`assets/` and the vendored `*.LICENSE.txt` files.
+
+`docker build` does this itself: the `web` stage (`node:20-slim`) runs
+`npm ci` and `npm run build` from the build context and the Python `builder`
+stage copies its full output into the wheel. The generated files are also
+committed (they are tracked on purpose) so a context without `admin-ui/`
+build inputs still has a baseline, and `npm run build` in a working tree
+overwrites it.
+
+After changing `admin-ui/src/`, rebuild and commit the output:
+
+```sh
+cd admin-ui && npm ci && npm run build && cd ..
+git add ego_server/static/admin && git commit
+```
+
+`npm run check` (inside `admin-ui/`) fails when a committed file under
+`ego_server/static/admin/` is missing, stale or unexpected compared with a
+fresh build.
+
+**Cache busting.** `admin.html` and `ide.html` reference these files with a
+``?v={{STATIC_ASSET_VERSION}}`` placeholder. The server renders both shells
+through `ego_server.static_pages`: the placeholder becomes a build id
+computed once per process from the asset contents, and every referenced
+asset URL also gets its own content hash (``theme.css?v=4deda82352904e6f``).
+A rebuilt bundle always gets a new URL; the HTML itself is served with
+`Cache-Control: no-store`.
+
+**Verifying a deployment.** With the service running:
+
+```sh
+python scripts/check_static_assets.py http://127.0.0.1:8000
+```
+
+It fetches `/`, `/panel`, `/ide` and `/student` and fails if any referenced
+`/static` asset (including files loaded from their CSS/JS) does not return
+200. Behind a proxy the same URLs must be reachable, so run it through the
+public hostname after a release. Without a server, a built tree can be
+checked with `python scripts/check_static_assets.py --local-dir
+ego_server/static`. The matching pytest suites are
+`tests/test_admin_static_assets.py` and
+`tests/test_static_asset_check_script.py`.
+
 Registration is disabled by default in production. Create pilot accounts
 through the admin console or CLI; enable registration only if the pilot needs it. Create additional mentor accounts through the user
 management interface or the CLI; do not rely on public self-registration to
