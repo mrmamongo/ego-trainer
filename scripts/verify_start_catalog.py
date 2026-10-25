@@ -59,6 +59,7 @@ EXPECTED_IDS = {
     "11_project_expenses": [f"PX{n:02}" for n in range(1, 9)],
     "12_tuples_sets": [f"TS{n:02}" for n in range(1, 11)],
     "13_dicts": [f"DI{n:02}" for n in range(1, 27)],
+    "14_errors": [f"ER{n:02}" for n in range(1, 19)],
 }
 
 
