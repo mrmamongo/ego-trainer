@@ -1,0 +1,6 @@
+id: 14_errors
+code: ER
+name: "Ошибки и проверки"
+description: "Исключения и traceback, try/except/else/finally, raise, своё исключение, порядок проверок и охранные if…return, отказ как значение {status, reason}. Мост к продуктовым задачам: порядок кодов отказа и «ложный успех» в помощнике гильдии."
+order: 14
+level: medium
