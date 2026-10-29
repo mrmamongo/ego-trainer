@@ -1,0 +1,13 @@
+id: python-oop
+name: "Python: ООП"
+description: "Классы для работы: объекты и dataclass, свойства, магические методы, протоколы, наследование и композиция, проектирование, SOLID и паттерны."
+version: "0.1.0"
+order: 2
+default_locale: ru
+tags: [python, oop, classes]
+version_policy: declare
+recommended_after:
+  project: xl-a
+  min_passed: 21
+  min_per_kind: 6
+  note: "Курс опирается на функции, словари и ошибки из «Python с нуля» и на навыки экзамена XL-A. Открыть можно в любой момент."

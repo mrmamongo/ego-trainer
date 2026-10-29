@@ -1,0 +1,5 @@
+schema_version: 1
+projects:
+  - id: python-oop
+    path: projects/python-oop
+    enabled: true
