@@ -496,6 +496,41 @@ def task_kv02_repl():
 засчитан. У каждого результата есть `stage` и `stage_title`, лог (`format_stage_check_result`)
 группирует результаты по этапам. В прогресс пишется только этап N.
 
+### API: `POST /check` с `files` и `GET /challenges/<id>`
+
+Этапы — обычные строки `tasks` (колонка `challenge_stage`: 1..N), папка — `folders.kind =
+'challenge'` с `folders.workspace_json`. Прогресс, кабинет и рекомендации видят этапы как задачи;
+аддитивные миграции только добавляют колонки (`tasks.challenge_stage`, `folders.kind`,
+`folders.workspace_json`, `runs.files_json`).
+
+```http
+POST /check
+Authorization: Bearer <token>
+{"task_id": "KV01", "files": {"main.py": "...", "commands.py": "..."}}
+```
+
+| Что отправлено | Обычная задача | Этап челленджа |
+|----------------|----------------|----------------|
+| `student_code` | проверка как раньше (`run_check`) | 422 «этот этап проверяется только новой версией Cogito — обнови расширение» |
+| `files` | 422: `files` только для этапа челленджа | `run_stage_check` по этапам 1..N |
+| оба / ни одного | 422 с понятным текстом | 422 с понятным текстом |
+
+- Лимиты: `workspace` (`include`, `max_files`, `max_bytes`) и `max_code_chars` из настроек
+  сервера — по всему проекту в склейке `# === path ===\n<content>`; нарушение `workspace` —
+  422 с русским текстом (`validate_project_files`), превышение `max_code_chars` — 413.
+- В ответе у каждого результата есть `stage` и `stage_title`; у обычной задачи этих полей нет
+  (форма ответа не меняется). `log` — `format_stage_check_result` (результаты по этапам).
+- Прогресс и строка `runs` пишутся только для этапа N; проект целиком сохраняется в
+  `runs.files_json` (`{путь: код}`), а в AI и историю уходит склейка `project_view`.
+- `solution_hash` этапа — sha256 склейки проекта, а не одной функции.
+
+`GET /challenges/<folder_id>` (та же авторизация, что у `/tasks`): метаданные папки,
+`workspace`, `stages` (`id`, `title`, `number`, `order`, `level`, `version`, `status`,
+`passed_tests`, `total_tests`, `current`) и стартовые файлы `starter/` как `{путь: содержимое}`.
+`status` — прогресс вызывающего студента на текущей версии этапа (`new`, если не проверял);
+`current` — первый непройденный этап, с него начинают. Неизвестная папка или папка не
+`kind: challenge` — 404. `solution/` через API не отдаётся никогда.
+
 ### Верификатор
 
 ```bash

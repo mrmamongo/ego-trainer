@@ -1,6 +1,7 @@
 # ADR-0018: Многофайловые челленджи по этапам
 
-**Status:** Accepted — Phase 1 core implemented (ядро, миграция, верификатор; серверная часть — следующий прогон)
+**Status:** Accepted — Phase 1 implemented (ядро, миграция, верификатор, `POST /check` с `files`,
+`GET /challenges/<id>`, `runs.files_json`)
 **Date:** 2026-10-29
 **Related:** ADR-0016 (каталог Project → Folder → Task), `docs/TESTS_DESIGN.md`, `docs/COURSE_MAP.md`
 (пробел 7 «Модули и структура проекта»)
