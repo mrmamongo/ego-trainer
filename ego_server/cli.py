@@ -343,7 +343,8 @@ def _cmd_import_tasks(args) -> int:
         return 1
 
     md_files = sorted(
-        p for p in docs_dir.rglob("*.md") if not p.name.startswith("lesson_")  # theory cards
+        # Theory cards and challenge stages (ADR-0018) are not single-file tasks.
+        p for p in docs_dir.rglob("*.md") if not p.name.startswith(("lesson_", "stage_"))
     )
     if not md_files:
         print(f"no .md files under {docs_dir.resolve()}", file=sys.stderr)

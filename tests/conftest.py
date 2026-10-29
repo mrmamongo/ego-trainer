@@ -14,7 +14,9 @@ def tasks_dir() -> Path:
 @pytest.fixture
 def task_files(tasks_dir) -> list[Path]:
     """All .md task files under docs/tasks/."""
-    return sorted(p for p in tasks_dir.rglob("*.md") if not p.name.startswith("lesson_"))
+    return sorted(
+        p for p in tasks_dir.rglob("*.md") if not p.name.startswith(("lesson_", "stage_"))
+    )
 
 
 def create_test_user(client, username: str, password: str, role: str) -> tuple[str, str]:
