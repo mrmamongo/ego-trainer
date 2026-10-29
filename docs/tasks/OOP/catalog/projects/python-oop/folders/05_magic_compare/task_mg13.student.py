@@ -1,0 +1,14 @@
+class Version:
+    def __init__(self, text):
+        pass  # твой код: запомни text и разбери его на числа в parts
+
+    def __lt__(self, other):
+        pass  # твой код
+
+
+# ===== Ниже ничего не меняй: это рамка для проверки. =====
+
+def task_mg13_versions(texts):
+    versions = [Version(text) for text in texts]
+    newest = max(versions).text if versions else None
+    return {"sorted": [version.text for version in sorted(versions)], "newest": newest}

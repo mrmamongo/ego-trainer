@@ -1,0 +1,6 @@
+id: 05_magic_compare
+code: MG
+name: "Магические методы I: печать, сравнение, хеш"
+description: "Как объект ведёт себя в print и в списках (__repr__ и __str__), как сравниваются и сортируются объекты (__eq__, __lt__, второй критерий кортежем), почему объект с __eq__ не лежит в множестве без __hash__ и как всё это даёт dataclass с order=True и field(compare=False)."
+order: 5
+level: medium
