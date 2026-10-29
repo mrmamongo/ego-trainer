@@ -1,5 +1,6 @@
 <script lang="ts">
-	import type { CheckResult, TaskRunSummary } from './shared/types';
+	import type { CheckResult, TaskRunSummary, TestResultDTO } from './shared/types';
+	import { groupResultsByStage, stageGroupHeader } from '../challengeWorkspace';
 
 	let {
 		result = null,
@@ -46,7 +47,48 @@
 		const date = new Date(run.finished_at || run.started_at);
 		return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
 	}
+
+	/** Challenge stage check: rows grouped under «Этап K» headers (ADR-0018). */
+	const stageGroups = $derived(result && result.results.some((row) => typeof row.stage === 'number')
+		? groupResultsByStage(result.results) : null);
+	/** Ordinary task: one flat list (unchanged layout). */
+	const flatRows = $derived(result && stageGroups === null ? result.results : []);
+	function rowColor(row: TestResultDTO): string {
+		return statusColor(row.passed ? 'passed' : 'failed');
+	}
 </script>
+
+{#snippet testRow(tr: TestResultDTO)}
+	{@const color = rowColor(tr)}
+	<div class="test-row" style:border-left-color={color}>
+		<div class="test-header">
+			<span class="test-tag" style:background={color}>
+				{tr.passed ? '✓' : '✕'}
+			</span>
+			<span>{tr.description}</span>
+		</div>
+		{#if !tr.passed}
+			<div class="detail">
+				<div>
+					<span class="label">Ожидалось:</span>
+					<code>{tr.expected_repr}</code>
+				</div>
+				{#if tr.actual_repr !== null}
+					<div>
+						<span class="label">Получено:</span>
+						<code>{tr.actual_repr}</code>
+					</div>
+				{/if}
+				{#if tr.error}
+					<div class="error">
+						<span class="label">Ошибка:</span>
+						<pre>{tr.error}</pre>
+					</div>
+				{/if}
+			</div>
+		{/if}
+	</div>
+{/snippet}
 
 {#if history && history.length > 0}
 	<section class="history" aria-label="Прошлые попытки">
@@ -90,37 +132,21 @@
     {/if}
 	{#if result.total_tests === 0}
 		<div class="no-tests">У задания пока нет тестов.</div>
+	{:else if stageGroups}
+		{#each stageGroups as group (group.stage ?? -1)}
+			{@const groupColor = group.passedAll ? statusColor('passed') : statusColor('failed')}
+			<section class="stage-group" aria-label={stageGroupHeader(group)}>
+				<h3 class="stage-header" style:border-left-color={groupColor}>
+					<span>{stageGroupHeader(group)}</span>
+				</h3>
+				{#each group.results as tr, i (i)}
+					{@render testRow(tr)}
+				{/each}
+			</section>
+		{/each}
 	{:else}
-		{#each result.results as tr, i (i)}
-			{@const rowColor = statusColor(tr.passed ? 'passed' : 'failed')}
-			<div class="test-row" style:border-left-color={rowColor}>
-				<div class="test-header">
-					<span class="test-tag" style:background={rowColor}>
-						{tr.passed ? '✓' : '✕'}
-					</span>
-					<span>{tr.description}</span>
-				</div>
-				{#if !tr.passed}
-					<div class="detail">
-						<div>
-							<span class="label">Ожидалось:</span>
-							<code>{tr.expected_repr}</code>
-						</div>
-						{#if tr.actual_repr !== null}
-							<div>
-								<span class="label">Получено:</span>
-								<code>{tr.actual_repr}</code>
-							</div>
-						{/if}
-						{#if tr.error}
-							<div class="error">
-								<span class="label">Ошибка:</span>
-								<pre>{tr.error}</pre>
-							</div>
-						{/if}
-					</div>
-				{/if}
-			</div>
+		{#each flatRows as tr, i (i)}
+			{@render testRow(tr)}
 		{/each}
 	{/if}
 
@@ -281,6 +307,24 @@
 		font-size: 12px;
 		overflow-x: auto;
 		white-space: pre-wrap;
+	}
+
+	.stage-group {
+		margin-top: 12px;
+	}
+
+	.stage-group:first-of-type {
+		margin-top: 0;
+	}
+
+	.stage-header {
+		margin: 0 0 6px;
+		padding: 4px 10px;
+		border-left: 3px solid;
+		border-radius: 0 4px 4px 0;
+		background: color-mix(in srgb, var(--vscode-foreground) 6%, transparent);
+		font-size: 0.8rem;
+		font-weight: 600;
 	}
 
 	.no-tests {

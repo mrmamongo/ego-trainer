@@ -5,30 +5,42 @@
  */
 
 import * as vscode from 'vscode';
-import { EgoApi, TaskMeta, LessonMeta, ProgressRow, ProjectInfo } from './api';
+import { EgoApi, TaskMeta, LessonMeta, ProgressRow, ProjectInfo, ChallengeInfo, ChallengeStage } from './api';
 import { buildCatalog, type Catalog, type CatalogFolder, type CatalogProject, type LessonReadState } from './theoryLogic';
 import { egoDir, readEgoConfig } from './egoWorkspace';
 import { indexProjects, readinessLine, recommendationTooltip } from './recommendations';
+import { challengeIdFromTaskId, nextStageNumber, orderedStages, stageStatusLabel } from './challengeWorkspace';
 
 export class TaskItem extends vscode.TreeItem {
+    /** `challenge_stage` of a challenge stage, undefined for an ordinary task. */
+    readonly stage: number | undefined;
+    /** The next unsolved stage of its challenge (highlighted, never required). */
+    readonly highlighted: boolean;
+    /** The challenge folder this stage belongs to (`GET /challenges` id). */
+    readonly challengeId: string | undefined;
+
     constructor(
         public readonly task: TaskMeta,
         public readonly progress: ProgressRow | undefined,
-        collapsibleState: vscode.TreeItemCollapsibleState
+        collapsibleState: vscode.TreeItemCollapsibleState,
+        stage?: { number: number; challengeId: string; title: string; status: string; total: number; highlighted: boolean }
     ) {
         super(task.title && task.title !== task.task_id ? `${task.task_id} · ${task.title}` : task.task_id, collapsibleState);
+        this.stage = stage?.number;
+        this.challengeId = stage?.challengeId ?? challengeIdFromTaskId(task.task_id);
+        this.highlighted = stage?.highlighted ?? false;
         const lastRun = progress?.last_run_at
             ? ` · последняя проверка ${formatRelative(progress.last_run_at)}`
             : '';
-        this.tooltip = `${task.title} (v${task.version})${lastRun}`;
-        this.description = this._statusLabel();
-        this.contextValue = 'task';
+        this.tooltip = stage
+            ? `Этап ${stage.number} из ${stage.total}: ${stage.title} — ${stageStatusLabel(stage.status)}${lastRun}`
+            : `${task.title} (v${task.version})${lastRun}`;
+        this.description = stage ? stageStatusLabel(stage.status) : this._statusLabel();
+        this.contextValue = this.highlighted ? 'challengeStage.current' : 'task';
         this.iconPath = this._icon();
-        this.command = {
-            command: 'ego.openTask',
-            title: 'Открыть задачу',
-            arguments: [task],
-        };
+        this.command = stage
+            ? { command: 'ego.openStage', title: 'Открыть этап', arguments: [this] }
+            : { command: 'ego.openTask', title: 'Открыть задачу', arguments: [task] };
     }
 
     private _statusLabel(): string {
@@ -102,10 +114,14 @@ export class BlockItem extends vscode.TreeItem {
     ) {
         super(folder.name, collapsibleState);
         this.id = `folder:${folder.key}`;
-        this.description = `${folder.tasks.length}`;
-        if (folder.lessons.length) this.tooltip = `${folder.name}: теория ${folder.lessons.length}, задач ${folder.tasks.length}`;
-        this.contextValue = 'block';
-        this.iconPath = new vscode.ThemeIcon('folder');
+        this.contextValue = folder.challenge && folder.tasks[0]?.folder_id ? 'challenge' : 'block';
+        this.description = folder.challenge ? `челлендж · ${folder.tasks.length} этапов` : `${folder.tasks.length}`;
+        if (folder.challenge) {
+            this.tooltip = `${folder.name}: челлендж, этапов ${folder.tasks.length}. Все этапы открыты, следующий подсвечен.`;
+        } else if (folder.lessons.length) {
+            this.tooltip = `${folder.name}: теория ${folder.lessons.length}, задач ${folder.tasks.length}`;
+        }
+        this.iconPath = new vscode.ThemeIcon(folder.challenge ? 'rocket' : 'folder');
     }
 }
 
@@ -155,6 +171,8 @@ export class EgoTaskTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     private catalog: Promise<Catalog> | undefined;
     /** GET /projects rows by id (empty on old servers / offline). */
     private projectInfo: Map<string, ProjectInfo> = new Map();
+    /** GET /challenges rows by folder id; `null` cached for "no challenge". */
+    private challenges: Map<string, ChallengeInfo | null> = new Map();
 
     constructor(api: EgoApi, readState?: LessonReadState) {
         this.api = api;
@@ -167,12 +185,14 @@ export class EgoTaskTreeProvider implements vscode.TreeDataProvider<TreeNode> {
         this.progressMap.clear();
         this.offlineTasks = undefined;
         this.projectInfo = new Map();
+        this.challenges = new Map();
         this.refresh();
     }
 
     refresh(): void {
         this.offlineTasks = undefined;
         this.catalog = undefined;
+        this.challenges = new Map();
         this._onDidChange.fire();
     }
 
@@ -206,20 +226,54 @@ export class EgoTaskTreeProvider implements vscode.TreeDataProvider<TreeNode> {
 
         if (element instanceof BlockItem) {
             const { lessons, tasks } = element.folder;
+            const challenge = await this.challengeStages(element.folder);
             return [
                 ...lessons.map((l) => new LessonItem(l, this.readState?.isRead(l.id, l.content_hash) ?? false)),
-                ...tasks.map(
-                    (t) =>
-                        new TaskItem(
-                            t,
-                            this.progressMap.get(t.task_id),
-                            vscode.TreeItemCollapsibleState.None
-                        )
-                ),
+                ...tasks.map((t) => this.taskItem(t, challenge)),
             ];
         }
 
         return [];
+    }
+
+    private taskItem(task: TaskMeta, challenge: ChallengeInfo | undefined): TaskItem {
+        const progress = this.progressMap.get(task.task_id);
+        if (!challenge || !challenge.stages.length) {
+            return new TaskItem(task, progress, vscode.TreeItemCollapsibleState.None);
+        }
+        // Stages in stage order; the first not-passed one is highlighted (soft).
+        const ordered = orderedStages(challenge.stages);
+        const item = ordered.find((stage) => stage.id.toLowerCase() === task.task_id.toLowerCase());
+        const next = nextStageNumber(ordered);
+        const status = item?.status ?? progress?.status ?? 'new';
+        return new TaskItem(task, progress, vscode.TreeItemCollapsibleState.None, {
+            number: item?.number ?? 0,
+            challengeId: challenge.id,
+            // A stage tile shows its own title, not the task's `stage_02_…` one.
+            title: item?.title || task.title,
+            status,
+            total: ordered.length,
+            highlighted: (item?.number ?? 0) === next && status !== 'passed',
+        });
+    }
+
+    /**
+     * `GET /challenges/<id>` of a challenge folder — stage order and the callers'
+     * statuses; `undefined` offline, on an old server or after a failure (the
+     * stages then show their progress alone).
+     */
+    private async challengeStages(folder: CatalogFolder): Promise<ChallengeInfo | undefined> {
+        const folderId = folder.tasks[0]?.folder_id;
+        if (!folder.challenge || !folderId || !folder.key.startsWith(`${folder.projectKey}/id:`)) return undefined;
+        const cached = this.challenges.get(folderId);
+        if (cached !== undefined) return cached ?? undefined;
+        try {
+            const info = await this.api.getChallenge(folderId);
+            this.challenges.set(folderId, info);
+            return info ?? undefined;
+        } catch {
+            return undefined;
+        }
     }
 
     private folderItems(project: CatalogProject): BlockItem[] {
@@ -324,7 +378,7 @@ export class EgoTaskTreeProvider implements vscode.TreeDataProvider<TreeNode> {
 }
 
 function errorFolder(): CatalogFolder {
-    return { key: 'error', name: 'Блок с ошибкой', order: 0, block: 'Error', projectKey: '', lessons: [], tasks: [] };
+    return { key: 'error', name: 'Блок с ошибкой', order: 0, block: 'Error', projectKey: '', lessons: [], tasks: [], challenge: false };
 }
 
 async function readJsonUri<T>(uri: vscode.Uri): Promise<T | undefined> {

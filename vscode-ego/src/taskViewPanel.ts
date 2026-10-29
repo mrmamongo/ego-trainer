@@ -14,6 +14,9 @@ import { readEgoConfig } from './egoWorkspace';
 import { parseRunSummary, sortRecentRuns, type TaskRunSummary } from './runHistory';
 import { resolveTheory, type LessonReadState, type TheoryItem } from './theoryLogic';
 import { handleTrainerMessage, isTrainerMessage, trainerKindFromTags, type TrainerContext } from './trainerHost';
+import {
+    challengeIdFromTaskId, challengeViewInfo, parseStageNav, stageByNumber, type ChallengeViewInfo,
+} from './challengeWorkspace';
 
 export interface TaskViewHint {
     level: number;
@@ -40,6 +43,8 @@ export interface TaskViewData {
     lesson?: { id: string; content_hash: string; read: boolean };
     /** Interactive trainer for tasks tagged `trace` / `parsons`. */
     trainer?: 'trace' | 'parsons';
+    /** Multi-file challenge: the stage panel layout (ADR-0018 D18.6). */
+    challenge?: ChallengeViewInfo;
 }
 
 export type TheoryViewItem = Pick<TheoryItem, 'id' | 'title' | 'html'>;
@@ -49,6 +54,16 @@ export interface TaskViewDeps {
     checkTask: (taskId: string) => Promise<void>;
     openPy: (taskId: string, slug?: string, mdPath?: string) => Promise<void>;
     readState: LessonReadState;
+    /** Challenge project folder and navigation (optional: older wiring). */
+    challenge?: ChallengeViewDeps;
+}
+
+export interface ChallengeViewDeps {
+    /** `challenges/<id>/` of the project, for the given challenge folder id. */
+    projectFolder: (challengeId: string) => string;
+    /** Show stage `stage` (opens its statement in this panel). */
+    openStage: (challengeId: string, stage: number) => Promise<void>;
+    run: (challengeId: string) => Promise<void>;
 }
 
 interface TaskRef {
@@ -61,6 +76,11 @@ interface TaskRef {
     kind?: 'task' | 'lesson';
     /** Lesson version the read flag belongs to (known after the body loads). */
     content_hash?: string;
+    /** Challenge folder id and the stage shown (stage panel mode). */
+    challenge_id?: string;
+    stage?: number;
+    /** `id` is a stage task id (`stage_02_…`), so its own statement loads normally. */
+    challenge_task?: boolean;
 }
 
 export class TaskViewPanel {
@@ -123,6 +143,16 @@ export class TaskViewPanel {
             status: 'new', kind: 'lesson', content_hash: lesson.content_hash });
     }
 
+    /** The stage panel: the stage statement + every stage with its status. */
+    static showStage(challengeId: string, taskId: string, stage: number, title = ''): Promise<void> {
+        const current = this.current;
+        // Same challenge, stage already on screen: keep an unsaved state.
+        if (current?.challenge_id === challengeId && current.id === taskId && current.stage === stage) return Promise.resolve();
+        return this.show({ id: taskId, title, slug: '', version: '', status: 'new', challenge_id: challengeId, stage,
+            // The challenge folder id of a stage id (`stage_02_set_get` → `set_get`).
+            challenge_task: challengeIdFromTaskId(taskId) === challengeId });
+    }
+
     /** Keep results attached to their task, even if the editor changed meanwhile. */
     static postResult(result: CheckResponse): boolean {
         this.results.set(result.task_id.toLowerCase(), result);
@@ -145,6 +175,22 @@ export class TaskViewPanel {
         if (isTrainerMessage(msg)) {
             const trainer = await this.trainer();
             if (trainer && await handleTrainerMessage(msg as Parameters<typeof handleTrainerMessage>[0], trainer)) return;
+        }
+        // Challenge stage panel: stage clicks and «Запустить» carry the challenge id.
+        const challengeNav = parseStageNav(msg);
+        if (challengeNav) {
+            if (challengeNav.challengeId === cur?.challenge_id) await deps.challenge?.openStage(challengeNav.challengeId, challengeNav.stage);
+            return;
+        }
+        const challengeMsg = msg as { type?: string; challengeId?: unknown; stage?: unknown };
+        if (challengeMsg.type === 'challenge.run' && typeof challengeMsg.challengeId === 'string') {
+            await deps.challenge?.run(challengeMsg.challengeId);
+            return;
+        }
+        if (challengeMsg.type === 'challenge.openNext' && typeof challengeMsg.challengeId === 'string'
+            && typeof challengeMsg.stage === 'number' && challengeMsg.challengeId === cur?.challenge_id) {
+            await deps.challenge?.openStage(challengeMsg.challengeId, challengeMsg.stage + 1);
+            return;
         }
         if (msg.type !== 'ready' && msg.type !== 'taskView.refresh' && msg.taskId !== cur?.id) return;
         switch (msg.type) {
@@ -204,12 +250,31 @@ export class TaskViewPanel {
         } satisfies TaskViewData });
         const isCurrent = () => this.generation === generation && this.panel === panel;
         try {
-            const data = cur.kind === 'lesson'
-                ? await loadLessonViewData(deps.getApi(), cur, deps.readState)
-                : await loadTaskViewData(deps.getApi(), cur, this.theoryCache);
+            let data: TaskViewData;
+            const stageRef = cur.challenge_task ? { ...cur, kind: undefined as undefined, challenge_id: undefined } : cur;
+            if (cur.challenge_id !== undefined && cur.stage !== undefined) {
+                // A stage still loads its task normally; the stage list is added on top.
+                const base = await loadTaskViewData(deps.getApi(), stageRef, this.theoryCache);
+                data = { ...base, title: cur.title || base.title, kind: undefined,
+                    challenge: await challengeBlock(deps, cur.challenge_id, cur.stage) };
+            } else if (cur.kind === 'lesson') {
+                data = await loadLessonViewData(deps.getApi(), cur, deps.readState);
+            } else {
+                data = await loadTaskViewData(deps.getApi(), cur, this.theoryCache);
+            }
             if (!isCurrent()) return;
             if (data.lesson) this.current = { ...cur, content_hash: data.lesson.content_hash };
-            const result = cur.kind === 'lesson' ? undefined : this.results.get(cur.id.toLowerCase());
+            // The panel moved to another stage while loading: switch it without a reload.
+            const onScreen = this.current;
+            if (data.challenge && onScreen?.challenge_id === data.challenge.challenge_id
+                && onScreen.stage !== undefined && onScreen.stage !== data.challenge.stage) {
+                void panel.webview.postMessage({ type: 'challenge.stageData',
+                    payload: { challenge_id: data.challenge.challenge_id, stage: data.challenge.stage } });
+                return;
+            }
+            const result = (cur.challenge_id !== undefined && !cur.challenge_task) || cur.kind === 'lesson'
+                ? undefined
+                : this.results.get(cur.id.toLowerCase());
             if (result) data.status = result.status;
             void panel.webview.postMessage({ type: 'taskView.setData', payload: data });
             if (result) void panel.webview.postMessage({ type: 'taskView.setResult', payload: result });
@@ -230,6 +295,28 @@ async function openTaskLink(target: string): Promise<void> {
     if (!match) return;
     const id = decodeURIComponent(match[2]);
     await vscode.commands.executeCommand(match[1] === 'task' ? 'ego.openTaskById' : 'ego.openLessonById', id);
+}
+
+/**
+ * Stage list of the stage panel. An old server (no /challenges route) or a
+ * broken statement still shows the stage: the block is simply left out.
+ */
+async function challengeBlock(
+    deps: TaskViewDeps,
+    challengeId: string | undefined,
+    stage: number
+): Promise<ChallengeViewInfo | undefined> {
+    if (!challengeId) return undefined;
+    try {
+        const challenge = await deps.getApi().getChallenge(challengeId);
+        if (!challenge) return undefined;
+        const item = stageByNumber(challenge.stages, stage);
+        if (!item) return undefined;
+        const folder = deps.challenge?.projectFolder(challengeId) ?? `challenges/${challengeId}`;
+        return challengeViewInfo(challenge, item.number, folder);
+    } catch {
+        return undefined;
+    }
 }
 
 /** Lesson mode: the card body rendered like a statement, plus its read flag. */
