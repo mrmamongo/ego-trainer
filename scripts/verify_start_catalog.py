@@ -67,21 +67,28 @@ EXPECTED_IDS = {
 }
 
 
-def verify(catalog_root: Path, timeout: float = 5.0) -> list[dict]:
+def verify(
+    catalog_root: Path,
+    timeout: float = 5.0,
+    *,
+    project_id: str = "python-start",
+    expected_ids: dict[str, list[str]] = EXPECTED_IDS,
+    checkpoint_folders: set[str] = CHECKPOINT_FOLDERS,
+) -> list[dict]:
     catalog = discover_repo(catalog_root)
     assert not catalog.is_legacy
-    assert [project.project.id for project in catalog.projects] == ["python-start"]
+    assert [project.project.id for project in catalog.projects] == [project_id]
     folders = {folder.folder.id: folder for folder in catalog.projects[0].folders}
-    assert sorted(folders) == sorted(EXPECTED_IDS), sorted(folders)
+    assert sorted(folders) == sorted(expected_ids), sorted(folders)
 
-    lesson_folder = verify_theory(folders)
-    folder_rank = {folder_id: rank for rank, folder_id in enumerate(EXPECTED_IDS)}
+    lesson_folder = verify_theory(folders, expected_ids, checkpoint_folders)
+    folder_rank = {folder_id: rank for rank, folder_id in enumerate(expected_ids)}
 
     rows = []
-    for folder_id, expected_ids in EXPECTED_IDS.items():
+    for folder_id, folder_ids in expected_ids.items():
         discovered = folders[folder_id].tasks
         ids = [item.frontmatter.id for item in discovered]
-        assert ids == expected_ids, (folder_id, ids)
+        assert ids == folder_ids, (folder_id, ids)
         for item in discovered:
             theory = item.frontmatter.theory
             assert theory, f"{item.frontmatter.id} has no theory"
@@ -94,13 +101,15 @@ def verify(catalog_root: Path, timeout: float = 5.0) -> list[dict]:
     return rows
 
 
-def verify_theory(folders) -> dict[str, str]:
+def verify_theory(
+    folders, expected_ids: dict[str, list[str]], checkpoint_folders: set[str]
+) -> dict[str, str]:
     """Every folder has theory cards; lesson ids are unique. Returns id -> folder id."""
     lesson_folder: dict[str, str] = {}
-    for folder_id in EXPECTED_IDS:
+    for folder_id in expected_ids:
         lessons = folders[folder_id].lessons
         # Checkpoint folders test earlier topics and link earlier cards; they have no cards of their own.
-        assert lessons or folder_id in CHECKPOINT_FOLDERS, f"{folder_id} has no lesson_*.md"
+        assert lessons or folder_id in checkpoint_folders, f"{folder_id} has no lesson_*.md"
         for lesson in lessons:
             assert not lesson.error, (lesson.md_path.name, lesson.error)
             assert lesson.frontmatter is not None, lesson.md_path.name
