@@ -53,6 +53,13 @@ def db_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     ):
         module = importlib.import_module(name)
         importlib.reload(module)
+    # Initialise and fill THIS test's database. ``init_schema`` has already run
+    # earlier in the session, so the app reloaded below never re-creates the
+    # tables of a fresh DB file; the CLI does it (AGENTS.md common commands).
+    from ego_server.cli import main as cli_main
+
+    cli_main(["migrate"])
+    cli_main(["admin", "import-tasks", "--docs-dir", "docs/tasks"])
     yield path
     monkeypatch.undo()
     for name in (

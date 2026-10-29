@@ -80,6 +80,12 @@ def _migrate_add_columns(conn: sqlite3.Connection) -> None:
     if "callback_uri" not in oauth_cols:
         conn.execute("ALTER TABLE oauth_flows ADD COLUMN callback_uri TEXT")
 
+    # runs.files_json: the whole project of a challenge submission (ADR-0018
+    # D18.5); NULL for a single-file task. Additive: old rows stay valid.
+    runs_cols = {row["name"] for row in conn.execute("PRAGMA table_info(runs)")}
+    if runs_cols and "files_json" not in runs_cols:
+        conn.execute("ALTER TABLE runs ADD COLUMN files_json TEXT")
+
     _migrate_add_lessons_table(conn)
     _migrate_add_analytics_table(conn)
 

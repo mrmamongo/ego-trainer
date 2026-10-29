@@ -23,6 +23,7 @@ from ego_server.routers import (
     admin_assistant,
     admin_settings,
     auth,
+    challenges,
     check,
     extension,
     forgejo_auth,
@@ -71,6 +72,7 @@ app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(forgejo_auth.router, prefix="/auth", tags=["auth"])
 app.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
+app.include_router(challenges.router, prefix="/challenges", tags=["challenges"])
 app.include_router(lessons.router, prefix="/lessons", tags=["lessons"])
 app.include_router(projects.router, prefix="/projects", tags=["projects"])
 app.include_router(progress.router, prefix="/progress", tags=["progress"])

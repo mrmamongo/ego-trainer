@@ -176,6 +176,7 @@ CREATE TABLE IF NOT EXISTS runs (
   solution_hash TEXT NOT NULL,             -- sha256 решения студента
   status        TEXT NOT NULL,             -- 'passed' | 'failed' | 'error' | 'timeout'
   log           TEXT NOT NULL,             -- stdout/stderr, обрезано (например, до 8KB)
+  files_json    TEXT,                      -- ADR-0018: {путь: код} челленджа | NULL
   created_at    TEXT NOT NULL
 );
 

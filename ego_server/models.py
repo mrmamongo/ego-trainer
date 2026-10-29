@@ -4,7 +4,7 @@
 Тут только минимальные схемы, чтобы роутеры компилировались.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_serializer
 
 
 class LoginRequest(BaseModel):
@@ -115,10 +115,16 @@ class ProgressRow(BaseModel):
 
 
 class CheckRequest(BaseModel):
-    """Request body for POST /check — run checker server-side."""
+    """Request body for POST /check — run checker server-side.
+
+    Exactly one of ``student_code`` (an ordinary single-file task) or
+    ``files`` (``{path: source}`` of a challenge stage, ADR-0018 D18.5) is
+    sent; the router answers 422 with a Russian message otherwise.
+    """
 
     task_id: str
-    student_code: str
+    student_code: str | None = None
+    files: dict[str, str] | None = None
 
 
 class RunCodeRequest(BaseModel):
@@ -138,13 +144,30 @@ class RunCodeResponse(BaseModel):
 
 
 class TestResultDTO(BaseModel):
-    """One test result in a CheckResponse."""
+    """One test result in a CheckResponse.
+
+    ``stage`` / ``stage_title`` are set for a challenge stage check (the
+    stage whose tests produced the row) and stay ``None``/``""`` for an
+    ordinary single-file task, where they are left out of the payload so the
+    old response shape is unchanged.
+    """
 
     description: str
     passed: bool
     expected_repr: str
     actual_repr: str | None = None
     error: str | None = None
+    stage: int | None = None
+    stage_title: str = ""
+
+    @model_serializer(mode="wrap")
+    def _omit_empty_stage(self, handler):
+        """Leave ``stage``/``stage_title`` out unless the row belongs to a stage."""
+        data = handler(self)
+        if data.get("stage") is None:
+            data.pop("stage", None)
+            data.pop("stage_title", None)
+        return data
 
 
 class CheckResponse(BaseModel):
@@ -174,6 +197,60 @@ class HintsResponse(BaseModel):
 
     task_id: str
     hints: list[Hint] = Field(default_factory=list)
+
+
+# === Multi-file challenges (ADR-0018 D18.5) ===
+
+
+class ChallengeWorkspaceDTO(BaseModel):
+    """File rules of a challenge project (``folder.yaml`` → ``workspace``).
+
+    ``entry`` is what the black-box run starts; ``include`` lists the files
+    the extension collects from the student's folder; ``max_files`` /
+    ``max_bytes`` cap one submission. Defaults match ``ego.runner``.
+    """
+
+    entry: str = "main.py"
+    include: list[str] = Field(default_factory=lambda: ["*.py"])
+    max_files: int = 20
+    max_bytes: int = 200000
+
+
+class ChallengeStageDTO(BaseModel):
+    """One stage of a challenge: the stage task + the student's progress.
+
+    ``id`` is a task id (``tasks.challenge_stage`` is its 1-based number),
+    ``status`` is the caller's progress on that task version — ``new`` when
+    it was never checked — and ``current`` is where a first start begins
+    (stage 1, or the first stage that is not passed yet).
+    """
+
+    id: str
+    title: str
+    number: int
+    order: int = 0
+    level: str = "easy"
+    version: str
+    status: str = "new"
+    passed_tests: int = 0
+    total_tests: int = 0
+    current: bool = False
+
+
+class ChallengeDTO(BaseModel):
+    """One challenge folder (GET /challenges/<folder_id>)."""
+
+    id: str
+    project_id: str
+    code: str
+    name: str
+    description: str = ""
+    order: int = 0
+    level: str | None = None
+    theory: list[str] = Field(default_factory=list)
+    workspace: ChallengeWorkspaceDTO
+    stages: list[ChallengeStageDTO] = Field(default_factory=list)
+    starter: dict[str, str] = Field(default_factory=dict)
 
 
 # === Content-repo sync (ADR-0016) ===

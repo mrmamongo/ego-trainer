@@ -137,7 +137,7 @@ def get_task_meta(conn: sqlite3.Connection, task_id: str) -> dict | None:
     row = conn.execute(
         """SELECT id, block, slug, task_id, title, level, tags, version,
                   content_hash, breaking, md_path, theory, folder_id,
-                  project_id, created_at, updated_at
+                  project_id, challenge_stage, created_at, updated_at
            FROM tasks WHERE id = ?""",
         (task_id,),
     ).fetchone()
