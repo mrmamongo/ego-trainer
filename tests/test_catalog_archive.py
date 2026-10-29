@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
@@ -14,6 +13,7 @@ from fastapi.testclient import TestClient
 from ego_server.catalog_visibility import activate_only_projects
 from ego_server.db import SCHEMA_PATH, init_schema
 import ego_server.deps as deps
+from ego_server.deps import get_current_user, get_db
 from ego_server.routers import admin, tasks
 
 
@@ -164,12 +164,21 @@ def archive_db(tmp_path: Path) -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
+_IMPORTED_DEPS = {"get_db": get_db, "get_current_user": get_current_user}
+
+
+def _override(app: FastAPI, name: str, replacement) -> None:
+    """Override a dependency in both of its versions.
+
+    Other tests reload ``ego_server.deps`` and some routers, so ``tasks`` may
+    still use the import-time function while ``admin`` uses the reloaded one.
+    """
+    for dependency in {_IMPORTED_DEPS[name], getattr(deps, name)}:
+        app.dependency_overrides[dependency] = replacement
+
+
 @pytest.fixture
 def archive_client(archive_db: sqlite3.Connection, tmp_path: Path) -> Iterator[TestClient]:
-    # Other tests reload ego_server.deps and some routers; rebind both so the
-    # overrides below replace the dependencies the routes actually use.
-    for module in (deps, tasks, admin):
-        importlib.reload(module)
     app = FastAPI()
     app.include_router(tasks.router, prefix="/tasks")
     app.include_router(admin.router, prefix="/admin")
@@ -181,8 +190,8 @@ def archive_client(archive_db: sqlite3.Connection, tmp_path: Path) -> Iterator[T
         finally:
             conn.close()
 
-    app.dependency_overrides[deps.get_db] = isolated_db
-    app.dependency_overrides[deps.get_current_user] = lambda: {"sub": "operator", "role": "admin"}
+    _override(app, "get_db", isolated_db)
+    _override(app, "get_current_user", lambda: {"sub": "operator", "role": "admin"})
     with TestClient(app) as client:
         yield client
 
@@ -259,10 +268,10 @@ def test_archived_historical_task_remains_readable_with_role_based_solution(
 ):
     activate_only_projects(archive_db, ["xl-a"])
     archive_db.commit()
-    archive_client.app.dependency_overrides[deps.get_current_user] = lambda: {
+    _override(archive_client.app, "get_current_user", lambda: {
         "sub": "learner" if role == "student" else "operator",
         "role": role,
-    }
+    })
     md_path = Path(archive_db.execute("SELECT md_path FROM tasks WHERE id = 'OLD1'").fetchone()[0])
 
     body = _get_json(archive_client, "/tasks/OLD1", params={"include_solution": "true"})
