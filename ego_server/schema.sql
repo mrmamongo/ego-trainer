@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS folders (
   description  TEXT NOT NULL DEFAULT '',
   "order"      INTEGER NOT NULL DEFAULT 0, -- 'order' reserved in some SQL dialects
   level        TEXT,                       -- easy | medium | hard (nullable)
+  kind         TEXT NOT NULL DEFAULT 'tasks',  -- 'tasks' | 'challenge' (ADR-0018)
+  workspace_json TEXT,                     -- JSON {entry,include,max_files,max_bytes} | NULL
   created_at   TEXT NOT NULL,
   updated_at   TEXT NOT NULL,
   PRIMARY KEY (id, project_id)
@@ -51,6 +53,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   folder_id    TEXT,                       -- FK -> folders.id (nullable for legacy)
   project_id   TEXT,                       -- FK -> projects.id (nullable for legacy)
   theory       TEXT NOT NULL DEFAULT '[]', -- JSON array of lesson ids (ordered)
+  challenge_stage INTEGER,                 -- 1..N for a challenge stage, NULL otherwise
   archived     INTEGER NOT NULL DEFAULT 0,
   created_at   TEXT NOT NULL,              -- ISO 8601
   updated_at   TEXT NOT NULL,

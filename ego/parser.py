@@ -15,6 +15,7 @@ import hashlib
 import re
 from pathlib import Path
 
+from ego.catalog import TaskFrontmatter, split_frontmatter
 from ego.models import Task
 
 # === Regexes / patterns ===
@@ -94,6 +95,13 @@ def parse_task_text(text: str, path: Path, default_version: str = "1.0.0") -> Ta
     #    only strip it so legacy H1/bold parsing works on the body.
     text, _fm_consumed = _strip_frontmatter(text)
 
+    # 0b. Stage of a multi-file challenge (``stage_NN_<slug>.md``, ADR-0018):
+    #     the code is the challenge's project folder, so there is no
+    #     ``.solution.py``/``.student.py`` sidecar to require. The stage's own
+    #     reference is the optional ``stage_NN_<slug>.solution/`` project.
+    if is_stage_file(path):
+        return _parse_stage_task(path, text)
+
     lines = text.splitlines()
 
     # 1. Title from H1 + bold meta (Блок/Сложность/Темы). Bold meta is
@@ -169,6 +177,76 @@ def parse_task_text(text: str, path: Path, default_version: str = "1.0.0") -> Ta
         solution_py=solution_py,
         tests_file=tests_file,
         extra=extra,
+    )
+
+
+# === Challenge stages (ADR-0018) ===
+
+# ``stage_01_parse`` — the slug part after the stage number.
+_STAGE_STEM_RE = re.compile(r"^stage_\d{2}_(?P<slug>.+)$")
+
+
+def is_stage_file(path: Path) -> bool:
+    """True for ``stage_NN_<slug>.md`` — a multi-file challenge stage."""
+    return path.suffix == ".md" and _STAGE_STEM_RE.match(path.stem) is not None
+
+
+def _parse_stage_task(path: Path, text: str) -> Task:
+    """Parse a challenge stage; fields come from frontmatter + the body."""
+    fm_dict, body = split_frontmatter(text)
+    frontmatter = None
+    if fm_dict is not None:
+        try:
+            frontmatter = TaskFrontmatter(**fm_dict)
+        except (TypeError, ValueError):  # malformed meta: fall back to the H1
+            frontmatter = None
+
+    lines = body.splitlines()
+    try:
+        _id, title = _parse_title(lines[0] if lines else "")
+    except ValueError:
+        _id, title = "", ""
+
+    sections = _split_sections(lines)
+    if "Условие" not in sections:
+        raise ValueError(f"Missing '## Условие' section in {path}")
+    statement_md = _build_statement_md(sections)
+
+    tests_file = _sidecar_path(path, ".tests.py")
+    if not tests_file.is_file():
+        tests_file = None
+    # ``stage_02_save.md`` → ``stage_02_save.solution/``
+    solution_dir = path.parent / f"{path.stem}.solution"
+    # The stage's reference project; empty when the folder has only a final
+    # ``solution/`` (ADR-0018: ``stage_NN_<slug>.solution/`` is optional).
+    solution_py = ""
+    if solution_dir.is_dir():
+        solution_py = "\n\n".join(
+            f"# === {item.relative_to(solution_dir).as_posix()} ===\n"
+            + item.read_text(encoding="utf-8")
+            for item in sorted(solution_dir.rglob("*.py"))
+        )
+        if solution_py and not solution_py.endswith("\n"):
+            solution_py += "\n"
+
+    return Task(
+        id=frontmatter.id if frontmatter else (_id or path.stem),
+        block=_parse_bold_meta_optional(
+            lines, "Блок", default=slug_first_char(path.parent.name)
+        )[0],
+        slug=path.parent.name,
+        task_id=frontmatter.id if frontmatter else (_id or path.stem),
+        title=frontmatter.title if frontmatter else (title or path.stem),
+        level=frontmatter.level if frontmatter else "easy",  # type: ignore[arg-type]
+        tags=list(frontmatter.tags) if frontmatter else [],
+        version=frontmatter.version if frontmatter else "1.0.0",
+        content_hash=_hash_content(statement_md, "", solution_py),
+        md_path=path,
+        statement_md=statement_md,
+        stub_py="",
+        solution_py=solution_py,
+        tests_file=tests_file,
+        extra={"solution_source": "challenge"} if solution_py else {},
     )
 
 

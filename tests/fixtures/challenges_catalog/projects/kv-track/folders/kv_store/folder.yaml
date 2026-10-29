@@ -1,0 +1,12 @@
+id: kv_store
+code: KV
+name: "Своё хранилище ключ-значение"
+description: "Челлендж: две команды → сохранение в JSON."
+order: 1
+level: medium
+kind: challenge
+workspace:
+  entry: main.py
+  include: ["*.py", "data/*.json"]
+  max_files: 20
+  max_bytes: 200000

@@ -55,6 +55,16 @@ def _migrate_add_columns(conn: sqlite3.Connection) -> None:
     # tasks.theory: JSON array of lesson ids (theory cards before the task)
     if "theory" not in tasks_cols:
         conn.execute("ALTER TABLE tasks ADD COLUMN theory TEXT NOT NULL DEFAULT '[]'")
+    # tasks.challenge_stage: 1..N for a challenge stage, NULL elsewhere (ADR-0018)
+    if "challenge_stage" not in tasks_cols:
+        conn.execute("ALTER TABLE tasks ADD COLUMN challenge_stage INTEGER")
+
+    # folders.kind / folders.workspace_json: challenge folders (ADR-0018)
+    folders_cols = {row["name"] for row in conn.execute("PRAGMA table_info(folders)")}
+    if "kind" not in folders_cols:
+        conn.execute("ALTER TABLE folders ADD COLUMN kind TEXT NOT NULL DEFAULT 'tasks'")
+    if "workspace_json" not in folders_cols:
+        conn.execute("ALTER TABLE folders ADD COLUMN workspace_json TEXT")
 
     projects_cols = {row["name"] for row in conn.execute("PRAGMA table_info(projects)")}
     if "archived" not in projects_cols:

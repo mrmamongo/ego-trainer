@@ -24,6 +24,7 @@ Two modes:
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -39,16 +40,30 @@ from ego.catalog import (
     parse_lesson_frontmatter,
     parse_task_frontmatter,
 )
+from ego.runner import include_matches
 
 # === Discovered structures ===
 
 FIXTURE_PROJECT_ID = "fixture"
 FIXTURE_PROJECT_NAME = "Fixture (legacy docs/tasks)"
 
+#: Project directories inside a ``kind: challenge`` folder (ADR-0018 D18.1).
+STARTER_DIR = "starter"
+SOLUTION_DIR = "solution"
+
+# ``stage_01_parse.md`` → number 1, slug ``parse``.
+_STAGE_MD_RE = re.compile(r"^stage_(?P<number>\d{2})_(?P<slug>[^/]+)\.md$")
+
 
 @dataclass
 class DiscoveredTask:
-    """One task file on disk + parsed frontmatter (if any)."""
+    """One task file on disk + parsed frontmatter (if any).
+
+    For a challenge stage, ``stage`` is its 1-based number and
+    ``stage_solution`` the optional ``stage_NN_<slug>.solution/`` project
+    (the reference right after that stage); the code itself lives in the
+    folder's ``starter/`` / ``solution/`` directories (ADR-0018 D18.1).
+    """
 
     md_path: Path
     frontmatter: TaskFrontmatter | None  # None = legacy, fall back to parser
@@ -56,6 +71,8 @@ class DiscoveredTask:
     tests_path: Path | None  # <slug>.tests.py next to .md
     folder_id: str  # parent folder id (slug)
     project_id: str  # parent project id
+    stage: int | None = None  # 1-based stage number of a challenge
+    stage_solution: Path | None = None
 
 
 @dataclass
@@ -76,11 +93,22 @@ class DiscoveredLesson:
 
 @dataclass
 class DiscoveredFolder:
-    """One folder (block) with its meta and discovered tasks + lessons."""
+    """One folder (block) with its meta and discovered tasks + lessons.
+
+    ``starter`` / ``solution`` are the project directories of a challenge
+    folder (``None`` when absent, and for an ordinary folder).
+    """
 
     folder: Folder
     tasks: list[DiscoveredTask] = field(default_factory=list)
     lessons: list[DiscoveredLesson] = field(default_factory=list)
+    starter: Path | None = None
+    solution: Path | None = None
+
+    @property
+    def is_challenge(self) -> bool:
+        """True when the folder declares ``kind: challenge``."""
+        return self.folder.kind == "challenge"
 
 
 @dataclass
@@ -107,6 +135,11 @@ class DiscoveredCatalog:
     def all_lessons(self) -> list[DiscoveredLesson]:
         """Flatten all discovered lessons across projects/folders."""
         return [lesson for p in self.projects for f in p.folders for lesson in f.lessons]
+
+    @property
+    def challenge_folders(self) -> list[DiscoveredFolder]:
+        """Folders with ``kind: challenge`` (ADR-0018), in catalog order."""
+        return [f for p in self.projects for f in p.folders if f.is_challenge]
 
 
 # === Public API ===
@@ -186,10 +219,20 @@ def _discover_folders(proj_dir: Path, project_id: str) -> list[DiscoveredFolder]
         folder.path = folder_dir
         folder.project_id = project_id
         df = DiscoveredFolder(folder=folder)
-        df.tasks = _discover_tasks(folder_dir, folder.id, project_id)
+        if folder.is_challenge:
+            df.starter = _dir_or_none(folder_dir / STARTER_DIR)
+            df.solution = _dir_or_none(folder_dir / SOLUTION_DIR)
+        df.tasks = _discover_tasks(
+            folder_dir, folder.id, project_id, is_challenge=folder.is_challenge
+        )
         df.lessons = _discover_lessons(folder_dir, folder.id, project_id)
         out.append(df)
     return out
+
+
+def _dir_or_none(path: Path) -> Path | None:
+    """``path`` when it is a directory, else ``None``."""
+    return path if path.is_dir() else None
 
 
 def _load_folder_or_synthetic(folder_dir: Path) -> Folder:
@@ -262,10 +305,47 @@ def _discover_legacy_mode(repo_root: Path) -> DiscoveredCatalog:
 
 
 def _discover_tasks(
-    folder_dir: Path, folder_id: str, project_id: str
+    folder_dir: Path,
+    folder_id: str,
+    project_id: str,
+    *,
+    is_challenge: bool = False,
 ) -> list[DiscoveredTask]:
-    """Find all ``task_*.md`` files in a folder and parse frontmatter."""
-    out: list[DiscoveredTask] = []
+    """Find the folder's tasks and parse their frontmatter.
+
+    A challenge folder yields its ``stage_NN_<slug>.md`` stages instead of
+    ``task_*.md`` files; the stage file's slug becomes the task slug, so its
+    tests live in ``stage_NN_<slug>.tests.py`` and its optional reference
+    project in ``stage_NN_<slug>.solution/``. ``stage_NN_<slug>.solution/``
+    is a directory, so it never shows up in the glob patterns.
+    """
+    if is_challenge:
+        out = []
+        stages = _stage_files(folder_dir)
+        numbers = [number for number, _ in stages]
+        if numbers and numbers != list(range(1, len(numbers) + 1)):
+            raise ValueError(
+                f"{folder_dir.name}: этапы челленджа должны идти подряд с 1 "
+                f"(stage_01_…, stage_02_…), найдено: {numbers}"
+            )
+        for number, md_path in stages:
+            slug = f"stage_{number:02}_{_stage_slug(md_path)}"
+            tests_path = folder_dir / f"{slug}.tests.py"
+            out.append(
+                DiscoveredTask(
+                    md_path=md_path,
+                    frontmatter=_read_frontmatter(md_path),
+                    solution_path=None,  # code lives in the folder (D18.1)
+                    tests_path=tests_path if tests_path.is_file() else None,
+                    folder_id=folder_id,
+                    project_id=project_id,
+                    stage=number,
+                    stage_solution=_dir_or_none(folder_dir / f"{slug}.solution"),
+                )
+            )
+        return out
+
+    out = []
     for md_path in sorted(folder_dir.glob("task_*.md")):
         fm = _read_frontmatter(md_path)
         solution_path = md_path.with_suffix(".solution.py")
@@ -281,6 +361,25 @@ def _discover_tasks(
             )
         )
     return out
+
+
+def _stage_files(folder_dir: Path) -> list[tuple[int, Path]]:
+    """``(number, path)`` of every ``stage_NN_<slug>.md`` in a challenge."""
+    stages = []
+    for md_path in sorted(folder_dir.glob("stage_*.md")):
+        match = _STAGE_MD_RE.match(md_path.name)
+        if match is None:
+            raise ValueError(
+                f"{md_path.name}: имя этапа должно быть stage_NN_<slug>.md "
+                "(NN — двузначный номер этапа)"
+            )
+        stages.append((int(match.group("number")), md_path))
+    return stages
+
+
+def _stage_slug(md_path: Path) -> str:
+    """Slug part of ``stage_NN_<slug>.md`` (``"parse"``)."""
+    return md_path.stem.split("_", 2)[2]
 
 
 def _discover_lessons(
@@ -304,6 +403,27 @@ def _discover_lessons(
             lesson.frontmatter = fm
             lesson.body_md = body
         out.append(lesson)
+    return out
+
+
+def read_project_files(directory: Path, include: list[str] | None = None) -> dict[str, str]:
+    """Read a project directory into ``{posix path: text}`` (D18.1).
+
+    Only regular files matching ``include`` (``*.py`` matches every
+    directory) are read; hidden directories such as ``.git`` are skipped.
+    Text is decoded as UTF-8 with ``surrogateescape`` so binary files
+    round-trip unchanged.
+    """
+    include = list(include or ["*.py"])
+    out: dict[str, str] = {}
+    for path in sorted(Path(directory).rglob("*")):
+        relative = path.relative_to(directory)
+        if any(part.startswith(".") for part in relative.parts) or not path.is_file():
+            continue
+        posix = relative.as_posix()
+        if not include_matches(posix, include):
+            continue
+        out[posix] = path.read_bytes().decode("utf-8", errors="surrogateescape")
     return out
 
 
