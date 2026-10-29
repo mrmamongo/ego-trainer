@@ -1,7 +1,7 @@
 id: python-start
 name: "Python с нуля"
 description: "Пошаговый вход: переменные, функции, циклы по ролям переменных. Одна новая идея на папку."
-version: "1.7.0"
+version: "1.8.0"
 order: 0
 default_locale: ru
 tags: [python, basics, start]

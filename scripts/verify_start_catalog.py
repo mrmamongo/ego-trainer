@@ -60,6 +60,8 @@ EXPECTED_IDS = {
     "12_tuples_sets": [f"TS{n:02}" for n in range(1, 11)],
     "13_dicts": [f"DI{n:02}" for n in range(1, 27)],
     "14_errors": [f"ER{n:02}" for n in range(1, 19)],
+    "15_nested": [f"NS{n:02}" for n in range(1, 15)],
+    "16_review": [f"RV{n:02}" for n in range(1, 13)],
 }
 
 
