@@ -201,6 +201,78 @@ def task_li21_merge_sorted(a, b):
 - `messages` принимает имя правила (`"sorted"`, `"sort"`, `"math"`, `"Global"`)
   или квалифицированную форму (`"method:sort"`).
 
+### Правила для ООП-задач
+
+Курс по ООП проверяет не только ответ, но и устройство классов:
+
+```python
+from ego.testing import case, rules
+
+@rules(
+    require_classes=["Account", "Shape", "Circle"],          # классы верхнего уровня
+    require_decorators={                                     # "Класс" или "Класс.метод"
+        "Account": ["dataclass"],
+        "Account.balance": ["property", "setter"],
+        "Account.from_dict": ["classmethod"],
+        "Shape.area": ["abstractmethod"],
+    },
+    require_methods={"Account": ["deposit", "withdraw", "__repr__"]},  # методы в теле класса
+    require_methods_inherited={"Child": ["deposit"]},        # ... или унаследованные (для этого класса)
+    require_bases={"Shape": ["ABC"], "Circle": ["Shape"]},  # прямые базовые классы
+    forbid_bases={"Inventory": ["list", "dict"]},            # наследование нельзя
+    forbid_attributes_outside_class=["_balance"],            # x._balance снаружи класса нельзя
+)
+@case(args=(50,), expected=150, description="deposit 50")
+def task_oop_account(amount):
+    ...
+```
+
+Что считается:
+
+| Аргумент | Проверяет |
+|----------|-----------|
+| `require_classes=["Account"]` | есть `class Account` на верхнем уровне (вложенные и локальные в функциях — нет) |
+| `require_decorators={"Account": ["dataclass"]}` | у класса есть декоратор: `@dataclass`, `@dataclasses.dataclass`, `@dataclass(frozen=True)` |
+| `require_decorators={"Account.balance": ["property"]}` | у метода в теле класса есть декоратор |
+| `require_methods={"Account": ["deposit"]}` | метод определён в теле класса (унаследованный не считается) |
+| `require_methods_inherited={"Child": ["deposit"]}` | для этого класса унаследованные методы тоже считаются |
+| `require_bases={"Circle": ["Shape"]}` / `forbid_bases` | прямой базовый класс (`abc.ABC` = `ABC`, `collections.OrderedDict` = `OrderedDict`) |
+| `forbid_attributes_outside_class=["_balance"]` | чтение/запись `x._balance` вне тела класса; внутри класса и его методов — можно |
+
+Декораторы понимаются так: `@property` → `"property"`, `@x.setter` / `@x.getter`
+/ `@x.deleter` → `"setter"` / `"getter"` / `"deleter"`, `@classmethod`,
+`@staticmethod`, `@abstractmethod` / `@abc.abstractmethod` → `"abstractmethod"`,
+`@cached_property`, `@total_ordering`, `@unique`, `@dataclass`. Неизвестное имя
+декоратора — `ValueError` при декорации. Если у класса несколько требований,
+в сообщении называется первое недостающее (`@Account.balance: ["property",
+"setter"]` с одним только сеттером скажет про `@property`).
+
+Классы с именем `Given*` и функции `given_*` (GIVEN-заготовки из стартера)
+освобождены от этих правил.
+
+Сообщения (по одному результату на нарушение):
+
+```
+Правило: нужен класс `Account`
+Правило: `Account` должен быть помечен @dataclass (строка 4)
+Правило: метод `balance` в классе `Account` должен быть помечен @property (строка 7)
+Правило: нужен метод `deposit` в классе `Account`
+Правило: `Circle` наследуется от `Shape` (строка 12)
+Правило: `Inventory` не должен наследоваться от `list` (строка 16)
+Правило: к `\\_balance` нельзя обращаться снаружи класса (строка 12)
+```
+
+Пропавший класс называется **один раз**: если он перечислен в
+`require_classes`, то `require_decorators` / `require_methods` / `require_bases`
+про него молчат (иначе одна ошибка давала бы три результата). Без
+`require_classes` про него скажет первое правило, которому он нужен
+(«нужен класс `Account` с @dataclass»). Метод, которого нет в классе, тоже
+сообщается один раз — в `require_methods` (или в `require_decorators`, если в
+`require_methods` его нет).
+
+Ключи для `messages`: имя класса (`"Account"`), метод (`"Account.deposit"`),
+база (`"Circle -> Shape"`), атрибут (`"_balance"`).
+
 Проверка (`ego/checker.py` + `ego/static_rules.py`):
 
 - перед запуском кейсов код студента парсится через `ast`; при `SyntaxError`
