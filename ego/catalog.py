@@ -69,6 +69,23 @@ class Catalog(BaseModel):
 # === Project (project.yaml) ===
 
 
+class RecommendedAfter(BaseModel):
+    """Soft course recommendation (``project.yaml`` → ``recommended_after``).
+
+    Advisory only: it never blocks a task or a project. ``min_passed`` is the
+    number of passed tasks in ``project``; ``min_per_kind`` (optional) asks
+    for at least N passed tasks per kind tag (``bug`` / ``modify`` / ``new``);
+    ``note`` is a free-form sentence shown to the student.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    project: str  # prerequisite project id
+    min_passed: int = 0
+    min_per_kind: int | None = None
+    note: str = ""
+
+
 class Project(BaseModel):
     """One course / track. Parsed from ``project.yaml``."""
 
@@ -82,6 +99,8 @@ class Project(BaseModel):
     default_locale: str = "ru"
     tags: list[str] = Field(default_factory=list)
     version_policy: VersionPolicy = "declare"
+    # Soft prerequisite for this course; never enforced.
+    recommended_after: RecommendedAfter | None = None
 
     # Set by walker (not from YAML) — absolute path to project dir.
     path: Path | None = None

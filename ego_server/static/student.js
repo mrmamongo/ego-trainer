@@ -14,6 +14,8 @@
     token: localStorage.getItem('ego_student_token'), user: null, providers: null,
     tasks: [], progress: [], understanding: [], evidenceByTask: new Map(),
     evidenceAvailable: false, account: null, lessons: [], lessonDetails: new Map(),
+    projects: [], projectById: new Map(),
+    breakdowns: new Map(), breakdownPending: new Set(),
     extension: null, registering: false, epoch: 0, taskEpoch: 0,
     sidebarCollapsed: localStorage.getItem('ego_student_sidebar_collapsed') === 'true',
     course: { query: '', openOnly: false, defenseOnly: false }, theoryQuery: '',
@@ -132,6 +134,68 @@
   }
 
   function taskUrl(id) { return `/student/tasks/${encodeURIComponent(id)}`; }
+
+  // === Soft recommendations (GET /projects) — degrade silently on old servers ===
+
+  function projectRow(projectId) {
+    return projectId ? state.projectById.get(projectId) || null : null;
+  }
+
+  function projectDisplayName(projectId) {
+    const row = projectRow(projectId);
+    return (row && row.name) || projectId;
+  }
+
+  function readinessLineFor(project) {
+    return project && project.id ? L.readinessLine(projectRow(project.id), projectDisplayName) : null;
+  }
+
+  /** How the task's project relates to its recommendations (task link tooltip). */
+  function recommendationHint(projectId) {
+    return L.recommendationHint(projectId, state.projects, (row) => L.readinessLine(row, projectDisplayName));
+  }
+
+  function recommendationsFor(projectId) {
+    return L.unmetRecommendations(state.projects)
+      .filter((row) => row.recommended_after.project === projectId)
+      .map((row) => ({ project: row, line: L.readinessLine(row, projectDisplayName), note: row.recommended_after.note || '' }));
+  }
+
+  /** Per-kind breakdown card under a project (loaded lazily, cached per project id). */
+  function breakdownCard(projectId) {
+    const data = state.breakdowns.get(projectId);
+    if (!data || !L.hasBreakdown(data)) return null;
+    const title = projectDisplayName(projectId);
+    const card = h('section', 'breakdown-card card');
+    append(card, h('h3', '', `Разбивка «${title}»`), h('p', 'breakdown-caption', 'Задачи по виду работы: найди баг, доработай или напиши с нуля.'));
+    const list = h('ul', 'breakdown-list');
+    for (const row of L.breakdownRows(data)) {
+      if (!row.total) continue;
+      const item = h('li', 'breakdown-row');
+      const head = h('div', 'breakdown-head');
+      append(head, h('span', '', row.label), h('strong', '', `${row.passed}/${row.total}`));
+      append(item, head, progressBar(row.passed, row.total, `${row.label}: пройдено ${row.passed} из ${row.total}`));
+      list.append(item);
+    }
+    card.append(list);
+    return card;
+  }
+
+  function ensureBreakdown(projectId, onLoaded) {
+    if (!projectId || state.breakdowns.has(projectId) || state.breakdownPending.has(projectId)) return;
+    state.breakdownPending.add(projectId);
+    const epoch = state.epoch;
+    request(`/progress/me/breakdown?project=${encodeURIComponent(projectId)}`)
+      .then((data) => {
+        if (epoch !== state.epoch) return;
+        state.breakdowns.set(projectId, data);
+        if (onLoaded) onLoaded();
+      })
+      // Old server (404) or any failure: the card is simply not shown.
+      .catch(() => undefined)
+      .finally(() => state.breakdownPending.delete(projectId));
+  }
+
   function viewUrl(view, lessonId = '') {
     const params = new URLSearchParams({ view });
     if (lessonId) params.set('lesson', lessonId);
@@ -143,6 +207,8 @@
     const anchor = h('a', className);
     anchor.href = taskUrl(task.id);
     anchor.dataset.taskLink = task.id;
+    const hint = recommendationHint(task.project_id);
+    if (hint) anchor.title = hint;
     const title = h('span', 'item-title', task.title || task.task_id || task.id);
     title.append(h('span', 'item-meta', task.id));
     append(anchor, statusIcon(task), title, h('span', 'item-tail', stateOf(task) === 'defense' ? 'Защита' : stateOf(task) === 'passed' ? 'Готово' : 'Открыть →'));
@@ -310,10 +376,21 @@
     const folderList = h('div', 'folder-progress-list progress-scroll');
     let previousProject = '';
     for (const project of groupCatalog().projects) {
+      const projectKey = project.key;
       for (const folder of project.folders) {
-        if (project.name !== previousProject) {
-          folderList.append(h('div', 'folder-project-label', project.name));
-          previousProject = project.name;
+        if (projectKey !== previousProject) {
+          const label = h('div', 'folder-project-label');
+          const unmet = recommendationsFor(project.id);
+          append(label, document.createTextNode(project.name));
+          // Soft hint only: an unmet recommendation never hides the project.
+          if (unmet.length) {
+            const line = readinessLineFor(project);
+            const hint = h('span', 'project-recommendation', ` · ${line}`);
+            if (unmet[0].note) hint.title = unmet[0].note;
+            label.append(hint);
+          }
+          folderList.append(label);
+          previousProject = projectKey;
         }
         const row = h('div', 'folder-progress');
         const head = h('div', 'folder-progress-head');
@@ -383,7 +460,20 @@
       const projectSection = h('section', 'catalog-project card');
       const projectHead = h('div', 'project-heading');
       append(projectHead, h('h2', '', project.name), h('span', '', `${project.passed}/${project.total} решено`));
+      // «рекомендуем после XL-A: 14/21» — a hint, never a gate (old server: no line).
+      const readiness = readinessLineFor(project);
+      if (readiness) {
+        const hint = h('p', 'project-recommendation', readiness);
+        const note = recommendationsFor(project.id)[0]?.note;
+        if (note) hint.title = note;
+        projectHead.append(hint);
+      }
       projectSection.append(projectHead);
+      // XL-A style per-kind card; the breakdowns were requested by renderCourse.
+      if (project.id) {
+        const card = breakdownCard(project.id);
+        if (card) projectSection.append(card);
+      }
       for (const folder of project.folders) {
         const details = h('details', 'folder-block');
         details.open = hasFilters || Boolean(next && folder.tasks.some((task) => task.id === next.id));
@@ -437,6 +527,8 @@
     defense.addEventListener('click', () => { state.course.defenseOnly = !state.course.defenseOnly; defense.setAttribute('aria-pressed', String(state.course.defenseOnly)); redraw(); });
     root.replaceChildren(fragment);
     redraw();
+    // The breakdown arrives after the first draw: refill the catalog in place.
+    for (const project of catalog.projects) ensureBreakdown(project.id, redraw);
   }
 
   function lessonCard(lesson, open = false) {
@@ -658,6 +750,8 @@
     for (const project of groupCatalog(tasks).projects) {
       const projectSection = h('section', 'sidebar-project');
       projectSection.append(h('h3', 'sidebar-project-name', project.name));
+      const readiness = readinessLineFor(project);
+      if (readiness) projectSection.append(h('p', 'sidebar-project-recommendation', readiness));
       for (const folder of project.folders) {
         const lessons = lessonsForFolder(folder, folder.tasks);
         if (!folder.tasks.length && !lessons.length) continue;
@@ -701,6 +795,14 @@
     const header = h('header', 'reader-header');
     const copy = h('div', 'reader-heading');
     append(copy, h('p', 'eyebrow', [meta.project_name, meta.folder_name].filter(Boolean).join(' · ') || 'Задача курса'), h('h1', '', detail.title || meta.title || meta.id));
+    // «рекомендуем после XL-A: 14/21» when the project's prerequisite is not met yet.
+    const readiness = readinessLineFor({ id: meta.project_id });
+    if (readiness) {
+      const hint = h('p', 'project-recommendation', readiness);
+      const note = recommendationsFor(meta.project_id)[0]?.note;
+      if (note) hint.title = note;
+      copy.append(hint);
+    }
     const metaLine = h('div', 'reader-meta');
     append(metaLine, h('span', '', `${meta.id} · версия ${meta.version}`), statusBadge(meta));
     copy.append(metaLine);
@@ -709,7 +811,15 @@
     append(header, copy, open);
     const body = h('div', 'reader-statement');
     markdown.render(detail.statement_md || 'У этой задачи пока нет описания.', body);
-    append(article, header, body);
+    const cards = h('div', 'project-cards');
+    const card = breakdownCard(meta.project_id);
+    if (card) cards.append(card);
+    // No card yet: ask for the breakdown; it re-renders this page when it arrives.
+    else if (meta.project_id) {
+      const taskEpoch = state.taskEpoch;
+      ensureBreakdown(meta.project_id, () => { if (taskEpoch === state.taskEpoch) renderTaskPage(meta, detail); });
+    }
+    append(article, header, body, cards);
     root.replaceChildren(article);
   }
 
@@ -793,6 +903,8 @@
     state.user = null; state.tasks = []; state.progress = []; state.understanding = [];
     state.evidenceByTask = new Map(); state.evidenceAvailable = false; state.account = null;
     state.lessons = []; state.lessonDetails = new Map(); state.taskEpoch++;
+    state.projects = []; state.projectById = new Map();
+    state.breakdowns = new Map(); state.breakdownPending = new Set();
     state.course = { query: '', openOnly: false, defenseOnly: false };
     setSidebarOpen(false);
     $('sidebar-search').value = '';
@@ -806,17 +918,21 @@
     loading('Собираю твой курс…');
     const [tasks, progress] = await Promise.all([request('/tasks'), request('/progress/me')]);
     const optional = await Promise.allSettled([
-      request('/progress/me/understanding'), request('/ai/me'), request('/lessons'),
+      request('/progress/me/understanding'), request('/ai/me'), request('/lessons'), request('/projects'),
     ]);
     if (epoch !== state.epoch || !state.token) return;
     state.tasks = Array.isArray(tasks) ? tasks : [];
     state.progress = Array.isArray(progress) ? progress : [];
-    const [understanding, account, lessons] = optional;
+    const [understanding, account, lessons, projects] = optional;
     state.evidenceAvailable = understanding.status === 'fulfilled' && Array.isArray(understanding.value);
     state.understanding = state.evidenceAvailable ? understanding.value : [];
     state.evidenceByTask = L.newestEvidenceByTask(state.understanding);
     state.account = account.status === 'fulfilled' ? account.value : null;
     state.lessons = lessons.status === 'fulfilled' && Array.isArray(lessons.value) ? lessons.value : [];
+    // GET /projects: old servers answer 404 — no recommendations, no cards.
+    state.projects = projects.status === 'fulfilled' && Array.isArray(projects.value) ? projects.value : [];
+    state.projectById = L.indexProjects(state.projects);
+    state.breakdowns = new Map();
     renderRoute();
   }
 

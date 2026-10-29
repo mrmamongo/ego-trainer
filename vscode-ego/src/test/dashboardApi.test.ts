@@ -74,3 +74,34 @@ test('catalogFieldsOf fills missing catalog fields for old servers', () => {
         }
     );
 });
+
+test('listProjects calls GET /projects and maps a 404 on an old server to []', async () => {
+    const rows = [{ id: 'xl-a', name: 'XL-A', order: 1, recommended_after: null, readiness: null }];
+    const { calls } = mockFetch(200, rows);
+    assert.deepEqual(await new EgoApi('http://ego.test').listProjects(), rows);
+    assert.deepEqual(calls, ['http://ego.test/projects']);
+    mockFetch(404, { detail: 'Not Found' });
+    assert.deepEqual(await new EgoApi('http://ego.test').listProjects(), []);
+});
+
+test('getMyBreakdown encodes the project and maps a 404 to null', async () => {
+    const body = { project: 'xl-a', kinds: { bug: { passed: 1, total: 2 } }, tags: {} };
+    const { calls } = mockFetch(200, body);
+    assert.deepEqual(await new EgoApi('http://ego.test').getMyBreakdown('xl-a'), body);
+    assert.deepEqual(calls, ['http://ego.test/progress/me/breakdown?project=xl-a']);
+    mockFetch(404, { detail: 'Not Found' });
+    assert.equal(await new EgoApi('http://ego.test').getMyBreakdown('xl-a'), null);
+});
+
+test('other failures from the recommendation endpoints still propagate', async () => {
+    mockFetch(500, { detail: 'boom' });
+    await assert.rejects(
+        new EgoApi('http://ego.test').listProjects(),
+        (error: unknown) => error instanceof EgoApiError && error.status === 500
+    );
+    mockFetch(403, { detail: 'no' });
+    await assert.rejects(
+        new EgoApi('http://ego.test').getMyBreakdown('xl-a'),
+        (error: unknown) => error instanceof EgoApiError && error.status === 403
+    );
+});

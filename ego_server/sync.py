@@ -35,7 +35,14 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ego.catalog import CONTENT_ID_RE, Project, Folder, TaskFrontmatter, lesson_content_hash
+from ego.catalog import (
+    CONTENT_ID_RE,
+    Folder,
+    Project,
+    RecommendedAfter,
+    TaskFrontmatter,
+    lesson_content_hash,
+)
 from ego.content_repo import (
     DiscoveredLesson,
     DiscoveredTask,
@@ -161,13 +168,14 @@ def sync_from_path(
 def _upsert_project(conn: sqlite3.Connection, project: Project) -> None:
     """Insert or update a row in ``projects`` (idempotent by id)."""
     now = _now_iso()
+    recommended_json = _dump_recommended(project.recommended_after)
     existing = conn.execute("SELECT id FROM projects WHERE id = ?", (project.id,)).fetchone()
     if existing is None:
         conn.execute(
             """INSERT INTO projects
             (id, name, description, version, "order", default_locale, tags,
-             version_policy, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+             version_policy, recommended_after, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 project.id,
                 project.name,
@@ -177,6 +185,7 @@ def _upsert_project(conn: sqlite3.Connection, project: Project) -> None:
                 project.default_locale,
                 _dump_tags(project.tags),
                 project.version_policy,
+                recommended_json,
                 now,
                 now,
             ),
@@ -185,7 +194,7 @@ def _upsert_project(conn: sqlite3.Connection, project: Project) -> None:
     conn.execute(
         """UPDATE projects SET
         name = ?, description = ?, version = ?, "order" = ?, default_locale = ?,
-        tags = ?, version_policy = ?, updated_at = ?
+        tags = ?, version_policy = ?, recommended_after = ?, updated_at = ?
         WHERE id = ?""",
         (
             project.name,
@@ -195,6 +204,7 @@ def _upsert_project(conn: sqlite3.Connection, project: Project) -> None:
             project.default_locale,
             _dump_tags(project.tags),
             project.version_policy,
+            recommended_json,
             now,
             project.id,
         ),
@@ -628,6 +638,13 @@ def _finish_sync_log(
 def _dump_tags(tags: list[str]) -> str:
     """Serialize tags list as a JSON array string (matches schema ``tags`` column)."""
     return json.dumps(tags, ensure_ascii=False)
+
+
+def _dump_recommended(rec: RecommendedAfter | None) -> str | None:
+    """Serialize ``recommended_after`` as JSON (``None`` when not declared)."""
+    if rec is None:
+        return None
+    return rec.model_dump_json()
 
 
 def _bump_minor(version: str) -> str:

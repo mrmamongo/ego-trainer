@@ -306,6 +306,71 @@ export class EgoApi {
     async getMyProgress(): Promise<ProgressRow[]> {
         return this.request<ProgressRow[]>('GET', '/progress/me');
     }
+
+    /**
+     * GET /projects — project list with soft recommendations and the caller's
+     * readiness. Older servers have no route: a 404 means "no projects info".
+     */
+    async listProjects(): Promise<ProjectInfo[]> {
+        try {
+            return await this.request<ProjectInfo[]>('GET', '/projects');
+        } catch (error) {
+            if (error instanceof EgoApiError && error.status === 404) return [];
+            throw error;
+        }
+    }
+
+    /**
+     * GET /progress/me/breakdown?project=… — per-tag passed/total.
+     * Older servers have no route: a 404 means "no breakdown".
+     */
+    async getMyBreakdown(project: string): Promise<Breakdown | null> {
+        try {
+            return await this.request<Breakdown>('GET', `/progress/me/breakdown?project=${encodeURIComponent(project)}`);
+        } catch (error) {
+            if (error instanceof EgoApiError && error.status === 404) return null;
+            throw error;
+        }
+    }
+}
+
+// === Soft recommendations (GET /projects) ===
+
+/** ``recommended_after`` from project.yaml — advisory, never enforced. */
+export interface RecommendedAfter {
+    project: string;
+    min_passed: number;
+    min_per_kind: number | null;
+    note: string;
+}
+
+/** Caller's progress against a recommendation. */
+export interface Readiness {
+    met: boolean;
+    passed: number;
+    required: number;
+    per_kind: Record<string, number>;
+}
+
+/** One row of GET /projects. */
+export interface ProjectInfo {
+    id: string;
+    name: string;
+    order: number;
+    recommended_after: RecommendedAfter | null;
+    readiness: Readiness | null;
+}
+
+export interface KindCount {
+    passed: number;
+    total: number;
+}
+
+/** GET /progress/me/breakdown (bug / modify / new + other tags). */
+export interface Breakdown {
+    project: string | null;
+    kinds: Record<string, KindCount>;
+    tags: Record<string, KindCount>;
 }
 
 // === Student cabinet contracts (shared worker contract, backward compatible) ===

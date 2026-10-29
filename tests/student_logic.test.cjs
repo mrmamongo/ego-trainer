@@ -1,10 +1,12 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const {
-  aiAccessReasonLabel, compareCatalogOrder, compareProjectOrder,
-  effectiveDefenseRequired, groupCatalog, isOpenState, naturalCompare,
-  newestEvidenceByTask, percent, pickNextTask, taskState, taskStateLabel,
-  understandingStatusLabel,
+  aiAccessReasonLabel, breakdownRows, compareCatalogOrder, compareProjectOrder,
+  effectiveDefenseRequired, groupCatalog, hasBreakdown, indexProjects, isOpenState,
+  naturalCompare, newestEvidenceByTask, percent, pickNextTask, readinessLine, recommendationHint,
+  taskState, taskStateLabel, understandingStatusLabel, unmetRecommendations,
 } = require('../ego_server/static/student-logic.js');
 
 function task(over) {
@@ -186,4 +188,123 @@ test('percent rounds and guards empty totals', () => {
   assert.equal(percent(0, 3), 0);
   assert.equal(percent(0, 0), 0);
   assert.equal(percent(5, 2), 100);
+});
+
+// === Soft recommendations (GET /projects) ===
+
+function project(over) {
+  return {
+    id: over.id, name: over.name || over.id, order: over.order ?? 0,
+    recommended_after: over.recommended_after ?? null, readiness: over.readiness ?? null,
+  };
+}
+
+function recommendation(over) {
+  return { project: 'xl-a', min_passed: 21, min_per_kind: null, note: 'После экзамена XL-A', ...over };
+}
+
+test('indexProjects maps rows by id and tolerates a missing list', () => {
+  assert.equal(indexProjects(null).size, 0);
+  assert.equal(indexProjects({}).size, 0);
+  const map = indexProjects([project({ id: 'xl-a' }), project({ id: 'oop' }), null, { name: 'no id' }]);
+  assert.deepEqual([...map.keys()], ['xl-a', 'oop']);
+});
+
+test('readinessLine is null without a recommendation or once it is met', () => {
+  assert.equal(readinessLine(null), null);
+  assert.equal(readinessLine(project({ id: 'plain' })), null);
+  assert.equal(readinessLine(project({ id: 'oop', recommended_after: recommendation(), readiness: { met: true, passed: 21, required: 21, per_kind: {} } })), null);
+});
+
+test('readinessLine renders «рекомендуем после XL-A: 14/21»', () => {
+  const row = project({
+    id: 'oop',
+    recommended_after: recommendation(),
+    readiness: { met: false, passed: 14, required: 21, per_kind: {} },
+  });
+  assert.equal(readinessLine(row), 'рекомендуем после xl-a: 14/21');
+  assert.equal(readinessLine(row, (id) => (id === 'xl-a' ? 'XL-A' : id)), 'рекомендуем после XL-A: 14/21');
+});
+
+test('readinessLine appends per-kind counts when min_per_kind is set', () => {
+  const row = project({
+    id: 'oop',
+    recommended_after: recommendation({ min_passed: 12, min_per_kind: 3 }),
+    readiness: { met: false, passed: 12, required: 12, per_kind: { bug: 3, modify: 2, new: 0 } },
+  });
+  assert.equal(
+    readinessLine(row, () => 'XL-A'),
+    'рекомендуем после XL-A: 12/12 · 3/3 баги, 2/3 доработки, 0/3 новое'
+  );
+});
+
+test('readinessLine survives a partial readiness row from an older server', () => {
+  // No counts and no per_kind: «?» instead of NaN, no crash.
+  const bare = project({
+    id: 'oop',
+    recommended_after: recommendation({ min_passed: 12, min_per_kind: 3 }),
+    readiness: { met: false, per_kind: null },
+  });
+  assert.equal(readinessLine(bare, () => 'XL-A'), 'рекомендуем после XL-A: ?/?');
+  // Times passed but kinds not counted: the per-kind part is omitted.
+  const noKinds = project({
+    id: 'oop',
+    recommended_after: recommendation({ min_per_kind: 3 }),
+    readiness: { met: false, passed: 4, required: 12, per_kind: {} },
+  });
+  assert.equal(readinessLine(noKinds, () => 'XL-A'), 'рекомендуем после XL-A: 4/12');
+});
+
+test('unmetRecommendations keeps only declared-and-unmet, in catalog order', () => {
+  const list = [
+    project({ id: 'oop', order: 2, recommended_after: recommendation(), readiness: { met: false, passed: 1, required: 21 } }),
+    project({ id: 'plain', order: 3 }),
+    project({ id: 'meta', order: 1, recommended_after: recommendation({ project: 'python-start' }), readiness: { met: false, passed: 0, required: 5 } }),
+    project({ id: 'done', order: 0, recommended_after: recommendation(), readiness: { met: true, passed: 21, required: 21 } }),
+  ];
+  assert.deepEqual(unmetRecommendations(list).map((p) => p.id), ['meta', 'oop']);
+  assert.deepEqual(unmetRecommendations(null), []);
+});
+
+test('breakdownRows lists bug/modify/new with percents', () => {
+  const rows = breakdownRows({
+    kinds: { bug: { passed: 3, total: 9 }, modify: { passed: 1, total: 9 }, new: { passed: 0, total: 9 } },
+  });
+  assert.deepEqual(rows.map((r) => [r.key, r.label, r.passed, r.total]), [
+    ['bug', 'Баги', 3, 9], ['modify', 'Доработки', 1, 9], ['new', 'Новое', 0, 9],
+  ]);
+  assert.equal(rows[0].percent, 33);
+  assert.equal(hasBreakdown({ kinds: { bug: { passed: 0, total: 9 } } }), true);
+  assert.equal(hasBreakdown({ kinds: {} }), false);
+  assert.equal(hasBreakdown(null), false);
+});
+
+test('recommendationHint: note only when met, line plus note when unmet', () => {
+  const nameOf = () => 'XL-A';
+  const list = [
+    project({ id: 'python-start', recommended_after: recommendation(), readiness: { met: false, passed: 10, required: 21, per_kind: {} } }),
+    project({ id: 'done', recommended_after: recommendation({ note: '' }), readiness: { met: true, passed: 21, required: 21, per_kind: {} } }),
+  ];
+  assert.equal(
+    recommendationHint('python-start', list, (row) => readinessLine(row, nameOf)),
+    'Открыть задачу. Рекомендация: рекомендуем после XL-A: 10/21. После экзамена XL-A. Это совет, а не ограничение.'
+  );
+  // A note that already ends with punctuation is not double-punctuated.
+  assert.equal(
+    recommendationHint('done', [project({ id: 'done', recommended_after: recommendation({ note: 'Сначала XL-A!' }) })], () => null),
+    'Открыть задачу. Рекомендация «Сначала XL-A!».'
+  );
+  // Met (no line) → the note alone; it never claims numbers it does not have.
+  assert.equal(recommendationHint('done', list, () => null), null);
+  assert.equal(recommendationHint('xl-a', list, (row) => readinessLine(row, nameOf)), null);
+  assert.equal(recommendationHint(null, list, () => null), null);
+  assert.equal(recommendationHint('python-start', null, () => null), null);
+});
+
+test('the student page fetches /projects and the XL-A breakdown, degrading silently', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'ego_server', 'static', 'student.js'), 'utf8');
+  assert.match(source, /request\('\/projects'\)/);
+  assert.match(source, /\/progress\/me\/breakdown\?project=/);
+  // Optional endpoints go through allSettled: a 404 on an old server hides the card.
+  assert.match(source, /Promise\.allSettled\(/);
 });

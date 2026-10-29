@@ -5,9 +5,10 @@
  */
 
 import * as vscode from 'vscode';
-import { EgoApi, TaskMeta, LessonMeta, ProgressRow } from './api';
+import { EgoApi, TaskMeta, LessonMeta, ProgressRow, ProjectInfo } from './api';
 import { buildCatalog, type Catalog, type CatalogFolder, type CatalogProject, type LessonReadState } from './theoryLogic';
 import { egoDir, readEgoConfig } from './egoWorkspace';
+import { indexProjects, readinessLine, recommendationTooltip } from './recommendations';
 
 export class TaskItem extends vscode.TreeItem {
     constructor(
@@ -75,12 +76,21 @@ export class TaskItem extends vscode.TreeItem {
 }
 
 export class ProjectItem extends vscode.TreeItem {
-    constructor(public readonly project: CatalogProject, collapsibleState: vscode.TreeItemCollapsibleState) {
+    constructor(
+        public readonly project: CatalogProject,
+        collapsibleState: vscode.TreeItemCollapsibleState,
+        private readonly info?: ProjectInfo
+    ) {
         super(project.name, collapsibleState);
         this.id = `project:${project.key}`;
-        this.description = `${project.folders.reduce((n, f) => n + f.tasks.length, 0)}`;
+        const tasks = `${project.folders.reduce((n, f) => n + f.tasks.length, 0)}`;
+        // Unmet recommendation: «рекомендуем после XL-A: 14/21» (never blocks).
+        const readiness = readinessLine(info);
+        this.description = readiness ? `${tasks} · ${readiness}` : tasks;
+        const tooltip = recommendationTooltip(info);
+        if (tooltip) this.tooltip = tooltip;
         this.contextValue = 'project';
-        this.iconPath = new vscode.ThemeIcon('repo');
+        this.iconPath = new vscode.ThemeIcon(readiness ? 'lightbulb' : 'repo');
     }
 }
 
@@ -143,6 +153,8 @@ export class EgoTaskTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     private progressMap: Map<string, ProgressRow> = new Map();
     private offlineTasks: TaskMeta[] | undefined;
     private catalog: Promise<Catalog> | undefined;
+    /** GET /projects rows by id (empty on old servers / offline). */
+    private projectInfo: Map<string, ProjectInfo> = new Map();
 
     constructor(api: EgoApi, readState?: LessonReadState) {
         this.api = api;
@@ -154,6 +166,7 @@ export class EgoTaskTreeProvider implements vscode.TreeDataProvider<TreeNode> {
         this.api = newApi;
         this.progressMap.clear();
         this.offlineTasks = undefined;
+        this.projectInfo = new Map();
         this.refresh();
     }
 
@@ -173,7 +186,12 @@ export class EgoTaskTreeProvider implements vscode.TreeDataProvider<TreeNode> {
                 const catalog = await this.loadCatalog();
                 if (catalog.showProjects) {
                     return catalog.projects.map(
-                        (p) => new ProjectItem(p, vscode.TreeItemCollapsibleState.Collapsed)
+                        (p) =>
+                            new ProjectItem(
+                                p,
+                                vscode.TreeItemCollapsibleState.Collapsed,
+                                this.projectInfo.get(p.key)
+                            )
                     );
                 }
                 return catalog.projects.flatMap((p) => this.folderItems(p));
@@ -229,6 +247,14 @@ export class EgoTaskTreeProvider implements vscode.TreeDataProvider<TreeNode> {
             } catch {
                 // Lessons are optional: old server or transient error.
             }
+            try {
+                // Soft recommendations (404 on an old server → empty map).
+                this.projectInfo = indexProjects(await this.api.listProjects());
+            } catch {
+                this.projectInfo = new Map();
+            }
+        } else {
+            this.projectInfo = new Map();
         }
         return buildCatalog(tasks, lessons);
     }

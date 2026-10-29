@@ -215,10 +215,105 @@
     return Math.round((Math.min(passed, total) / total) * 100);
   }
 
+  // === Soft recommendations (GET /projects) ===
+
+  // Exam-kind tags of the breakdown card (same order as the server).
+  const KIND_TAGS = ['bug', 'modify', 'new'];
+  const KIND_LABELS = { bug: 'Баги', modify: 'Доработки', new: 'Новое' };
+
+  function countOf(value) {
+    const n = Number(value);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  }
+
+  /** Project id → project row from GET /projects (tolerates a missing list). */
+  function indexProjects(list) {
+    const map = new Map();
+    if (!Array.isArray(list)) return map;
+    for (const item of list) {
+      if (item && typeof item.id === 'string' && item.id) map.set(item.id, item);
+    }
+    return map;
+  }
+
+  /**
+   * Projects whose recommendation is declared and not met yet, in catalog order.
+   * `projects` is the raw GET /projects list; each row carries `name`.
+   */
+  function unmetRecommendations(projects) {
+    if (!Array.isArray(projects)) return [];
+    return projects
+      .filter((p) => p && p.recommended_after && p.readiness && p.readiness.met === false)
+      .sort((a, b) => orderOf(a.order) - orderOf(b.order) || naturalCompare(String(a.id), String(b.id)));
+  }
+
+  /**
+   * Readiness line under a project heading, e.g. «рекомендуем после XL-A: 14/21».
+   * Null when the project has no recommendation or it is already met.
+   * A missing count renders as «?» (old server: no readiness in GET /projects);
+   * the optional per-kind part is shown only when the server counted the kinds.
+   */
+  function readinessLine(project, nameOf) {
+    const rec = project && project.recommended_after;
+    const readiness = project && project.readiness;
+    if (!rec || !readiness || readiness.met) return null;
+    const name = (typeof nameOf === 'function' && nameOf(rec.project)) || rec.project;
+    const passed = Number.isFinite(Number(readiness.passed)) ? countOf(readiness.passed) : '?';
+    const required = Number.isFinite(Number(readiness.required)) ? countOf(readiness.required) : '?';
+    let line = `рекомендуем после ${name}: ${passed}/${required}`;
+    if (rec.min_per_kind !== null && rec.min_per_kind !== undefined && hasPerKind(readiness.per_kind)) {
+      const need = countOf(rec.min_per_kind);
+      const parts = KIND_TAGS.map((kind) => {
+        const got = countOf(readiness.per_kind[kind]);
+        return `${got}/${need} ${(KIND_LABELS[kind] || kind).toLocaleLowerCase('ru')}`;
+      });
+      line += ` · ${parts.join(', ')}`;
+    }
+    return line;
+  }
+
+  function hasPerKind(perKind) {
+    return Boolean(perKind) && KIND_TAGS.some((kind) => Object.prototype.hasOwnProperty.call(perKind, kind));
+  }
+
+  /** Rows of the XL-A style breakdown card: [{key, label, passed, total, percent}]. */
+  function breakdownRows(breakdown) {
+    const kinds = (breakdown && breakdown.kinds) || {};
+    return KIND_TAGS.map((kind) => {
+      const bucket = kinds[kind] || {};
+      const passed = countOf(bucket.passed);
+      const total = Math.max(countOf(bucket.total), passed);
+      return { key: kind, label: KIND_LABELS[kind] || kind, passed, total, percent: percent(passed, total) };
+    });
+  }
+
+  /** True when a breakdown response has at least one kind task. */
+  function hasBreakdown(breakdown) {
+    return breakdownRows(breakdown).some((row) => row.total > 0);
+  }
+
+  /**
+   * Tooltip of a task link: the recommendation of the task's project, when
+   * declared. Met → just the note; unmet → the readiness line plus the note.
+   * Null when the project has no recommendation (or a note-less met one).
+   */
+  function recommendationHint(projectId, projects, readinessOf) {
+    if (!projectId || !Array.isArray(projects)) return null;
+    const row = projects.find((item) => item && item.id === projectId);
+    const rec = row && row.recommended_after;
+    if (!rec) return null;
+    const note = (rec.note || '').trim();
+    const line = typeof readinessOf === 'function' ? readinessOf(row) : null;
+    if (!line) return note ? `Открыть задачу. Рекомендация «${note}».` : null;
+    const quoted = note ? (/([.!?…])$/.test(note) ? ` ${note}` : ` ${note}.`) : '';
+    return `Открыть задачу. Рекомендация: ${line}.${quoted} Это совет, а не ограничение.`;
+  }
+
   return {
     normalizeStatus, isPassedStatus, taskState, newestEvidenceByTask,
     effectiveDefenseRequired, isOpenState, taskStateLabel, understandingStatusLabel,
     aiAccessReasonLabel, naturalCompare, compareCatalogOrder, compareProjectOrder,
-    pickNextTask, groupCatalog, percent,
+    pickNextTask, groupCatalog, percent, KIND_TAGS, indexProjects,
+    unmetRecommendations, readinessLine, breakdownRows, hasBreakdown, recommendationHint,
   };
 });
