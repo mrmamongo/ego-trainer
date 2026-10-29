@@ -904,6 +904,37 @@ def test_publish_vsix_checks_extension_latest(tmp_path, capsys):
     assert (cfg.backup_dir / "extension").is_dir()
 
 
+def test_publish_vsix_already_in_incoming(tmp_path):
+    root = _make_prod(tmp_path)
+    vsix = root / "incoming" / "r1" / "cogito.vsix"
+    vsix.parent.mkdir(parents=True)
+    vsix.write_bytes(b"PK")
+    cfg = release.Config(
+        name="r1", expect_current="ego-trainer:cur", publish_vsix=vsix, root=root
+    )
+    assert release.run_release(
+        cfg, run=as_runner(FakeRunner(_docker_outputs())), fetch=FakeFetch(),
+        getuid=lambda: 1000,
+    ) == release.EXIT_OK
+    assert vsix.read_bytes() == b"PK"
+
+
+def test_dry_run_publish_vsix_writes_nothing(tmp_path, capsys):
+    root = _make_prod(tmp_path)
+    vsix = tmp_path / "cogito-0.2.0.vsix"
+    vsix.write_bytes(b"PK")
+    cfg = release.Config(
+        name="r1", expect_current="ego-trainer:cur", publish_vsix=vsix, root=root
+    )
+    fake = FakeRunner(_docker_outputs())
+    code = release.run_release(
+        cfg, run=as_runner(fake, dry_run=True), fetch=FakeFetch(), dry_run=True
+    )
+    assert code == release.EXIT_OK
+    assert "would check /extension/latest" in capsys.readouterr().out
+    assert not (root / "incoming" / "r1").exists()
+
+
 def test_main_help():
     with pytest.raises(SystemExit) as excinfo:
         release.main(["--help"])
