@@ -120,6 +120,13 @@ def rules(
     forbid_nodes: list[str] | tuple[str, ...] = (),
     require_functions: list[str] | tuple[str, ...] = (),
     allow_in: list[str] | tuple[str, ...] = (),
+    require_classes: list[str] | tuple[str, ...] = (),
+    require_decorators: dict[str, list[str] | tuple[str, ...]] | None = None,
+    require_methods: dict[str, list[str] | tuple[str, ...]] | None = None,
+    require_methods_inherited: dict[str, list[str] | tuple[str, ...]] | None = None,
+    require_bases: dict[str, list[str] | tuple[str, ...]] | None = None,
+    forbid_bases: dict[str, list[str] | tuple[str, ...]] | None = None,
+    forbid_attributes_outside_class: list[str] | tuple[str, ...] = (),
     messages: dict[str, str] | None = None,
 ) -> Callable[[Callable], Callable]:
     """Declare static rules for the task's student code (opt-in, AST-based).
@@ -135,9 +142,24 @@ def rules(
         def task_li21_merge_sorted(a, b):
             ...
 
-    Functions whose name starts with ``given_`` (GIVEN helpers) are always
-    exempt from ``forbid_*`` rules; ``allow_in`` adds more exempt names.
-    Unknown ast node class names raise ``ValueError`` here.
+    OOP rules (a class may be named by ``"Account"`` and a method by
+    ``"Account.balance"``)::
+
+        @rules(
+            require_classes=["Account"],
+            require_decorators={"Account": ["dataclass"], "Account.balance": ["property"]},
+            require_methods={"Account": ["deposit", "__repr__"]},
+            require_bases={"Circle": ["Shape"]},
+            forbid_bases={"Inventory": ["list", "dict"]},
+            forbid_attributes_outside_class=["_balance"],
+        )
+        def task_oop_account():
+            ...
+
+    Functions and classes whose name starts with ``given_`` / ``Given``
+    (GIVEN helpers from starters) are always exempt; ``allow_in`` adds more
+    exempt function names. Unknown ast node class names (and unknown
+    decorators) raise ``ValueError`` here.
     """
     spec = _static_rules.build_rules(
         forbid_names=forbid_names,
@@ -146,6 +168,13 @@ def rules(
         forbid_nodes=forbid_nodes,
         require_functions=require_functions,
         allow_in=allow_in,
+        require_classes=require_classes,
+        require_decorators=require_decorators,
+        require_methods=require_methods,
+        require_methods_inherited=require_methods_inherited,
+        require_bases=require_bases,
+        forbid_bases=forbid_bases,
+        forbid_attributes_outside_class=forbid_attributes_outside_class,
         messages=messages,
     )
 
