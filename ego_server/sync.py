@@ -219,12 +219,19 @@ def _upsert_folder(conn: sqlite3.Connection, folder: Folder, project_id: str) ->
         (folder.id, project_id),
     ).fetchone()
     level = folder.level if folder.level is not None else None
+    # ADR-0018: 'challenge' folders and their workspace rules; NULL workspace
+    # means "defaults" (the core library fills them in).
+    workspace_json = (
+        json.dumps(folder.workspace.model_dump(), ensure_ascii=False)
+        if folder.workspace is not None
+        else None
+    )
     if existing is None:
         conn.execute(
             """INSERT INTO folders
-            (id, project_id, code, name, description, "order", level,
-             created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (id, project_id, code, name, description, "order", level, kind,
+             workspace_json, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 folder.id,
                 project_id,
@@ -233,6 +240,8 @@ def _upsert_folder(conn: sqlite3.Connection, folder: Folder, project_id: str) ->
                 folder.description,
                 folder.order,
                 level,
+                folder.kind,
+                workspace_json,
                 now,
                 now,
             ),
@@ -240,7 +249,8 @@ def _upsert_folder(conn: sqlite3.Connection, folder: Folder, project_id: str) ->
         return
     conn.execute(
         """UPDATE folders SET
-        code = ?, name = ?, description = ?, "order" = ?, level = ?, updated_at = ?
+        code = ?, name = ?, description = ?, "order" = ?, level = ?, kind = ?,
+        workspace_json = ?, updated_at = ?
         WHERE id = ? AND project_id = ?""",
         (
             folder.code,
@@ -248,6 +258,8 @@ def _upsert_folder(conn: sqlite3.Connection, folder: Folder, project_id: str) ->
             folder.description,
             folder.order,
             level,
+            folder.kind,
+            workspace_json,
             now,
             folder.id,
             project_id,
@@ -399,6 +411,9 @@ def _upsert_discovered_task(
         version_policy=task_version_policy,
         declared_breaking=task.extra.get("breaking", False),
         theory=theory,
+        # ADR-0018: stage_NN_*.md of a challenge becomes a task row too,
+        # with its stage number; ordinary tasks leave it NULL.
+        challenge_stage=dtask.stage,
     )
     if outcome == "imported":
         result.added += 1
@@ -465,18 +480,22 @@ def _upsert_task_row(
     version_policy: str,
     declared_breaking: bool,
     theory: list[str] | None = None,
+    challenge_stage: int | None = None,
 ) -> str:
     """Insert/update ``tasks`` + ``task_versions`` per SemVer policy.
 
     ``theory`` (lesson ids) is not graded content: it is written on every
     call, and a theory-only change does not require a version bump.
+    ``challenge_stage`` is the stage number of a challenge stage
+    (ADR-0018) — like placement, it never affects grading.
 
     Returns ``"imported"`` | ``"updated"`` | ``"skipped"`` | ``"error"``.
     """
     now = _now_iso()
     theory_json = _dump_tags(theory or [])
     existing = conn.execute(
-        "SELECT id, version, content_hash, theory, block, slug, md_path, folder_id, project_id FROM tasks WHERE id = ?",
+        """SELECT id, version, content_hash, theory, block, slug, md_path,
+        folder_id, project_id, challenge_stage FROM tasks WHERE id = ?""",
         (task.id,),
     ).fetchone()
 
@@ -486,8 +505,8 @@ def _upsert_task_row(
             """INSERT INTO tasks
             (id, block, slug, task_id, title, level, tags, version,
              content_hash, breaking, md_path, folder_id, project_id, theory,
-             created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+             challenge_stage, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 task.id,
                 task.block,
@@ -503,6 +522,7 @@ def _upsert_task_row(
                 folder_id,
                 project_id,
                 theory_json,
+                challenge_stage,
                 now,
                 now,
             ),
@@ -526,17 +546,21 @@ def _upsert_task_row(
     if existing["content_hash"] == task.content_hash and (
         version_policy == "auto_minor" or task.version == existing["version"]
     ):
-        # Metadata refresh: theory links and catalog placement (moving a task to
-        # another folder) never affect grading, so they need no version bump.
-        placement = (task.block, task.slug, str(task.md_path), folder_id, project_id)
+        # Metadata refresh: theory links, catalog placement (moving a task to
+        # another folder) and the stage number never affect grading, so they
+        # need no version bump.
+        placement = (
+            task.block, task.slug, str(task.md_path), folder_id, project_id, challenge_stage,
+        )
         current = (
             existing["block"], existing["slug"], existing["md_path"],
-            existing["folder_id"], existing["project_id"],
+            existing["folder_id"], existing["project_id"], existing["challenge_stage"],
         )
         if (existing["theory"] or "[]") != theory_json or current != placement:
             conn.execute(
                 """UPDATE tasks SET theory = ?, block = ?, slug = ?, md_path = ?,
-                folder_id = ?, project_id = ?, updated_at = ? WHERE id = ?""",
+                folder_id = ?, project_id = ?, challenge_stage = ?, updated_at = ?
+                WHERE id = ?""",
                 (theory_json, *placement, now, task.id),
             )
             return "updated"
@@ -558,7 +582,8 @@ def _upsert_task_row(
         """UPDATE tasks SET
         block = ?, slug = ?, task_id = ?, title = ?, level = ?, tags = ?,
         version = ?, content_hash = ?, breaking = ?, md_path = ?,
-        folder_id = ?, project_id = ?, theory = ?, updated_at = ?
+        folder_id = ?, project_id = ?, theory = ?, challenge_stage = ?,
+        updated_at = ?
         WHERE id = ?""",
         (
             task.block,
@@ -574,6 +599,7 @@ def _upsert_task_row(
             folder_id,
             project_id,
             theory_json,
+            challenge_stage,
             now,
             task.id,
         ),

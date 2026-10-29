@@ -109,8 +109,31 @@ class Project(BaseModel):
 # === Folder (folder.yaml) ===
 
 
+class Workspace(BaseModel):
+    """File rules of a challenge project (``folder.yaml`` → ``workspace``).
+
+    The student's whole project folder is checked (ADR-0018): ``entry`` is
+    what the black-box run starts, ``include`` lists the files collected
+    from the folder (``*.py`` matches every directory, ``data/*.json`` only
+    that path), ``max_files`` / ``max_bytes`` cap a submission.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    entry: str = "main.py"
+    include: list[str] = Field(default_factory=lambda: ["*.py"])
+    max_files: int = Field(default=20, ge=1)
+    max_bytes: int = Field(default=200_000, ge=1)
+
+
 class Folder(BaseModel):
-    """Thematic block inside a project (former ``block_*``)."""
+    """Thematic block inside a project (former ``block_*``).
+
+    ``kind: challenge`` marks a multi-file challenge: its ``stage_NN_*.md``
+    files are the stages, ``starter/`` is the starting project and
+    ``solution/`` the reference (ADR-0018 D18.1). Ordinary folders keep
+    ``task_*.md`` files and leave ``workspace`` unset.
+    """
 
     model_config = ConfigDict(extra="ignore")
 
@@ -120,10 +143,18 @@ class Folder(BaseModel):
     description: str = ""
     order: int = 0
     level: Level | None = None  # easy | medium | hard (optional)
+    kind: Literal["tasks", "challenge"] = "tasks"
+    # Only for challenges; ``None`` elsewhere (defaults: ego.runner).
+    workspace: Workspace | None = None
 
     # Set by walker (not from YAML).
     path: Path | None = None
     project_id: str | None = None
+
+    @property
+    def is_challenge(self) -> bool:
+        """True for a challenge folder (stages instead of single-file tasks)."""
+        return self.kind == "challenge"
 
 
 # === Task frontmatter (YAML inside .md) ===

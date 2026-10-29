@@ -170,8 +170,8 @@ async def test_task_tree_has_blocks_with_multiple_dirs(tmp_path):
         tree = app.query_one("#task-tree", TaskTree)
         assert len(tree.root.children) == 2
         block_labels = [c.label.plain for c in tree.root.children]
-        assert any("F" in l for l in block_labels)
-        assert any("H" in l for l in block_labels)
+        assert any("F" in label for label in block_labels)
+        assert any("H" in label for label in block_labels)
 
 
 # === x4f.2: editor + check button (DEFERRED — TUI frozen per ADR-0014) ===

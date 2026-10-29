@@ -1,8 +1,6 @@
 """Smoke tests — package imports, CLI runs."""
 
-import subprocess
-import sys
-from pathlib import Path
+import importlib
 
 
 def test_import_ego():
@@ -11,12 +9,8 @@ def test_import_ego():
 
 
 def test_import_submodules():
-    import ego.parser
-    import ego.runner
-    import ego.checker
-    import ego.models
-    import ego.progress
-    import ego.cli.main
+    for name in ("ego.parser", "ego.runner", "ego.checker", "ego.models", "ego.progress"):
+        assert importlib.import_module(name)
 
 
 def test_cli_version(capsys):

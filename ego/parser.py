@@ -15,6 +15,7 @@ import hashlib
 import re
 from pathlib import Path
 
+from ego.catalog import parse_task_frontmatter
 from ego.models import Task
 
 # === Regexes / patterns ===
@@ -94,6 +95,13 @@ def parse_task_text(text: str, path: Path, default_version: str = "1.0.0") -> Ta
     #    only strip it so legacy H1/bold parsing works on the body.
     text, _fm_consumed = _strip_frontmatter(text)
 
+    # 0b. Stage of a multi-file challenge (``stage_NN_<slug>.md``, ADR-0018):
+    #     the code is the challenge's project folder, so there is no
+    #     ``.solution.py``/``.student.py`` sidecar to require. The stage's own
+    #     reference is the optional ``stage_NN_<slug>.solution/`` project.
+    if is_stage_file(path):
+        return _parse_stage_task(path, text)
+
     lines = text.splitlines()
 
     # 1. Title from H1 + bold meta (Блок/Сложность/Темы). Bold meta is
@@ -170,6 +178,86 @@ def parse_task_text(text: str, path: Path, default_version: str = "1.0.0") -> Ta
         tests_file=tests_file,
         extra=extra,
     )
+
+
+# === Challenge stages (ADR-0018) ===
+
+# ``stage_01_parse`` — the slug part after the stage number.
+_STAGE_STEM_RE = re.compile(r"^stage_\d{2}_(?P<slug>.+)$")
+
+
+def is_stage_file(path: Path) -> bool:
+    """True for ``stage_NN_<slug>.md`` — a multi-file challenge stage."""
+    return path.suffix == ".md" and _STAGE_STEM_RE.match(path.stem) is not None
+
+
+def _parse_stage_task(path: Path, text: str) -> Task:
+    """Parse a challenge stage; fields come from frontmatter + the body.
+
+    Stages are read with the same sections as tasks (``## Условие`` is
+    required), but there is no ``task_*`` function and no starter: the code
+    is the student's project folder (ADR-0018 D18.1). The optional
+    ``stage_NN_<slug>.solution/`` project goes to ``solution_py`` as a
+    ``# === path ===`` listing, which sync hashes (a stage without it never
+    requires a version bump for its reference).
+    """
+    try:
+        frontmatter, body = parse_task_frontmatter(text)
+    except ValueError:
+        # Malformed frontmatter: still parse the body, meta falls back to the H1.
+        frontmatter = None
+        body = text
+    lines = body.splitlines()
+    try:
+        _id, title = _parse_title(lines[0] if lines else "")
+    except ValueError:
+        _id, title = "", ""
+
+    sections = _split_sections(lines)
+    if "Условие" not in sections:
+        raise ValueError(f"Missing '## Условие' section in {path}")
+    statement_md = _build_statement_md(sections)
+
+    tests_file = _sidecar_path(path, ".tests.py")
+    if not tests_file.is_file():
+        tests_file = None
+    # ``stage_02_save.md`` → ``stage_02_save.solution/``; empty when the
+    # folder has only the final ``solution/`` (the stage reference is
+    # optional, ADR-0018 D18.1).
+    solution_py = _stage_solution_source(path.parent / f"{path.stem}.solution")
+
+    return Task(
+        id=frontmatter.id if frontmatter else (_id or path.stem),
+        block=_parse_bold_meta_optional(
+            lines, "Блок", default=slug_first_char(path.parent.name)
+        )[0],
+        slug=path.parent.name,
+        task_id=frontmatter.id if frontmatter else (_id or path.stem),
+        title=frontmatter.title if frontmatter else (title or path.stem),
+        level=frontmatter.level if frontmatter else "easy",  # type: ignore[arg-type]
+        tags=list(frontmatter.tags) if frontmatter else [],
+        version=frontmatter.version if frontmatter else "1.0.0",
+        content_hash=_hash_content(statement_md, "", solution_py),
+        md_path=path,
+        statement_md=statement_md,
+        stub_py="",
+        solution_py=solution_py,
+        tests_file=tests_file,
+        extra={"solution_source": "challenge"} if solution_py else {},
+    )
+
+
+def _stage_solution_source(solution_dir: Path) -> str:
+    """``.py`` files of the stage reference as ``# === path ===`` blocks."""
+    if not solution_dir.is_dir():
+        return ""
+    parts = [
+        f"# === {item.relative_to(solution_dir).as_posix()} ===\n"
+        + item.read_text(encoding="utf-8")
+        for item in sorted(solution_dir.rglob("*.py"))
+    ]
+    text = "\n\n".join(parts)
+    return text + "\n" if text and not text.endswith("\n") else text
 
 
 # === Helpers ===

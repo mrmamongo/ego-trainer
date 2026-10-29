@@ -89,7 +89,7 @@ def test_hints_level_1_only(client):
     assert r.status_code == 200
     data = r.json()
     levels = [h["level"] for h in data["hints"]]
-    assert all(l <= 1 for l in levels)
+    assert all(level <= 1 for level in levels)
     assert 1 in levels
 
 
@@ -100,7 +100,7 @@ def test_hints_level_2(client):
     assert r.status_code == 200
     data = r.json()
     levels = [h["level"] for h in data["hints"]]
-    assert all(l <= 2 for l in levels)
+    assert all(level <= 2 for level in levels)
 
 
 def test_hints_level_3_has_signature(client):

@@ -1,9 +1,7 @@
 """Tests for ego.runner — sandbox execution."""
 
-import pytest
-
 from ego.runner import (
-    BLOCKED_IMPORTS, RunResult, run_code, run_function, parse_return_value,
+    run_code, run_function, parse_return_value,
 )
 
 

@@ -10,7 +10,6 @@ from __future__ import annotations
 import ast
 import json
 from collections import Counter
-from pathlib import Path
 
 import pytest
 
@@ -90,9 +89,9 @@ def test_all_33_stubs_exclude_solution_body(parsed_tasks):
     """Stubs should NOT contain the actual reference implementation body."""
     for task in parsed_tasks:
         sol_lines = [
-            l.strip()
-            for l in task.solution_py.splitlines()
-            if l.strip() and not l.strip().startswith("def ")
+            line.strip()
+            for line in task.solution_py.splitlines()
+            if line.strip() and not line.strip().startswith("def ")
         ]
         for sol_line in sol_lines:
             if sol_line.startswith('"""') or sol_line.startswith("'''"):

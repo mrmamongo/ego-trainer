@@ -1,0 +1,8 @@
+id: kv-track
+name: "Fixture: хранилище ключ-значение"
+description: "Крошечный челлендж на два этапа для тестов ADR-0018."
+version: "1.0.0"
+order: 90
+default_locale: ru
+tags: [fixture, challenge]
+version_policy: declare
