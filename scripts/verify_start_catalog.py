@@ -45,6 +45,8 @@ def task_signature(source: str) -> tuple[str, str]:
     return functions[0].name, ast.dump(functions[0].args, include_attributes=False)
 
 
+CHECKPOINT_FOLDERS = {"16_review"}
+
 EXPECTED_IDS = {
     "01_variables": [f"V{n:02}" for n in range(1, 14)],
     "02_functions": [f"FN{n:02}" for n in range(1, 23)],
@@ -97,7 +99,8 @@ def verify_theory(folders) -> dict[str, str]:
     lesson_folder: dict[str, str] = {}
     for folder_id in EXPECTED_IDS:
         lessons = folders[folder_id].lessons
-        assert lessons, f"{folder_id} has no lesson_*.md"
+        # Checkpoint folders test earlier topics and link earlier cards; they have no cards of their own.
+        assert lessons or folder_id in CHECKPOINT_FOLDERS, f"{folder_id} has no lesson_*.md"
         for lesson in lessons:
             assert not lesson.error, (lesson.md_path.name, lesson.error)
             assert lesson.frontmatter is not None, lesson.md_path.name
