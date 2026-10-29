@@ -751,7 +751,7 @@ def _blocked_warning_module(line: str) -> str | None:
     """Module name of a ``WARNING: blocked import: <module>`` line, else None."""
     if not line.startswith(_BLOCKED_WARNING):
         return None
-    return line[len(_BLOCKED_WARNING) :].strip()
+    return line[len(_BLOCKED_WARNING):].strip()
 
 
 def _run_target(

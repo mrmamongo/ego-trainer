@@ -383,6 +383,129 @@ def after(func: Callable):
     return func
 ```
 
+## Челленджи (многофайловые)
+
+ADR-0018: программа из нескольких модулей, которая растёт по этапам. Челлендж — папка каталога с
+`kind: challenge`, этап — обычная задача каталога (`stage_NN_<slug>.md`), код живёт в папке проекта,
+которую собирает расширение.
+
+### Папка челленджа
+
+```
+folders/kv_store/
+├── folder.yaml                  # kind: challenge + workspace
+├── lesson_*.md                  # теория, как в обычных папках
+├── starter/                     # стартовый проект (main.py, commands.py, …)
+├── solution/                    # эталон после последнего этапа
+├── stage_01_parse.md            # условие этапа (frontmatter id/title/version/level/tags)
+├── stage_01_parse.tests.py      # тесты этапа
+├── stage_02_save.md
+├── stage_02_save.tests.py
+└── stage_02_save.solution/      # необязательно: эталон ровно после этапа 2
+```
+
+```yaml
+# folder.yaml
+id: kv_store
+code: KV
+name: "Своё хранилище ключ-значение"
+kind: challenge
+workspace:
+  entry: main.py               # что запускает «чёрный ящик» (@program)
+  include: ["*.py", "data/*.json"]   # какие файлы собираются из папки студента
+  max_files: 20
+  max_bytes: 200000
+```
+
+- Номера этапов — с 01 без пропусков; иначе каталог не загрузится. У этапа нет `.solution.py` и
+  `.student.py`: хеш версии считается по условию (`.md`) и, если есть, по эталону этапа
+  `stage_NN_<slug>.solution/` — как у обычной задачи.
+- `workspace` есть только у челленджей. `entry` и `include` проверяются `scripts/verify_challenges.py`.
+
+### `@case(target="module.func")` — импорт
+
+Вызывает функцию модуля из папки студента. Остальные аргументы `@case` работают как раньше
+(`level`, `comparison`, `hide_expected`, `check_inputs_unchanged`, `input_aliases`, …). Модуль
+импортируется под своим именем, поэтому блок `if __name__ == "__main__"` не выполняется.
+
+```python
+from ego.testing import case, rules
+
+@rules(require_functions=["parse_command"])
+@case(
+    target="commands.parse_command",
+    args=("set a 1",),
+    expected=("SET", ["a", "1"]),
+    description="SET с аргументами",
+)
+def task_kv01_parse():
+    ...
+```
+
+### `@program(...)` — чёрный ящик
+
+Запускает `python -S <entry>` (по умолчанию `main.py` из `workspace`) в копии папки, `cwd` — эта
+копия; на stdin подаётся `stdin`, stdout сравнивается построчно (хвостовые пробелы и последний
+перевод строки не считаются).
+
+```python
+from ego.testing import program
+
+@program(
+    stdin="SET a 1\nGET a\nEXIT\n",
+    expected_stdout="OK\n1\n",
+    description="SET, потом GET",
+    files={"data/store.json": '{"x": "5"}'},                 # файлы до запуска
+    expect_files={"data/store.json": {"x": "5", "a": "1"}},  # JSON в файлах после
+)
+def task_kv02_repl():
+    ...
+```
+
+| Аргумент | Смысл |
+|----------|-------|
+| `match` | `lines` (по умолчанию: те же непустые строки без учёта отступа), `exact` (тот же текст, без хвостовых пробелов и последнего перевода строки), `contains` (ожидаемые строки встречаются по порядку, вывод может быть длиннее) |
+| `expected_exit` | ожидаемый код завершения (`None` — `0`) |
+| `files` | `{путь: содержимое}` — раскладывается поверх проекта до запуска |
+| `expect_files` | `{путь: JSON}` — файл после запуска читается как JSON и сравнивается (`True` ≠ `1`) |
+| `timeout` | таймаут запуска в секундах (по умолчанию — таймаут проверки) |
+| `hide_expected` | не показывать ожидаемый вывод |
+| `entry` | другой файл вместо `workspace.entry` |
+
+Аргументы проверяются при декорации (`ValueError`), как у `@case`.
+
+### `@rules` по проекту
+
+Статические правила в челлендже проверяют весь проект: `require_functions`, `require_classes`,
+`require_methods`, `forbid_imports` и остальные ключи вычисляются по всем `.py` файлам папки
+студента. `@rules(file="storage.py", ...)` сужает правило до одного файла проекта.
+
+### Песочница и пути
+
+`ego.runner.run_project(files, ...)` раскладывает файлы во временную папку и запускает
+`python -S` (без site-packages; `sys.path` проекта нужен для импортов между модулями студента).
+`validate_project_files(files, workspace)` проверяет до запуска (сообщения по-русски): только
+относительные POSIX-пути, без `..`, абсолютных путей и `\`; `.cogito/`, `__pycache__/`,
+`.venv/` писать нельзя; каждый файл подходит под `include`; лимиты `max_files` и `max_bytes`.
+Мягкие предупреждения `BLOCKED_IMPORTS` работают как раньше; импорты самого раннера
+(`importlib`, `os`, `traceback`) импортом студента не считаются.
+
+### Проверка по этапам (`run_stage_check`)
+
+Проверка этапа N гоняет тесты этапов 1..N: сломал этап 2, доделывая этап 5 — этап 5 не
+засчитан. У каждого результата есть `stage` и `stage_title`, лог (`format_stage_check_result`)
+группирует результаты по этапам. В прогресс пишется только этап N.
+
+### Верификатор
+
+```bash
+python -m scripts.verify_challenges --catalog tests/fixtures/challenges_catalog --timeout 30
+```
+
+Проверяет, что `solution/` проходит все этапы, `starter/` не проходит этап 1, `stage_K.solution/`
+проходит этапы 1..K и не проходит K+1, у этапа не меньше трёх smoke-проверок и есть `full`,
+пути и `include` корректны. Тот же формат — на будущих челленджах в репозитории контента.
+
 ## How checker works (updated)
 
 1. Parser находит `task_f1.solution.py` и `task_f1.tests.py` рядом с `.md`
