@@ -1,8 +1,18 @@
 from dataclasses import dataclass
 
 
+@dataclass
 class Player:
-    pass  # твой код: поля name и hp (по умолчанию 100), методы take_damage, heal, is_alive
+    # поля: name и hp (по умолчанию 100)
+
+    def take_damage(self, amount):
+        pass  # твой код
+
+    def heal(self, amount):
+        pass  # твой код
+
+    def is_alive(self):
+        pass  # твой код
 
 
 # ===== Ниже ничего не меняй: это рамка для проверки. =====

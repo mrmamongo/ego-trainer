@@ -1,8 +1,12 @@
 from dataclasses import dataclass
 
 
+@dataclass
 class Message:
-    pass  # твой код: поля author, text, likes (по умолчанию 0) и метод to_dict
+    # поля: author, text, likes (по умолчанию 0)
+
+    def to_dict(self):
+        pass  # твой код
 
 
 def message_from_dict(data):

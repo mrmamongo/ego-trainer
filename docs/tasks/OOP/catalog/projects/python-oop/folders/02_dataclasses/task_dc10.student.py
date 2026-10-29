@@ -1,8 +1,15 @@
 from dataclasses import dataclass, field
 
 
+@dataclass
 class Quest:
-    pass  # твой код: поля title, reward (по умолчанию 10), tags (свой пустой список), методы add_tag и has_tag
+    # поля: title, reward (по умолчанию 10), tags (свой пустой список)
+
+    def add_tag(self, tag):
+        pass  # твой код
+
+    def has_tag(self, tag):
+        pass  # твой код
 
 
 # ===== Ниже ничего не меняй: это рамка для проверки. =====

@@ -1,8 +1,12 @@
 from dataclasses import dataclass
 
 
+@dataclass(frozen=True)
 class Profile:
-    pass  # твой код: неизменяемая запись с полями name и level (по умолчанию 1) и методом describe
+    # поля: name и level (по умолчанию 1)
+
+    def describe(self):
+        pass  # твой код
 
 
 # ===== Ниже ничего не меняй: это рамка для проверки. =====

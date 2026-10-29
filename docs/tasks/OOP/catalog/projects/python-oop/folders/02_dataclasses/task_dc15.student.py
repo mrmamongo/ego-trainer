@@ -10,6 +10,9 @@ class Quest:
     def summary(self):
         return f"{self.title}: {self.reward}"
 
+    def finish(self):
+        pass  # твой код: новый метод
+
 
 # ===== Ниже ничего не меняй: это рамка для проверки. =====
 

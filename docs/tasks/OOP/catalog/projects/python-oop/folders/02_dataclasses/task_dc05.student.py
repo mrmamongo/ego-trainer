@@ -1,7 +1,10 @@
+from dataclasses import dataclass
+
+
+@dataclass(eq=False)
 class Item:
-    def __init__(self, name, qty):
-        self.name = name
-        self.qty = qty
+    name: str
+    qty: int
 
 
 def task_dc05_has_item(stock, name, qty):
