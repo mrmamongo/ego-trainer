@@ -17,6 +17,7 @@ DEFAULT_CATALOG = Path(__file__).resolve().parents[1] / "docs/tasks/OOP/catalog"
 EXPECTED_IDS = {
     "01_classes": [f"CL{n:02}" for n in range(1, 21)],
     "02_dataclasses": [f"DC{n:02}" for n in range(1, 17)],
+    "04_class_methods": [f"CM{n:02}" for n in range(1, 19)],
 }
 
 
