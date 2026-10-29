@@ -2,6 +2,9 @@
 	import { onMount } from 'svelte';
 	import { getStudentProgress, type ProgressRow } from '../api';
 	import AIStudent from './AIStudent.svelte';
+	import Button from '../lib/components/ui/button/Button.svelte';
+	import Icon from '../lib/Icon.svelte';
+	import { relativeTime, dateTime } from '../lib/format';
 
 	let { studentId, username, userRole = '', onBack }: { studentId: string; username: string; userRole?: string; onBack: () => void } = $props();
 
@@ -21,105 +24,27 @@
 		}
 	}
 
-	function statusColor(status: string): string {
-		const s = (status || '').toLowerCase();
-		if (s === 'passed') return 'green';
-		if (s === 'partial') return 'yellow';
-		return 'red';
-	}
-
-	function statusLabel(status: string): string {
-		const s = (status || '').toLowerCase();
-		if (s === 'passed') return 'PASS';
-		if (s === 'partial') return 'PART';
-		if (s === 'failed') return 'FAIL';
-		return (status || '—').toUpperCase();
-	}
-
-	function timeAgo(iso: string): string {
-		if (!iso) return '—';
-		const t = new Date(iso).getTime();
-		const s = Math.round((Date.now() - t) / 1000);
-		if (s < 60) return `${s}s ago`;
-		if (s < 3600) return `${Math.round(s / 60)}m ago`;
-		if (s < 86400) return `${Math.round(s / 3600)}h ago`;
-		return `${Math.round(s / 86400)}d ago`;
-	}
-
+  function statusLabel(value: string): string {
+    return ({ passed: 'Пройдено', partial: 'Частично', failed: 'Не пройдено', error: 'Ошибка', timeout: 'Тайм-аут' } as Record<string, string>)[value] || value;
+  }
 	onMount(() => { load(); });
 </script>
 
-<div class="detail">
-	{#if userRole === 'admin'}<AIStudent {studentId} />{/if}
-	<div class="detail-header">
-		<button class="back" type="button" onclick={onBack}>&larr; Back to students</button>
-		<h2>Progress: {username}</h2>
-		<button class="refresh" type="button" onclick={load} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh'}</button>
-	</div>
-
-	{#if loading}
-		<div class="loading">Loading progress…</div>
-	{:else if error}
-		<div class="error" role="alert">{error}</div>
-		<button class="refresh" type="button" onclick={load} disabled={loading}>Retry</button>
-	{:else if progress.length === 0}
-		<div class="empty">No progress yet</div>
-	{:else}
-		<table>
-			<thead>
-				<tr>
-					<th>Task</th>
-					<th>Status</th>
-					<th class="num">Score</th>
-					<th class="num">Attempts</th>
-					<th>Last run</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each progress as r (r.task_id + r.version)}
-					<tr>
-						<td>{r.task_id}</td>
-						<td>
-							<span class="dot {statusColor(r.status)}"></span>
-							{statusLabel(r.status)}
-						</td>
-						<td class="num">{r.passed_tests}/{r.total_tests}</td>
-						<td class="num">{r.attempts}</td>
-						<td>{timeAgo(r.last_run_at)}</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	{/if}
-</div>
+<section class="admin-stack">
+  <div><Button variant="ghost" class="-ml-3" onclick={onBack}><Icon name="back" size={16} />Все пользователи</Button></div>
+  <div class="admin-section-head"><div><h2>Результаты проверок</h2><p class="admin-subtitle">Попытки и прохождение задач · {username}</p></div><Button variant="outline" onclick={load} disabled={loading}><Icon name="refresh" size={15} />{loading ? 'Обновляю…' : 'Обновить'}</Button></div>
+  {#if loading}<div class="admin-state" role="status">Загружаю прогресс…</div>
+  {:else if error}<div class="admin-notice error" role="alert">{error}</div><div><Button variant="outline" onclick={load}>Повторить загрузку</Button></div>
+  {:else if progress.length === 0}<div class="admin-state">Ученик ещё не отправлял решения на проверку.</div>
+  {:else}<div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Задача</th><th>Результат</th><th class="num">Тесты</th><th class="num">Попытки</th><th>Последняя проверка</th></tr></thead><tbody>
+    {#each progress as row (row.task_id + row.version)}<tr><td><strong>{row.task_id}</strong><small class="version">Версия {row.version}</small></td><td><span class="admin-badge" class:success={row.status === 'passed'} class:warning={row.status === 'partial'} class:danger={!['passed', 'partial'].includes(row.status)}>{statusLabel(row.status)}</span></td><td class="num">{row.passed_tests} / {row.total_tests}</td><td class="num">{row.attempts}</td><td class="activity" title={dateTime(row.last_run_at)}>{relativeTime(row.last_run_at)}</td></tr>{/each}
+  </tbody></table></div>{/if}
+  {#if userRole === 'admin'}<AIStudent {studentId} />{/if}
+</section>
 
 <style>
-	.back {
-		display: inline-block; margin-bottom: 16px; color: #007acc;
-		padding: 0; border: 0; background: transparent; cursor: pointer;
-		font-family: inherit; font-size: 0.8rem; text-decoration: none;
-	}
-	.back:hover { text-decoration: underline; }
-	.detail-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-	h2 { flex: 1; font-size: 1rem; font-weight: 600; margin: 0; }
-	.refresh { padding: 4px 10px; background: transparent; border: 1px solid #3c3c3c; border-radius: 4px; color: #d4d4d4; font-family: inherit; font-size: 0.75rem; cursor: pointer; }
-	.refresh:hover:not(:disabled) { border-color: #007acc; }
-	.refresh:disabled { opacity: 0.5; cursor: not-allowed; }
-
-	table { width: 100%; border-collapse: collapse; }
-	th, td { text-align: left; padding: 6px 12px; border-bottom: 1px solid #3c3c3c; }
-	th { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #858585; }
-	.num { text-align: right; font-variant-numeric: tabular-nums; }
-
-	.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
-	.dot.green { background: #22c55e; }
-	.dot.yellow { background: #eab308; }
-	.dot.red { background: #f87171; }
-
-	.loading, .empty, .error { padding: 24px; text-align: center; color: #858585; }
-	.error { color: #f87171; }
-	@media (max-width: 600px) {
-		.detail-header { flex-wrap: wrap; }
-		h2 { order: 3; flex-basis: 100%; }
-	}
+  table { min-width: 570px; }
+  td strong { font-weight: 500; }
+  .version { display: block; margin-top: 4px; color: var(--muted-foreground); font-size: 11px; }
+  .activity { color: var(--muted-foreground); font-size: 12px; }
 </style>

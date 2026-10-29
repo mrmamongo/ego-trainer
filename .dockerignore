@@ -20,3 +20,9 @@ docs/TASKS.md
 .gitignore
 vscode-ego
 *.vsix
+
+# admin-ui is built in the "web" stage: ship its sources and lockfile, never
+# local node_modules or the `npm run check` scratch output.
+admin-ui/node_modules
+admin-ui/.build-check
+student-preview

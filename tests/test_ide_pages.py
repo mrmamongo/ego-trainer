@@ -18,7 +18,9 @@ def test_ide_entry_points_serve_workspace_shell(url):
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
     assert 'id="app"' in response.text
-    assert 'src="/static/admin/ide.js"' in response.text
+    # Served through ego_server.static_pages: the asset URL carries a
+    # content-hash ?v= cache-buster (see tests/test_admin_static_assets.py).
+    assert 'src="/static/admin/ide.js?v=' in response.text
 
 
 @pytest.mark.parametrize(
@@ -35,7 +37,7 @@ def test_ide_task_deeplinks_serve_the_same_shell(url):
     response = TestClient(app).get(url)
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
-    assert 'src="/static/admin/ide.js"' in response.text
+    assert 'src="/static/admin/ide.js?v=' in response.text
 
 
 @pytest.mark.parametrize(
