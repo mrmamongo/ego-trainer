@@ -4,12 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from ego.checker import (
-    CheckResult,
-    TestCase,
-    TestResult,
     _find_main_function,
     _safe_repr,
     format_check_result,
@@ -371,8 +366,8 @@ def task_x(n):
     import importlib.util
 
     spec = importlib.util.spec_from_file_location("hookmod", tests)
-    mod = importlib.util.module_from_spec(spec)
     assert spec and spec.loader
+    assert importlib.util.module_from_spec(spec) is not None
     # module was already executed by checker under another name; just assert pass
     assert result.passed_tests == 1
 

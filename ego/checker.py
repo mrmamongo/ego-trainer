@@ -734,7 +734,7 @@ def run_stage_check(
     had_error = False
     for stage in stages[: position + 1]:
         stage_results = [
-            *_project_rule_results(stage, files, workspace),
+            *_tag_stage(_project_rule_results(stage, files, workspace), stage),
             *_stage_case_results(stage, files, level=level, timeout=timeout, workspace=workspace),
         ]
         for tr in stage_results:
@@ -759,6 +759,32 @@ def run_stage_check(
         solution_hash=hash_project(files),
         level=level,
     )
+
+
+def _tag_stage(results: list[TestResult], stage: StageTests) -> list[TestResult]:
+    """Copy of ``results`` carrying the stage number and title of ``stage``."""
+    return [
+        dataclasses.replace(result, stage=stage.number, stage_title=stage.title)
+        for result in results
+    ]
+
+
+def format_stage_check_result(result: CheckResult) -> str:
+    """Student-facing log of a stage check: results grouped by stage.
+
+    Same lines as :func:`format_check_result` under a «Этап K: title» header.
+    """
+    lines = [format_check_result(result)]
+    for stage in sorted({tr.stage for tr in result.results if tr.stage is not None}):
+        stage_results = [tr for tr in result.results if tr.stage == stage]
+        passed = sum(1 for tr in stage_results if tr.passed)
+        title = stage_results[0].stage_title
+        verdict = "пройден" if passed == len(stage_results) else "не пройден"
+        label = f"Этап {stage}: {title}" if title else f"Этап {stage}"
+        lines.append("")
+        lines.append(f"{label} — {passed}/{len(stage_results)}, {verdict}")
+        lines.extend(f"   {'+' if tr.passed else 'x'} {tr.description}" for tr in stage_results)
+    return "\n".join(lines)
 
 
 def _stage_case_results(
@@ -991,7 +1017,6 @@ def _parses(source: str) -> bool:
 def _module_name(path: str) -> str:
     """``pkg/store.py`` → ``pkg.store``; ``store.py`` → ``store``."""
     return path[: -len(".py")].replace("/", ".")
-
 
 
 def count_smoke_checks(result: CheckResult) -> int:

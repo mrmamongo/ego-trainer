@@ -207,9 +207,7 @@ def test_entry_runs_program_with_stdin():
 
 
 def test_entry_stdout_mismatch_fails_with_actual_output():
-    result = run_project(
-        _project(), entry="main.py", stdin="EXIT\n", expected_stdout="OK"
-    )
+    result = run_project(_project(), entry="main.py", stdin="EXIT\n", expected_stdout="OK")
     assert result.returncode != 0
     assert "stdout mismatch" in result.stderr
     assert "--- actual ---" in result.stderr
@@ -239,9 +237,7 @@ def test_match_modes(match, expected, ok):
 
 def test_expected_exit_code():
     files = {"main.py": "import sys\nprint('bye')\nsys.exit(3)\n"}
-    fine = run_project(
-        files, entry="main.py", expected_stdout="bye", expected_exit=3
-    )
+    fine = run_project(files, entry="main.py", expected_stdout="bye", expected_exit=3)
     assert fine.returncode == 3, fine.stderr
     wrong = run_project(files, entry="main.py", expected_stdout="bye", expected_exit=0)
     assert wrong.returncode == 1
@@ -337,9 +333,7 @@ def test_target_and_entry_are_mutually_exclusive():
 
 def test_entry_runs_without_site_packages():
     """``python -S``: no ``site`` import, so nothing leaks from the parent."""
-    result = run_project(
-        {"main.py": "import sys\nprint('site' in sys.modules)\n"}, entry="main.py"
-    )
+    result = run_project({"main.py": "import sys\nprint('site' in sys.modules)\n"}, entry="main.py")
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "False"
 

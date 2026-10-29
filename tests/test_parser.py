@@ -6,8 +6,6 @@ import pytest
 
 from ego.models import Task
 from ego.parser import (
-    _generate_stub,
-    _hash_content,
     parse_task_file,
     parse_task_text,
 )

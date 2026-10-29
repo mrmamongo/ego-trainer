@@ -102,17 +102,16 @@ def verify_challenge(folder, timeout: float) -> list[dict]:
         # Level counts come from the starter when present (the reference
         # passes everything and says nothing about the smoke/full split).
         sample = projects.get("starter", projects["solution"])
-        if count_smoke_checks(
-            run_stage_check(stage.task, sample, stages=[stage], timeout=timeout)
-        ) < 3:
+        if (
+            count_smoke_checks(run_stage_check(stage.task, sample, stages=[stage], timeout=timeout))
+            < 3
+        ):
             raise AssertionError((stage.task.id, "fewer than three smoke checks"))
         if not _has_full_check(stage, sample, timeout):
             raise AssertionError((stage.task.id, "no full checks"))
         current = _stage_project_name(stage.number)
         if current in projects:
-            exact = run_stage_check(
-                stage.task, projects[current], stages=stages, timeout=timeout
-            )
+            exact = run_stage_check(stage.task, projects[current], stages=stages, timeout=timeout)
             assert exact.all_passed, (current, "fails its own stage", failures(exact))
             if index + 1 < len(stages):
                 following = stages[index + 1]
@@ -145,7 +144,9 @@ def verify(catalog_root: Path, timeout: float = 30.0) -> list[dict]:
     """Verify every challenge of a catalog; returns one row per stage."""
     catalog = discover_repo(catalog_root)
     assert not catalog.is_legacy, f"{catalog_root}: no catalog.yaml"
-    return [row for folder in catalog.challenge_folders for row in verify_challenge(folder, timeout)]
+    return [
+        row for folder in catalog.challenge_folders for row in verify_challenge(folder, timeout)
+    ]
 
 
 def main() -> None:

@@ -109,8 +109,9 @@ def test_stages_must_be_numbered_from_one(tmp_path):
     (folder_dir / "folder.yaml").write_text(
         "id: c\ncode: C\nname: C\nkind: challenge\n", encoding="utf-8"
     )
-    (folder_dir / "stage_02_late.md").write_text("# Задача X: Late\n\n## Условие\nx\n",
-                                                 encoding="utf-8")
+    (folder_dir / "stage_02_late.md").write_text(
+        "# Задача X: Late\n\n## Условие\nx\n", encoding="utf-8"
+    )
     with pytest.raises(ValueError, match="stage_01"):
         discover_repo(root)
 
@@ -126,7 +127,8 @@ def test_stage_file_name_must_have_two_digit_number(tmp_path):
     (folder_dir / "folder.yaml").write_text(
         "id: c\ncode: C\nname: C\nkind: challenge\n", encoding="utf-8"
     )
-    (folder_dir / "stage_1_bad.md").write_text("# Задача X: Bad\n\n## Условие\nx\n",
-                                               encoding="utf-8")
+    (folder_dir / "stage_1_bad.md").write_text(
+        "# Задача X: Bad\n\n## Условие\nx\n", encoding="utf-8"
+    )
     with pytest.raises(ValueError, match="stage_NN_"):
         discover_repo(root)

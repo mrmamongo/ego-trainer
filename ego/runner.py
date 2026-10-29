@@ -36,7 +36,9 @@ from ego.exec_helpers import (
     _ego_mutable_ids,
     _ego_normalize,
     _ego_program_failure,
+    _ego_same_file,
     _ego_same_value,
+    _ego_watch_imports,
 )
 
 
@@ -60,9 +62,12 @@ _RESERVED_DIRS = (".cogito", "__pycache__", ".venv")
 #: stdout size cap of a program run: a runaway ``print()`` is not a result.
 MAX_PROGRAM_OUTPUT = 200_000
 
-#: Modules a project run loads on its own behalf: ``importlib`` and
-#: ``traceback`` are the wrapper's, ``os`` arrives with any student module
-#: import — none of them is reported as the student's blocked import.
+#: Modules the project wrapper loads on its own in import mode: ``importlib``
+#: (the wrapper imports it after the pre-existing snapshot) and ``os`` /
+#: ``traceback`` (importing a student module goes through them). A warning for
+#: them is not the student's import and would make every run look broken, so
+#: it is dropped; a module the student really imported (``asyncio``,
+#: ``threading``, ``subprocess``, …) is still reported.
 _WRAPPER_IMPORTS = frozenset({"importlib", "traceback", "os"})
 
 
@@ -169,18 +174,52 @@ _WRAPPER_HEAD = '''import sys
 # === Blocked-import detection ===
 _BLOCKED = {{ {blocked_str} }}
 
-# Snapshot which blocked modules were in sys.modules BEFORE student code.
-# With only `import sys` above, this should be empty for typical blocks.
+# Which blocked modules were in sys.modules BEFORE student code / project
+# import. With only `import sys` above, this should be empty for typical
+# blocks; project mode moves a module here when the wrapper or the import
+# machinery (not the student's code) is what loaded it.
 _pre_existing = {{m for m in sorted(_BLOCKED) if m in sys.modules}}
 print("===EGO_PRE_EXISTING===" + ",".join(_pre_existing))
+
+# Blocked modules reported so far. Project mode fills `_deferred_blocks`
+# when a trace says a function was entered: a module loaded then was imported
+# by the student's code, not by importing the project module.
+_deferred_blocks = set()
+_reported_blocks = set()
+
+
+def _report_block(m):
+    _reported_blocks.add(m)
+    print(f"WARNING: blocked import: {{m}}", file=sys.stderr)
+
+
+def _ego_trace(frame, event, arg):
+    """`sys.settrace` hook of project mode: note the project function's call.
+
+    The wrapper installs it only for import mode. Returning a local tracer
+    for the wrapper's own files keeps the per-line overhead out of them; the
+    called function's file is covered by ``_ego_watch_imports``.
+    """
+    if event == "call" and frame.f_code.co_name == _ego_call_name:
+        _ego_called[0] = True
+        # The call loaded `marshal` (it compiled the function's code): the
+        # interpreter's own, not an import of the student's code.
+        _pre_existing.add("marshal")
+        for _ego_module in sorted(_BLOCKED):
+            if _ego_module in sys.modules and _ego_module not in _pre_existing:
+                _deferred_blocks.add(_ego_module)
+    if frame.f_code.co_filename in _ego_wrapper_files or not _ego_called[0]:
+        # The wrapper's own frames and the ones before the call.
+        return _ego_trace
+    return None
 
 
 def _check_blocked_after():
     """Print WARNING for any blocked module that is in sys.modules now
     but was NOT there before exec (i.e. student imported it)."""
-    for m in _BLOCKED:
+    for m in sorted(_BLOCKED):
         if m in sys.modules and m not in _pre_existing:
-            print(f"WARNING: blocked import: {{m}}", file=sys.stderr)
+            _report_block(m)
             return m
     return None
 
@@ -338,6 +377,8 @@ _FUNCTION_HELPERS = (
     _ego_same_value,
     _ego_mutable_ids,
     _ego_program_failure,
+    _ego_same_file,
+    _ego_watch_imports,
     _ego_import_function,
 )
 
@@ -678,6 +719,16 @@ def _split_target(target: str) -> tuple[str, str]:
     return module_name, func_name
 
 
+# Runs at the end of a call: top-level imports of the project module were
+# reported by ``_ego_import_function`` already, blocked modules imported by
+# the student's functions are reported now if the call failed (a successful
+# call reports them the moment they load, from the import tracer).
+_TARGET_BLOCKED_REPORT = """for _ego_name in sorted(_deferred_blocks):
+    if _ego_name in sys.modules and _ego_name not in _reported_blocks:
+        _report_block(_ego_name)
+"""
+
+
 def _wrapper_prefix(blocked_imports: set[str] | None) -> str:
     """Wrapper head + import-free helper sources, ready for project code."""
     blocked_str = ", ".join(repr(m) for m in sorted(_blocked_set(blocked_imports)))
@@ -691,6 +742,16 @@ def _indent(text: str, prefix: str) -> str:
         prefix + line if line.strip() else line
         for line in text.splitlines(keepends=True)
     )
+
+
+_BLOCKED_WARNING = "WARNING: blocked import: "
+
+
+def _blocked_warning_module(line: str) -> str | None:
+    """Module name of a ``WARNING: blocked import: <module>`` line, else None."""
+    if not line.startswith(_BLOCKED_WARNING):
+        return None
+    return line[len(_BLOCKED_WARNING) :].strip()
 
 
 def _run_target(
@@ -708,20 +769,26 @@ def _run_target(
     blocked_imports: set[str] | None,
 ) -> ProgramResult:
     """Import ``module_name`` from the project and call ``func_name``."""
-    call = _call(
-        args, kwargs, input_aliases, check_inputs_unchanged, check_result_isolated
+    call = _call(args, kwargs, input_aliases, check_inputs_unchanged, check_result_isolated)
+    # Everything that runs lives in one try-block; the whole file is then
+    # indented (``_call`` is flat on its own, see run_function).
+    body = (
+        "# `importlib` is imported only here, after the pre-existing snapshot.\n"
+        "import importlib  # noqa: F401 — used by _ego_import_function\n"
+        f"_ego_func = _ego_import_function({str(tmp_dir)!r}, {module_name!r}, {func_name!r})\n"
+        "if _ego_func is None:\n"
+        "    sys.exit(1)\n"
+        # From here on a blocked import belongs to the student's code.
+        f"_ego_call_name = {func_name!r}\n"
+        "_ego_called = [False]\n"
+        "_ego_wrapper_files = {__file__}\n"
+        "sys.settrace(_ego_trace)\n" + call + _TARGET_BLOCKED_REPORT
     )
     code = (
         _wrapper_prefix(blocked_imports)
         + "\n# === Import the project module and call its function ===\n"
-        + "# `importlib` is imported only here, after the pre-existing snapshot.\n"
-        + "import importlib  # noqa: F401 — used by _ego_import_function\n"
         + "try:\n"
-        + f"    _ego_func = _ego_import_function({str(tmp_dir)!r}, {module_name!r}, {func_name!r})\n"
-        + "    if _ego_func is None:\n"
-        + "        sys.exit(1)\n"
-        + _indent(call, "    ")
-        + "    _check_blocked_after()\n"
+        + _indent(body, "    ")
         + '''except SystemExit:
     raise
 except Exception:
@@ -741,18 +808,28 @@ except Exception:
         timeout=timeout,
         block_network=block_network,
     )
-    # `importlib` is loaded by the wrapper before the student's code, so it
-    # must not count as (nor block) the student's import of a project module.
-    # The wrapper imports `importlib` itself, and a student module usually
-    # pulls `os` in; those are not the student's own imports, so they are
-    # not reported (a module the student asked to block still is).
+    # Drop the wrapper's own imports (see ``_WRAPPER_IMPORTS``) from both the
+    # field and stderr; other warnings stay.
     blocked = raw.blocked_import
+    stderr = "".join(
+        line
+        for line in raw.stderr.splitlines(keepends=True)
+        if _blocked_warning_module(line) not in _WRAPPER_IMPORTS
+    )
     if blocked is not None and blocked in _WRAPPER_IMPORTS:
         blocked = None
+    # Without one, blocked modules the student's functions imported stay
+    # silent — the tracer always prints something now.
+    if blocked is None:
+        stderr = "".join(
+            line
+            for line in stderr.splitlines(keepends=True)
+            if _blocked_warning_module(line) is None
+        )
     return ProgramResult(
         # Program output before the return value is what @program compares.
         stdout=_ego_normalize(_strip_sentinel(raw.stdout)),
-        stderr=raw.stderr,
+        stderr=stderr,
         returncode=raw.returncode,
         timed_out=raw.timed_out,
         blocked_import=blocked,

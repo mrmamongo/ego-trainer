@@ -63,9 +63,7 @@ def test_challenge_stages_are_synced_as_tasks(temp_db):
 def test_challenge_folder_keeps_kind_and_workspace(temp_db):
     conn = _sync(temp_db)
     try:
-        folder = conn.execute(
-            "SELECT id, kind, workspace_json FROM folders"
-        ).fetchone()
+        folder = conn.execute("SELECT id, kind, workspace_json FROM folders").fetchone()
         assert folder["kind"] == "challenge"
         workspace = json.loads(folder["workspace_json"])
         assert workspace["entry"] == "main.py"

@@ -8,16 +8,12 @@ import pytest
 
 from ego.models import (
     Config,
-    Level,
     Manifest,
     ManifestTaskEntry,
     Progress,
     ProgressEntry,
-    Role,
     Run,
-    RunStatus,
     Task,
-    TaskStatus,
 )
 
 

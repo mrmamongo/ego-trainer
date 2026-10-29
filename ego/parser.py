@@ -15,7 +15,7 @@ import hashlib
 import re
 from pathlib import Path
 
-from ego.catalog import TaskFrontmatter, split_frontmatter
+from ego.catalog import parse_task_frontmatter
 from ego.models import Task
 
 # === Regexes / patterns ===
@@ -192,15 +192,21 @@ def is_stage_file(path: Path) -> bool:
 
 
 def _parse_stage_task(path: Path, text: str) -> Task:
-    """Parse a challenge stage; fields come from frontmatter + the body."""
-    fm_dict, body = split_frontmatter(text)
-    frontmatter = None
-    if fm_dict is not None:
-        try:
-            frontmatter = TaskFrontmatter(**fm_dict)
-        except (TypeError, ValueError):  # malformed meta: fall back to the H1
-            frontmatter = None
+    """Parse a challenge stage; fields come from frontmatter + the body.
 
+    Stages are read with the same sections as tasks (``## Условие`` is
+    required), but there is no ``task_*`` function and no starter: the code
+    is the student's project folder (ADR-0018 D18.1). The optional
+    ``stage_NN_<slug>.solution/`` project goes to ``solution_py`` as a
+    ``# === path ===`` listing, which sync hashes (a stage without it never
+    requires a version bump for its reference).
+    """
+    try:
+        frontmatter, body = parse_task_frontmatter(text)
+    except ValueError:
+        # Malformed frontmatter: still parse the body, meta falls back to the H1.
+        frontmatter = None
+        body = text
     lines = body.splitlines()
     try:
         _id, title = _parse_title(lines[0] if lines else "")
@@ -215,19 +221,10 @@ def _parse_stage_task(path: Path, text: str) -> Task:
     tests_file = _sidecar_path(path, ".tests.py")
     if not tests_file.is_file():
         tests_file = None
-    # ``stage_02_save.md`` → ``stage_02_save.solution/``
-    solution_dir = path.parent / f"{path.stem}.solution"
-    # The stage's reference project; empty when the folder has only a final
-    # ``solution/`` (ADR-0018: ``stage_NN_<slug>.solution/`` is optional).
-    solution_py = ""
-    if solution_dir.is_dir():
-        solution_py = "\n\n".join(
-            f"# === {item.relative_to(solution_dir).as_posix()} ===\n"
-            + item.read_text(encoding="utf-8")
-            for item in sorted(solution_dir.rglob("*.py"))
-        )
-        if solution_py and not solution_py.endswith("\n"):
-            solution_py += "\n"
+    # ``stage_02_save.md`` → ``stage_02_save.solution/``; empty when the
+    # folder has only the final ``solution/`` (the stage reference is
+    # optional, ADR-0018 D18.1).
+    solution_py = _stage_solution_source(path.parent / f"{path.stem}.solution")
 
     return Task(
         id=frontmatter.id if frontmatter else (_id or path.stem),
@@ -248,6 +245,19 @@ def _parse_stage_task(path: Path, text: str) -> Task:
         tests_file=tests_file,
         extra={"solution_source": "challenge"} if solution_py else {},
     )
+
+
+def _stage_solution_source(solution_dir: Path) -> str:
+    """``.py`` files of the stage reference as ``# === path ===`` blocks."""
+    if not solution_dir.is_dir():
+        return ""
+    parts = [
+        f"# === {item.relative_to(solution_dir).as_posix()} ===\n"
+        + item.read_text(encoding="utf-8")
+        for item in sorted(solution_dir.rglob("*.py"))
+    ]
+    text = "\n\n".join(parts)
+    return text + "\n" if text and not text.endswith("\n") else text
 
 
 # === Helpers ===
