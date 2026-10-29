@@ -41,7 +41,7 @@
    счётчики), плюс повторный `sync-tasks`. Любое расхождение — откат.
 7. **Реестр.** Тегирует образ, который работал, как
    `git.born-in-july.ru/mrmamongo/cogito:<name>` и `...:v<name>`, пушит оба.
-   Если задан `--publish-vsix`: кладёт файл в `/opt/cogito/incoming/<name>/cogito.vsix`,
+   Если задан `--publish-vsix`: кладёт файл в `/opt/cogito/data/incoming/<name>/cogito.vsix` (в контейнере это `/var/lib/ego/incoming/<name>/`),
    публикует через `ego-server admin publish-extension` и проверяет
    `/extension/latest`.
 8. **Уборка.** Удаляет из локального стора все образы `ego-trainer:*` и `registry:*`,
@@ -100,7 +100,7 @@ ssh server 'mkdir -p /opt/cogito/incoming/<name> && tar -xzf /opt/cogito/incomin
 
 ```bash
 cd vscode-ego && npx @vscode/vsce package --allow-missing-repository
-scp ego-trainer-<version>.vsix server:/opt/cogito/incoming/<name>/cogito.vsix
+scp ego-trainer-<version>.vsix server:/opt/cogito/incoming/<name>/cogito-<version>.vsix  # --publish-vsix скопирует его в data/incoming
 ```
 
 ## Запуск

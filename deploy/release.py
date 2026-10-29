@@ -579,8 +579,8 @@ class Config:
         return f"{self.registry}:{tag or self.name}"
 
     def incoming_vsix(self) -> Path:
-        """Host path of the package; ``incoming/<name>`` is mounted as /var/lib/ego/incoming."""
-        return self.root / "incoming" / self.name / "cogito.vsix"
+        """Host path of the package: ``data/`` is mounted as /var/lib/ego in the container."""
+        return self.root / "data" / "incoming" / self.name / "cogito.vsix"
 
     def incoming_remote(self) -> Path:
         """The same package as seen inside the container."""

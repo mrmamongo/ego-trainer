@@ -922,13 +922,13 @@ def test_publish_vsix_checks_extension_latest(tmp_path, capsys):
     exec_calls = [argv for argv in fake.calls if argv[:2] == ["docker", "exec"]]
     assert any("publish-extension" in argv for argv in exec_calls)
     assert "/extension/latest" in fetch.paths
-    assert (root / "incoming" / "r1" / "cogito.vsix").read_bytes() == b"PK"
+    assert (root / "data" / "incoming" / "r1" / "cogito.vsix").read_bytes() == b"PK"
     assert (cfg.backup_dir / "extension").is_dir()
 
 
 def test_publish_vsix_already_in_incoming(tmp_path):
     root = _make_prod(tmp_path)
-    vsix = root / "incoming" / "r1" / "cogito.vsix"
+    vsix = root / "data" / "incoming" / "r1" / "cogito.vsix"
     vsix.parent.mkdir(parents=True)
     vsix.write_bytes(b"PK")
     cfg = release.Config(
@@ -954,7 +954,7 @@ def test_dry_run_publish_vsix_writes_nothing(tmp_path, capsys):
     )
     assert code == release.EXIT_OK
     assert "would check /extension/latest" in capsys.readouterr().out
-    assert not (root / "incoming" / "r1").exists()
+    assert not (root / "data" / "incoming" / "r1").exists()
 
 
 def test_main_help():
