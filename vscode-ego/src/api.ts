@@ -42,6 +42,8 @@ export interface TaskMeta {
     folder_order?: number;
     /** Ordered lesson ids linked to this task. */
     theory?: string[];
+    /** 1-based stage number when the task is a challenge stage (ADR-0018). */
+    challenge_stage?: number | null;
 }
 
 export interface LessonMeta {
@@ -72,6 +74,10 @@ export interface TestResultDTO {
     expected_repr: string;
     actual_repr: string | null;
     error: string | null;
+    /** Stage number of a challenge stage check (absent for an ordinary task). */
+    stage?: number | null;
+    /** Stage title of a challenge stage check. */
+    stage_title?: string;
 }
 
 export interface CheckResponse {
@@ -239,6 +245,34 @@ export class EgoApi {
         });
     }
 
+    /**
+     * POST /check with `files` — one challenge stage (ADR-0018 D18.5).
+     *
+     * The server runs the tests of this stage and every earlier one; each
+     * result row carries `stage` / `stage_title`.
+     */
+    async checkFiles(taskId: string, files: Record<string, string>): Promise<CheckResponse> {
+        return this.request<CheckResponse>('POST', '/check', {
+            task_id: taskId,
+            files,
+        });
+    }
+
+    // === Challenges (ADR-0018) ===
+
+    /**
+     * GET /challenges/<folder_id> — stages, workspace and starter files.
+     * Older servers have no route: a 404 means "not a challenge / too old".
+     */
+    async getChallenge(folderId: string): Promise<ChallengeInfo | null> {
+        try {
+            return await this.request<ChallengeInfo>('GET', `/challenges/${encodeURIComponent(folderId)}`);
+        } catch (error) {
+            if (error instanceof EgoApiError && error.status === 404) return null;
+            throw error;
+        }
+    }
+
     // === Hints ===
 
     async getHints(taskId: string, maxLevel?: number): Promise<HintsResponse> {
@@ -332,6 +366,52 @@ export class EgoApi {
             throw error;
         }
     }
+}
+
+// === Multi-file challenges (GET /challenges/<folder_id>, ADR-0018 D18.5) ===
+
+/** File rules of a challenge project (`folder.yaml` → `workspace`). */
+export interface ChallengeWorkspace {
+    /** What `python <entry>` runs (default `main.py`). */
+    entry: string;
+    /** Glob patterns of the files collected for a submission. */
+    include: string[];
+    max_files: number;
+    max_bytes: number;
+}
+
+/** One stage of a challenge: a full task plus the caller's progress on it. */
+export interface ChallengeStage {
+    /** Task id (`GET /tasks/<id>` opens its statement). */
+    id: string;
+    title: string;
+    /** 1-based stage number. */
+    number: number;
+    order: number;
+    level: string;
+    version: string;
+    /** new | passed | partial | failed | error | timeout (server vocabulary). */
+    status: string;
+    passed_tests: number;
+    total_tests: number;
+    /** The stage a first start goes to (server's first not-passed stage). */
+    current: boolean;
+}
+
+/** GET /challenges/<folder_id> — one `kind: challenge` catalog folder. */
+export interface ChallengeInfo {
+    id: string;
+    project_id: string;
+    code: string;
+    name: string;
+    description: string;
+    order: number;
+    level: string | null;
+    theory: string[];
+    workspace: ChallengeWorkspace;
+    stages: ChallengeStage[];
+    /** Starting project `{path: content}` of `starter/` (may be empty). */
+    starter: Record<string, string>;
 }
 
 // === Soft recommendations (GET /projects) ===
