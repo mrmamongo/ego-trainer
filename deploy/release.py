@@ -1077,7 +1077,7 @@ class Release:
             argv += ["--notes", cfg.notes]
         print(f"  {self.run(argv, read_empty='(publish skipped in dry run)')}")
         if self.dry_run:
-            print("  would check /extension/latest")
+            print("  would check /extension/latest after publishing")
             return
         body = self.require(LIVE_PORT, "/extension/latest", "live", tries=5)
         try:

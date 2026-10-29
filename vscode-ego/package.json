@@ -2,7 +2,7 @@
   "name": "ego-trainer",
   "displayName": "Cogito",
   "description": "Cogito: тренажёр для начинающих разработчиков — решай задачи, проверяй код и отслеживай прогресс",
-  "version": "0.2.3",
+  "version": "0.2.5",
   "publisher": "ego-trainer",
   "engines": {
     "vscode": "^1.106.0"

@@ -18,10 +18,25 @@ import {
     vsixFileName,
     compareSemver,
     shouldNotify,
+    updateErrorMessage,
 } from '../updateCheckHelpers';
 
 const DAY = 24 * 60 * 60 * 1000;
 const NOW = Date.parse('2026-10-21T12:00:00.000Z');
+
+test('updateErrorMessage handles Error, RPC objects, aggregate errors and empty rejections', () => {
+    assert.equal(updateErrorMessage(new Error('Disk full')), 'Disk full');
+    assert.equal(updateErrorMessage({ message: 'Remote install failed' }), 'Remote install failed');
+    assert.equal(updateErrorMessage(new AggregateError([new Error('Disk full')], 'Install failed')),
+        'Install failed; Disk full');
+    assert.equal(updateErrorMessage({ code: 'EACCES' }), 'EACCES');
+    for (const value of [undefined, null, '', {}, []]) {
+        assert.equal(updateErrorMessage(value), 'неизвестная ошибка');
+    }
+    const cyclic: unknown[] = [];
+    cyclic.push(cyclic, 'Install failed');
+    assert.equal(updateErrorMessage(cyclic), 'Install failed');
+});
 
 // ---------------------------------------------------------------------------
 // compareSemver

@@ -32,6 +32,7 @@ import {
     parseLatestRelease,
     shouldNotify,
     updateMessage,
+    updateErrorMessage,
     verifyDownload,
     vsixFileName,
     type LatestRelease,
@@ -71,7 +72,7 @@ async function fetchLatest(serverUrl: string, currentVersion: string): Promise<L
             signal: AbortSignal.timeout(10_000),
         });
     } catch (error) {
-        throw new UpdateError(`сервер недоступен (${(error as Error).message}).`);
+        throw new UpdateError(`сервер недоступен (${updateErrorMessage(error)}).`);
     }
     if (response.status === 404) {
         throw new UpdateError('на сервере пока не опубликовано расширение.', 404);
@@ -91,7 +92,7 @@ async function fetchVsix(serverUrl: string): Promise<Buffer> {
             signal: AbortSignal.timeout(120_000),
         });
     } catch (error) {
-        throw new UpdateError(`не удалось скачать файл (${(error as Error).message}).`);
+        throw new UpdateError(`не удалось скачать файл (${updateErrorMessage(error)}).`);
     }
     if (!response.ok) {
         throw new UpdateError(`не удалось скачать файл (HTTP ${response.status}).`, response.status);
@@ -107,7 +108,7 @@ async function checkLatest(
     try {
         return await fetchLatest(deps.serverUrl, deps.currentVersion);
     } catch (error) {
-        const message = (error as Error).message;
+        const message = updateErrorMessage(error);
         deps.log?.(`update check failed: ${message}`);
         if (!quiet) {
             void vscode.window.showWarningMessage(
@@ -136,6 +137,7 @@ async function showNotes(release: LatestRelease): Promise<void> {
 
 /** Download, verify (size + sha256) and install the release, then offer a reload. */
 async function installRelease(deps: UpdateCheckDeps, release: LatestRelease): Promise<void> {
+    let stage = 'download';
     try {
         const data = await vscode.window.withProgress(
             {
@@ -145,20 +147,31 @@ async function installRelease(deps: UpdateCheckDeps, release: LatestRelease): Pr
             },
             async () => {
                 const body = await fetchVsix(deps.serverUrl);
+                stage = 'verify';
                 const check = verifyDownload(body, release.sha256, release.size);
                 if (!check.ok) throw new UpdateError(`файл не прошёл проверку: ${check.error}`);
                 return body;
             }
         );
+        stage = 'storage';
         const updatesDir = vscode.Uri.joinPath(deps.context.globalStorageUri, 'updates');
         await vscode.workspace.fs.createDirectory(updatesDir);
         const target = vscode.Uri.joinPath(updatesDir, vsixFileName(release.version));
         await vscode.workspace.fs.writeFile(target, data);
-        await deps.context.globalState.update(SNOOZED_KEY, undefined);
+        stage = 'install';
+        // Recent desktop hosts expose globalStorageUri through vscode-userdata.
+        // The VSIX installer routes only file / vscode-remote resources.
+        const installTarget = target.scheme === 'vscode-userdata'
+            ? vscode.Uri.file(target.fsPath)
+            : target;
         await vscode.commands.executeCommand(
             'workbench.extensions.installExtension',
-            target
+            installTarget
         );
+        stage = 'state';
+        await deps.context.globalState.update(SNOOZED_KEY, undefined);
+        deps.log?.(`update installed: ${release.version}`);
+        stage = 'reload prompt';
         const choice = await vscode.window.showInformationMessage(
             `Cogito: версия ${release.version} установлена. Перезагрузи окно, чтобы она заработала.`,
             'Перезагрузить окно'
@@ -167,8 +180,8 @@ async function installRelease(deps: UpdateCheckDeps, release: LatestRelease): Pr
             await vscode.commands.executeCommand('workbench.action.reloadWindow');
         }
     } catch (error) {
-        const message = (error as Error).message;
-        deps.log?.(`update install failed: ${message}`);
+        const message = updateErrorMessage(error);
+        deps.log?.(`update install failed (${stage}, version ${release.version}): ${message}`);
         void vscode.window.showErrorMessage(`Cogito: не удалось установить обновление — ${message}`);
     }
 }
@@ -285,7 +298,7 @@ export async function runAutomaticCheck(deps: UpdateCheckDeps): Promise<void> {
         if (!release) return;
         await evaluateRelease(deps, release, { automatic: true, ignoreSnooze: false });
     } catch (error) {
-        deps.log?.(`automatic update check failed: ${(error as Error).message}`);
+        deps.log?.(`automatic update check failed: ${updateErrorMessage(error)}`);
     } finally {
         running = false;
     }
