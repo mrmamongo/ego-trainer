@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
@@ -12,7 +13,7 @@ from fastapi.testclient import TestClient
 
 from ego_server.catalog_visibility import activate_only_projects
 from ego_server.db import SCHEMA_PATH, init_schema
-from ego_server.deps import get_current_user, get_db
+import ego_server.deps as deps
 from ego_server.routers import admin, tasks
 
 
@@ -165,6 +166,10 @@ def archive_db(tmp_path: Path) -> Iterator[sqlite3.Connection]:
 
 @pytest.fixture
 def archive_client(archive_db: sqlite3.Connection, tmp_path: Path) -> Iterator[TestClient]:
+    # Other tests reload ego_server.deps and some routers; rebind both so the
+    # overrides below replace the dependencies the routes actually use.
+    for module in (deps, tasks, admin):
+        importlib.reload(module)
     app = FastAPI()
     app.include_router(tasks.router, prefix="/tasks")
     app.include_router(admin.router, prefix="/admin")
@@ -176,8 +181,8 @@ def archive_client(archive_db: sqlite3.Connection, tmp_path: Path) -> Iterator[T
         finally:
             conn.close()
 
-    app.dependency_overrides[get_db] = isolated_db
-    app.dependency_overrides[get_current_user] = lambda: {"sub": "operator", "role": "admin"}
+    app.dependency_overrides[deps.get_db] = isolated_db
+    app.dependency_overrides[deps.get_current_user] = lambda: {"sub": "operator", "role": "admin"}
     with TestClient(app) as client:
         yield client
 
@@ -254,7 +259,7 @@ def test_archived_historical_task_remains_readable_with_role_based_solution(
 ):
     activate_only_projects(archive_db, ["xl-a"])
     archive_db.commit()
-    archive_client.app.dependency_overrides[get_current_user] = lambda: {
+    archive_client.app.dependency_overrides[deps.get_current_user] = lambda: {
         "sub": "learner" if role == "student" else "operator",
         "role": role,
     }
