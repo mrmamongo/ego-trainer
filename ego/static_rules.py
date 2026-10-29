@@ -561,7 +561,7 @@ def _check_classes(
                 hit(subject, "decorator", text, None, subject)
                 order.append(subject)
             continue
-        missing = _missing_decorators(methods[method_name].decorator_list, members)
+        missing = _missing_decorators(_all_decorators(cls, method_name), members)
         if missing:
             hit(
                 subject,
@@ -817,6 +817,21 @@ def _own_methods(cls: ast.ClassDef) -> dict[str, ast.FunctionDef | ast.AsyncFunc
             for inner in stmt.body:
                 if isinstance(inner, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     out.setdefault(inner.name, inner)
+    return out
+
+
+def _all_decorators(cls: ast.ClassDef, name: str) -> list[ast.expr]:
+    """Decorators of every ``def name`` in the class body.
+
+    A property is several defs with one name: ``@property`` on the getter,
+    ``@name.setter`` on the setter — ``require_decorators`` sees them all.
+    """
+    out: list[ast.expr] = []
+    for stmt in cls.body:
+        defs = stmt.body if isinstance(stmt, ast.If) else [stmt]
+        for node in defs:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
+                out.extend(node.decorator_list)
     return out
 
 

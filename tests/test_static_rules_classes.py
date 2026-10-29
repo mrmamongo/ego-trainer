@@ -268,6 +268,24 @@ def test_setter_needs_the_property_too():
     ) == ["decorator:Account.balance"]
 
 
+def test_property_with_setter_satisfies_both_decorators():
+    src = """
+        class Account:
+            @property
+            def balance(self):
+                return self._balance
+
+            @balance.setter
+            def balance(self, value):
+                self._balance = value
+    """
+    assert _keys(src, require_decorators={"Account.balance": ["property", "setter"]}) == []
+    getter_only = src.split("            @balance.setter")[0]
+    assert _keys(
+        getter_only, require_decorators={"Account.balance": ["property", "setter"]}
+    ) == ["decorator:Account.balance"]
+
+
 def test_nested_class_decorator_ignored():
     src = """
         class Account:
