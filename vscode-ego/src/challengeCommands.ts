@@ -277,12 +277,16 @@ export async function checkStage(
     const api = deps.api();
     const onScreen = taskId ?? deps.currentTaskId();
     let challengeId = onScreen ? challengeIdFromTaskId(onScreen) : undefined;
+    // A stage id (stage_NN_…) names its challenge; a plain task id does not.
     let challenge: ChallengeInfo | null = null;
-    try {
-        if (challengeId) challenge = await api.getChallenge(challengeId);
-    } catch (error) {
-        showError('не удалось загрузить челлендж', error);
-        return undefined;
+    if (challengeId) {
+        try {
+            challenge = await api.getChallenge(challengeId);
+        } catch (error) {
+            showError('не удалось загрузить челлендж', error);
+            return undefined;
+        }
+        if (!challenge) challengeId = undefined;
     }
     // Without a stage on screen: the project folder the student last opened.
     if (!challengeId) {

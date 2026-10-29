@@ -1096,7 +1096,7 @@ async function cmdStartChallenge(arg?: ChallengeArg): Promise<void> {
 }
 
 async function cmdCheckStage(arg?: ChallengeArg): Promise<void> {
-    await checkStage(challengeDeps(), extensionContext!, stageTaskIdOfArg(arg));
+    await checkStage(challengeDeps(), extensionContext!, arg === undefined ? undefined : stageTaskIdOfArg(arg));
 }
 
 async function cmdOpenStage(arg?: ChallengeArg): Promise<void> {
