@@ -393,6 +393,53 @@ export function stageGroupHeader(group: StageResultGroup): string {
     return `Этап ${group.stage}${title} — ${group.passed}/${group.total}, ${verdict}`;
 }
 
+// === Stage panel data ===
+
+/** Stage panel block of `taskView.setData` (mirrors `webview/shared/types.ts`). */
+export interface ChallengeViewInfo {
+    challenge_id: string;
+    name: string;
+    stage: number;
+    folder: string;
+    current_stage: number;
+    stages: Array<{
+        number: number;
+        id: string;
+        title: string;
+        status: string;
+        status_label: string;
+        passed_tests: number;
+        total_tests: number;
+    }>;
+    entry: string;
+}
+
+/** The stage panel of one stage: every stage with its status, `stage` on screen. */
+export function challengeViewInfo(
+    challenge: ChallengeInfo,
+    stage: number,
+    folder: string
+): ChallengeViewInfo {
+    const ordered = orderedStages(challenge.stages);
+    return {
+        challenge_id: challenge.id,
+        name: challenge.name,
+        stage,
+        folder,
+        current_stage: nextStageNumber(ordered),
+        stages: ordered.map((item) => ({
+            number: item.number,
+            id: item.id,
+            title: item.title,
+            status: item.status,
+            status_label: stageStatusLabel(item.status),
+            passed_tests: item.passed_tests,
+            total_tests: item.total_tests,
+        })),
+        entry: workspaceOf(challenge).entry,
+    };
+}
+
 // === Stage panel navigation ===
 
 export interface StageNavMessage {

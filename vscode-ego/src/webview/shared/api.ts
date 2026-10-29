@@ -27,6 +27,10 @@ export type ExtMessage =
 	| { type: 'taskView.refresh' }
 	| { type: 'taskView.toggleRead'; taskId: string; read: boolean }
 	| { type: 'taskView.openLink'; target: string }
+	// Stage panel of a challenge (ADR-0018 D18.6). `challengeId` = the project folder id.
+	| { type: 'challenge.run'; challengeId: string }
+	| { type: 'challenge.stage'; challengeId: string; stage: number }
+	| { type: 'challenge.openNext'; challengeId: string; stage: number }
 	| { type: 'trainer.load'; kind: 'trace' | 'parsons'; taskId: string }
 	| { type: 'trainer.submit'; taskId: string; answers?: Record<string, string>; lines?: { id: number; level: number }[] };
 
@@ -37,6 +41,8 @@ export type HostMessage =
 	| { type: 'taskView.setData'; payload: import('./types').TaskViewData }
 	| { type: 'taskView.setResult'; payload: import('./types').CheckResult }
 	| { type: 'taskView.setLessonRead'; taskId: string; read: boolean }
+	/** The stage panel already loaded a stage; `stage` switches without a reload. */
+	| { type: 'challenge.stageData'; payload: { challenge_id: string; stage: number } }
 	| { type: 'trainer.state'; payload: { state: import('./types').TrainerState } }
 	| { type: 'trainer.submitted'; payload: { ok: boolean; error?: string } }
 	| { type: 'noop' };

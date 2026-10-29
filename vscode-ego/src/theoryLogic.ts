@@ -16,6 +16,8 @@ export interface CatalogFolder {
     projectKey: string;
     lessons: LessonMeta[];
     tasks: TaskMeta[];
+    /** Every task is a stage (`tasks.challenge_stage`) of a challenge (ADR-0018). */
+    challenge: boolean;
 }
 
 export interface CatalogProject {
@@ -36,6 +38,12 @@ const NO_PROJECT_NAME = 'Без проекта';
 
 function folderKey(folderId: string | null | undefined, block: string): string {
     return folderId ? `id:${folderId}` : `block:${block}`;
+}
+
+/** `challenge_stage` of a task, 0 for an ordinary task / an old server. */
+function stageNumber(task: TaskMeta): number {
+    const value = task.challenge_stage;
+    return typeof value === 'number' && value > 0 ? value : 0;
 }
 
 function byOrderThenName(
@@ -82,7 +90,7 @@ export function buildCatalog(tasks: TaskMeta[], lessons: LessonMeta[]): Catalog 
         if (!folder) {
             folder = {
                 key, name: name || `Блок ${block}`, order: order ?? 0, block,
-                projectKey: project.key, lessons: [], tasks: [],
+                projectKey: project.key, lessons: [], tasks: [], challenge: false,
             };
             folders.set(key, folder);
             project.folders.push(folder);
@@ -107,7 +115,9 @@ export function buildCatalog(tasks: TaskMeta[], lessons: LessonMeta[]): Catalog 
         project.folders.sort(byOrderThenName);
         for (const folder of project.folders) {
             folder.lessons.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
-            folder.tasks.sort((a, b) => a.task_id.localeCompare(b.task_id));
+            // Challenge stages go in stage order, like tasks do by id.
+            folder.tasks.sort((a, b) => stageNumber(a) - stageNumber(b) || a.task_id.localeCompare(b.task_id));
+            folder.challenge = folder.tasks.length > 0 && folder.tasks.every((task) => stageNumber(task) > 0);
         }
     }
     return { showProjects: sorted.length > 1, projects: sorted };

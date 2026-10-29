@@ -8,7 +8,7 @@
 
 import * as vscode from 'vscode';
 import { EgoApi, CheckResponse, LessonMeta, TaskMeta } from './api';
-import { EgoTaskTreeProvider, LessonItem, TaskItem } from './treeProvider';
+import { BlockItem, EgoTaskTreeProvider, LessonItem, TaskItem } from './treeProvider';
 import { createReadState } from './theoryLogic';
 import { TestResultsPanel } from './resultsPanel';
 import { WelcomeView } from './welcomeView';
@@ -27,6 +27,12 @@ import { runOfflineCheck } from './offlineCheck';
 import { switchMode } from './modeSwitch';
 import { AssistantPanel } from './assistantPanel';
 import { setupPythonEnv } from './pythonSetup';
+import {
+    checkStage, challengeFolderPath, openChallengeStage, openStageCommand, runChallenge, startChallenge,
+    type ChallengeCommandDeps,
+} from './challengeCommands';
+import { challengeIdFromTaskId } from './challengeWorkspace';
+import { isValidChallengeId } from './challengeWorkspace';
 import { taskIdFromFilePath } from './taskContext';
 import {
     checkForUpdatesManually,
@@ -40,6 +46,8 @@ const SECRET_KEY = 'ego.token';
 let api: EgoApi;
 let treeProvider: EgoTaskTreeProvider;
 let statusBar: EgoStatusBar;
+/** The activation context, for the challenge commands (workspaceState). */
+let extensionContext: vscode.ExtensionContext | undefined;
 
 async function recreateApi(context: vscode.ExtensionContext): Promise<void> {
     AssistantPanel.close();
@@ -60,6 +68,7 @@ async function refreshAssistantAccess(): Promise<void> {
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
+    extensionContext = context;
     registerForgejoUriHandler(context);
     // Load config.
     const config = vscode.workspace.getConfiguration('ego');
@@ -96,6 +105,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         checkTask: (taskId) => cmdCheckTask(taskId),
         openPy: (taskId, slug, mdPath) => openTaskPy(taskId, slug, mdPath).then(() => undefined),
         readState,
+        // Stage panel of a challenge (ADR-0018 D18.6).
+        challenge: {
+            projectFolder: (challengeId) => challengeFolderPath(challengeId),
+            openStage: (challengeId, stage) => cmdOpenStageNumber(challengeId, stage),
+            run: (challengeId) => cmdRunChallenge(challengeId),
+        },
     });
     TaskViewPanel.register(context);
     const treeView = vscode.window.createTreeView('egoTaskTree', {
@@ -258,6 +273,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ),
         vscode.commands.registerCommand('ego.switchMode', () =>
             withReady(() => cmdSwitchMode(context))
+        ),
+        // Multi-file challenges (ADR-0018 D18.6).
+        vscode.commands.registerCommand('ego.startChallenge', (arg?: ChallengeArg) =>
+            withReady(() => cmdStartChallenge(arg))
+        ),
+        vscode.commands.registerCommand('ego.checkStage', (arg?: ChallengeArg) =>
+            withReady(() => cmdCheckStage(arg))
+        ),
+        vscode.commands.registerCommand('ego.runChallenge', (arg?: ChallengeArg) =>
+            withReady(() => cmdRunChallenge(arg))
+        ),
+        vscode.commands.registerCommand('ego.openStage', (arg?: ChallengeArg) =>
+            withReady(() => cmdOpenStage(arg))
         ),
         vscode.commands.registerCommand('ego.dashboard', () =>
             withReady(() => DashboardView.show())
@@ -1028,6 +1056,90 @@ async function cmdHintsForTask(taskId: string): Promise<void> {
     } catch (e) {
         vscode.window.showErrorMessage(`Cogito: не удалось получить подсказки — ${(e as Error).message}`);
     }
+}
+
+// === Multi-file challenges (ADR-0018 D18.6) ===
+
+/** Tree row, task meta, or a raw id passed by a menu / another command. */
+type ChallengeArg = TaskItem | BlockItem | TaskMeta | string | undefined;
+
+/** Stage task id of an argument (`KV02`, `stage_02_set_get`, a stage row). */
+function stageTaskIdOfArg(arg: ChallengeArg): string | undefined {
+    if (arg instanceof TaskItem) return arg.task.task_id;
+    if (typeof arg === 'string') return arg;
+    return arg && !(arg instanceof BlockItem) ? arg.task_id : undefined;
+}
+
+/** Challenge folder id of an argument (a stage row/id, or a challenge folder row). */
+function challengeIdOfArg(arg: ChallengeArg): string | undefined {
+    if (arg instanceof BlockItem) return arg.folder.challenge ? arg.folder.tasks[0]?.folder_id ?? undefined : undefined;
+    if (arg instanceof TaskItem) return arg.challengeId;
+    return arg ? challengeIdFromTaskId(stageTaskIdOfArg(arg) ?? '') : undefined;
+}
+
+/** What the challenge commands need from this activation. */
+function challengeDeps(): ChallengeCommandDeps {
+    return {
+        api: () => api,
+        serverUrl: () => vscode.workspace.getConfiguration('ego').get<string>('serverUrl', 'http://localhost:8000'),
+        refreshTree: () => treeProvider.refresh(),
+        currentTaskId: () => TaskViewPanel.currentTaskId(),
+        panelShows: (taskId) => TaskViewPanel.isOpen() && TaskViewPanel.currentTaskId()?.toLowerCase() === taskId.toLowerCase(),
+        postResult: (result) => TaskViewPanel.postResult(result),
+        showResult: (result, taskId) => showCheckResult(result, taskId),
+    };
+}
+
+async function cmdStartChallenge(arg?: ChallengeArg): Promise<void> {
+    const id = challengeIdOfArg(arg);
+    await startChallenge(challengeDeps(), extensionContext!, id);
+}
+
+async function cmdCheckStage(arg?: ChallengeArg): Promise<void> {
+    await checkStage(challengeDeps(), extensionContext!, stageTaskIdOfArg(arg));
+}
+
+async function cmdOpenStage(arg?: ChallengeArg): Promise<void> {
+    const id = stageTaskIdOfArg(arg);
+    const challengeId = arg instanceof TaskItem ? arg.challengeId : undefined;
+    if (!id && !challengeId) {
+        vscode.window.showWarningMessage('Cogito: этап не выбран.');
+        return;
+    }
+    await openStageCommand(challengeDeps(), extensionContext!, id ?? '', challengeId);
+}
+
+/** Stage panel click: open a numbered stage of `challengeId`. */
+async function cmdOpenStageNumber(challengeId: string, stage: number): Promise<void> {
+    let challenge: import('./api').ChallengeInfo | null;
+    try {
+        challenge = await api.getChallenge(challengeId);
+    } catch (error) {
+        vscode.window.showErrorMessage(`Cogito: не удалось загрузить челлендж — ${(error as Error).message}`);
+        return;
+    }
+    if (!challenge) {
+        vscode.window.showWarningMessage(`Cogito: сервер не знает челлендж ${challengeId}.`);
+        return;
+    }
+    await openChallengeStage(challengeDeps(), extensionContext!, challenge, stage);
+}
+
+async function cmdRunChallenge(arg?: ChallengeArg): Promise<void> {
+    // A stage row / the stage on screen names its challenge; a palette run uses it too.
+    const challengeId = challengeIdOfArg(arg) ?? challengeIdFromTaskId(TaskViewPanel.currentTaskId() ?? '');
+    if (!challengeId || !isValidChallengeId(challengeId)) {
+        vscode.window.showWarningMessage('Cogito: выбери этап челленджа в списке задач.');
+        return;
+    }
+    let entry = 'main.py';
+    try {
+        const challenge = await api.getChallenge(challengeId);
+        if (challenge) entry = challenge.workspace.entry || 'main.py';
+    } catch {
+        // An old server has no /challenges: the default entry still runs.
+    }
+    await runChallenge(challengeDeps(), challengeId, entry);
 }
 
 async function cmdMyProgress(): Promise<void> {

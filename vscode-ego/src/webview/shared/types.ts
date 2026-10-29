@@ -4,6 +4,9 @@ export interface TestResultDTO {
 	expected_repr: string;
 	actual_repr: string | null;
 	error: string | null;
+	/** Stage number / title of a challenge stage check (absent for an ordinary task). */
+	stage?: number | null;
+	stage_title?: string;
 }
 
 export interface CheckResult {
@@ -185,6 +188,32 @@ export interface TaskViewData {
     lesson?: { id: string; content_hash: string; read: boolean };
     /** Interactive trainer for tasks tagged `trace` / `parsons` (see ../../trainer). */
     trainer?: TrainerKind;
+    /** Multi-file challenge (ADR-0018 D18.6): the stage panel layout. */
+    challenge?: ChallengeViewInfo;
+}
+
+/** One stage line of the stage panel (status pre-translated by the host). */
+export interface ChallengeStageLine {
+	number: number;
+	id: string;
+	title: string;
+	status: string;
+	status_label: string;
+	passed_tests: number;
+	total_tests: number;
+}
+
+export interface ChallengeViewInfo {
+	challenge_id: string;
+	name: string;
+	/** 1-based number of the stage on screen. */
+	stage: number;
+	/** The project folder (`challenges/<id>/`), shown in the meta line. */
+	folder: string;
+	/** The next unsolved stage is highlighted (soft: all stages stay open). */
+	current_stage: number;
+	stages: ChallengeStageLine[];
+	entry: string;
 }
 
 export interface TheoryItem {

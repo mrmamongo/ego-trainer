@@ -23,6 +23,14 @@ onHostMessage((msg) => {
 				: data
 		);
 	}
+	if (msg.type === 'challenge.stageData') {
+		// The stage list is already loaded; only the stage on screen changes.
+		taskViewData.update((data) =>
+			data?.challenge && data.challenge.challenge_id === msg.payload.challenge_id
+				? { ...data, challenge: { ...data.challenge, stage: msg.payload.stage } }
+				: data
+		);
+	}
 	if (msg.type === 'taskView.setResult' || msg.type === 'setResult') {
 		checkResult.set(msg.payload);
 		// Keep header status badge in sync with latest check.

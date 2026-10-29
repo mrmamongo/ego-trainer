@@ -47,6 +47,19 @@
         return title.toUpperCase().startsWith(id.toUpperCase())
             ? title.slice(id.length).trim().replace(/^[:·—-]\s*/, '') || title : title;
     }
+    /** Stage panel (ADR-0018 D18.6): every stage stays open, the next one is marked. */
+    function challengeStageClick(challengeId: string, stage: number) {
+        if (stage === $taskViewData?.challenge?.stage) return;
+        postToHost({ type: 'challenge.stage', challengeId, stage });
+    }
+    function openNextStage() {
+        const challenge = $taskViewData?.challenge;
+        if (challenge) postToHost({ type: 'challenge.openNext', challengeId: challenge.challenge_id, stage: challenge.stage });
+    }
+    function stageItemClass(number: number) {
+        const challenge = $taskViewData?.challenge;
+        return { active: number === challenge?.stage, current: number === challenge?.current_stage };
+    }
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
@@ -57,14 +70,32 @@
     {:else}
         {@const data = $taskViewData}
         {@const isLesson = data.kind === 'lesson'}
+        {@const challenge = data.challenge}
         {@const theory = data.theory ?? []}
         {@const activeTab = tab === 'theory' && !theory.length ? 'statement' : tab}
         <header>
             <div class="meta"><span class="task-id">{data.id}</span>
-                {#if isLesson}<span class="status">Теория{data.lesson?.read ? ' · прочитано' : ''}</span>{:else}<span class="status" data-status={data.status}>{statusLabel(data.status)}</span>{/if}
+                {#if isLesson}<span class="status">Теория{data.lesson?.read ? ' · прочитано' : ''}</span>
+                {:else if challenge}<span class="status" data-status={data.status}>Этап {challenge.stage} из {challenge.stages.length}</span>
+                {:else}<span class="status" data-status={data.status}>{statusLabel(data.status)}</span>{/if}
                 {#if data.mode === 'offline' && !data.loading}<span class="offline" title="Локальная проверка">Локально</span>{/if}</div>
-            <h1>{taskTitle(data.id, data.title)}</h1>
-            {#if isLesson}
+            <h1>{challenge ? data.title : taskTitle(data.id, data.title)}</h1>
+            {#if challenge}
+            <div class="meta challenge-folder"><span class="task-id">{challenge.folder}</span><span>запуск: python {challenge.entry}</span></div>
+            <div class="toolbar"><button class="primary" disabled={data.loading} onclick={() => postToHost({type:'taskView.check',taskId:data.id})}>▶ Проверить этап</button>
+                <button disabled={data.loading} onclick={() => postToHost({type:'challenge.run',challengeId:challenge.challenge_id})}>Запустить</button>
+                <button disabled={data.loading} onclick={() => postToHost({type:'taskView.openPy',taskId:data.id})}>Открыть код</button>
+                {#if data.ai_available}<button title="Обсудить решение справа" onclick={() => postToHost({type:'taskView.assistant',taskId:data.id})}>✦ Чат</button>{/if}
+            </div>
+            <nav aria-label="Этапы челленджа">
+                {#each challenge.stages as item (item.number)}
+                    <button class:active={stageItemClass(item.number).active} class:current={stageItemClass(item.number).current} disabled={data.loading}
+                        aria-pressed={stageItemClass(item.number).active} title={`Этап ${item.number}: ${item.title} — ${item.status_label}`}
+                        onclick={() => challengeStageClick(challenge.challenge_id, item.number)}>
+                        {item.number}. {item.title}{#if item.status === 'passed'} ✓{/if}</button>
+                {/each}
+            </nav>
+            {:else if isLesson}
                 <div class="toolbar"><button class:revealed={data.lesson?.read} disabled={data.loading || !data.lesson} aria-pressed={data.lesson?.read ?? false}
                     onclick={() => postToHost({type:'taskView.toggleRead',taskId:data.id,read:!data.lesson?.read})}>
                     {data.lesson?.read ? '✓ Прочитано' : 'Отметить прочитанным'}</button></div>
@@ -76,7 +107,7 @@
             <nav aria-label="Раздел задания">
                 {#if theory.length}<button class:active={activeTab === 'theory'} aria-pressed={activeTab === 'theory'} onclick={() => tab='theory'}>Теория</button>{/if}
                 <button class:active={activeTab === 'statement'} aria-pressed={activeTab === 'statement'} onclick={() => tab='statement'}>Условие</button>
-                <button class:active={activeTab === 'results'} aria-pressed={activeTab === 'results'} onclick={() => tab='results'}>Проверка
+                <button class:active={activeTab === 'results'} aria-pressed={activeTab === 'results'} onclick={() => tab='results'}>{challenge ? 'Результаты' : 'Проверка'}
                     {#if $checkResult}<span class="score">{$checkResult.passed_tests}/{$checkResult.total_tests}</span>{/if}</button>
             </nav>
             {/if}
@@ -85,7 +116,7 @@
         {:else if isLesson}
             <section class="statement" aria-label="Теория">{@html data.statement_html}</section>
             <p class="version">Версия {data.version} · {data.id}</p>
-        {:else if activeTab === 'theory'}
+        {:else if activeTab === 'theory' && !challenge}
             <section aria-label="Теория">
                 {#each theory as lesson (lesson.id)}
                     <article class="lesson" data-lesson={lesson.id}><h2>{lesson.title}</h2><div class="statement">{@html lesson.html}</div></article>
@@ -119,7 +150,12 @@
             <p class="version">Версия {data.version} · {data.id}</p>
         {:else}
             <section class="results" aria-label="Результаты проверки">
-                {#if shouldSuggestTheory($checkResult, theory)}
+                {#if challenge && $checkResult && $checkResult.task_id.toUpperCase() === data.id.toUpperCase()
+                    && $checkResult.status === 'passed' && challenge.stage < challenge.stages.length}
+                    <div class="revisit next-stage"><span>Этап {challenge.stage} пройден.</span>
+                        <button onclick={openNextStage}>Открыть следующий этап →</button></div>
+                {/if}
+                {#if shouldSuggestTheory($checkResult, theory) && !challenge}
                     <div class="revisit"><span>Повтори теорию:</span>
                         {#each theory as lesson (lesson.id)}<button onclick={() => openTheory(lesson.id)}>{lesson.title}</button>{/each}
                     </div>
@@ -145,6 +181,10 @@
     nav { display:flex; gap:14px; margin-top:14px; border-bottom:1px solid var(--vscode-panel-border,#333); }
     nav button { border:0; border-bottom:2px solid transparent; border-radius:0; padding:8px 1px; color:var(--vscode-descriptionForeground); }
     nav button.active { color:var(--vscode-foreground); border-bottom-color:var(--vscode-focusBorder,#3794ff); }
+    /* Stage panel: stage nav wraps, the next unsolved stage is marked (soft, never blocking). */
+    nav[aria-label='Этапы челленджа'] { flex-wrap:wrap; gap:2px 14px; } nav[aria-label='Этапы челленджа'] button { font-size:10px; white-space:normal; text-align:left; }
+    nav button.current { color:var(--vscode-testing-iconPassed,#73c991); } .challenge-folder { margin:8px 0 10px; font-size:10px; color:var(--vscode-descriptionForeground); } .challenge-folder .task-id { color:inherit; }
+    .revisit.next-stage button { border-color:var(--vscode-focusBorder); }
     .score { background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); border-radius:8px; padding:1px 5px; font-size:10px; margin-left:4px; }
     .statement { margin:14px 0; overflow-wrap:anywhere; } .statement :global(h1),.statement :global(h2),.statement :global(h3) { font-size:14px; line-height:1.4; margin:20px 0 8px; font-weight:600; }
     .statement :global(p) { margin:8px 0; } .statement :global(ul),.statement :global(ol) { padding-left:20px; margin:8px 0; } .statement :global(li) { margin:5px 0; }
