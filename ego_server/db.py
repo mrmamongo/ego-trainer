@@ -59,6 +59,9 @@ def _migrate_add_columns(conn: sqlite3.Connection) -> None:
     projects_cols = {row["name"] for row in conn.execute("PRAGMA table_info(projects)")}
     if "archived" not in projects_cols:
         conn.execute("ALTER TABLE projects ADD COLUMN archived INTEGER NOT NULL DEFAULT 0")
+    # projects.recommended_after: soft prerequisite as JSON (NULL = none).
+    if "recommended_after" not in projects_cols:
+        conn.execute("ALTER TABLE projects ADD COLUMN recommended_after TEXT")
 
     oauth_cols = {row["name"] for row in conn.execute("PRAGMA table_info(oauth_flows)")}
     if "callback_uri" not in oauth_cols:

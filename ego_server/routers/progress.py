@@ -16,12 +16,14 @@ GET /progress/<student_id>:
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Annotated
 
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 
 from ego_server.deps import CurrentUser, DbDep
-from ego_server.models import ProgressPush, ProgressRow
+from ego_server.models import BreakdownDTO, ProgressPush, ProgressRow
+from ego_server.recommendations import breakdown
 
 
 router = APIRouter()
@@ -141,6 +143,16 @@ async def get_my_understanding(db: DbDep, user: CurrentUser) -> list[dict]:
     return await get_understanding(user["sub"], db, user)
 
 
+@router.get("/me/breakdown", response_model=BreakdownDTO)
+async def get_my_breakdown(
+    db: DbDep,
+    user: CurrentUser,
+    project: Annotated[str | None, Query(description="Project id, e.g. xl-a")] = None,
+) -> BreakdownDTO:
+    """Passed/total per tag (``bug``/``modify``/``new`` + others) for the caller."""
+    return BreakdownDTO(**breakdown(db, user["sub"], project))
+
+
 @router.get("/{student_id}", response_model=list[ProgressRow])
 async def get_progress(
     student_id: str,
@@ -191,3 +203,16 @@ async def get_understanding(student_id: str, db: DbDep, user: CurrentUser) -> li
     from ego_server.ai import submission_views
 
     return submission_views(db, student_id)
+
+
+@router.get("/{student_id}/breakdown", response_model=BreakdownDTO)
+async def get_breakdown(
+    student_id: str,
+    db: DbDep,
+    user: CurrentUser,
+    project: Annotated[str | None, Query(description="Project id, e.g. xl-a")] = None,
+) -> BreakdownDTO:
+    """Per-tag breakdown for a student. Mentors/admins only (same as /understanding)."""
+    if user["role"] not in ("mentor", "admin"):
+        raise HTTPException(403, "Requires role: mentor, admin")
+    return BreakdownDTO(**breakdown(db, student_id, project))

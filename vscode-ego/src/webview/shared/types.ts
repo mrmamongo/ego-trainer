@@ -106,6 +106,41 @@ export interface Cabinet {
 	states: Record<string, TaskState>;
 	/** AIAccount.reason already translated to Russian by the host. */
 	ai_reason_label: string | null;
+	/** Soft recommendation cards (labels pre-rendered by the host; [] = none). */
+	recommendation_cards?: RecommendationCard[];
+	/** Exam breakdown card (bug / modify / new), null = hidden. */
+	breakdown?: BreakdownCard | null;
+}
+
+/** One project card: readiness against its `recommended_after` (soft, never blocking). */
+export interface RecommendationCard {
+	id: string;
+	name: string;
+	/** True when a recommendation is declared but not met yet. */
+	unmet: boolean;
+	/** «рекомендуем после XL-A: 14/21» or null. */
+	readiness_label: string | null;
+	/** The author's note (may be empty). */
+	note: string;
+	/** Per-kind progress («баги 3/6, доработки 2/6, новое 0/6») or null. */
+	per_kind_label: string | null;
+	/** Project progress line, e.g. «12/27 решено». */
+	progress_label: string;
+}
+
+/** XL-A style breakdown card: one bar per kind tag. */
+export interface BreakdownRow {
+	key: string;
+	label: string;
+	passed: number;
+	total: number;
+	percent: number;
+}
+
+export interface BreakdownCard {
+	project_id: string;
+	project_name: string;
+	rows: BreakdownRow[];
 }
 
 export interface DashboardSummary {

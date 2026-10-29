@@ -201,6 +201,11 @@
 	);
 
 	const ai = $derived(cabinet?.ai ?? null);
+
+	// Soft recommendations: a small card per project; nothing renders when the
+	// server has no /projects (old server) or no recommendation is declared.
+	const recommendationCards = $derived(cabinet?.recommendation_cards ?? []);
+	const breakdownCard = $derived(cabinet?.breakdown ?? null);
 </script>
 
 <main class="dashboard">
@@ -273,6 +278,57 @@
 						<span class="continue-meta">Отличная работа — загляни в раздел защиты понимания.</span>
 					</div>
 				{/if}
+			</section>
+		{/if}
+
+		{#if recommendationCards.length > 0 || breakdownCard}
+			<section class="recommendations" aria-label="Рекомендации по курсам">
+				<div class="section-heading">
+					<h2>Рекомендации по курсам</h2>
+					<span class="section-count">это совет, а не ограничение</span>
+				</div>
+				<div class="recommendation-grid">
+					{#each recommendationCards as card (card.id)}
+						<article class="recommendation-card" class:unmet={card.unmet} data-project={card.id}>
+							<div class="recommendation-head">
+								<strong class="recommendation-name">{card.name}</strong>
+								<span class="mono muted">{card.progress_label}</span>
+							</div>
+							{#if card.unmet && card.readiness_label}
+								<span class="recommendation-readiness">{card.readiness_label}</span>
+								{#if card.per_kind_label}
+									<span class="recommendation-kinds">{card.per_kind_label}</span>
+								{/if}
+								{#if card.note}
+									<span class="recommendation-note">{card.note}</span>
+								{/if}
+							{:else}
+								<span class="recommendation-done">можно начинать — рекомендации выполнены или не заданы</span>
+							{/if}
+						</article>
+					{/each}
+					{#if breakdownCard}
+						<article class="recommendation-card breakdown" data-project={breakdownCard.project_id}>
+							<div class="recommendation-head">
+								<strong class="recommendation-name">Разбивка «{breakdownCard.project_name}»</strong>
+								<span class="mono muted">по видам задач</span>
+							</div>
+							<ul class="breakdown-list">
+								{#each breakdownCard.rows as row (row.key)}
+									{#if row.total > 0}
+										<li class="breakdown-row">
+											<span class="breakdown-label">{row.label}</span>
+											<span class="bar small" aria-label="{row.label}: {row.passed} из {row.total}">
+												<span class="bar-fill" style:width="{row.percent}%"></span>
+											</span>
+											<span class="folder-count mono">{row.passed}/{row.total}</span>
+										</li>
+									{/if}
+								{/each}
+							</ul>
+						</article>
+					{/if}
+				</div>
 			</section>
 		{/if}
 
@@ -819,6 +875,83 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.6rem;
+	}
+
+	.recommendations {
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
+	}
+
+	.recommendation-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+		gap: 0.6rem;
+	}
+
+	.recommendation-card {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		padding: 0.5rem 0.65rem;
+		border: 1px solid color-mix(in srgb, var(--vscode-foreground) 14%, transparent);
+		font-size: 0.8rem;
+	}
+
+	.recommendation-card.unmet {
+		border-left: 3px solid var(--vscode-testing-iconQueued, #cca700);
+		background: color-mix(in srgb, var(--vscode-testing-iconQueued, #cca700) 8%, transparent);
+	}
+
+	.recommendation-head {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 0.6rem;
+	}
+
+	.recommendation-name {
+		font-size: 0.85rem;
+		font-weight: 650;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.recommendation-readiness {
+		color: var(--vscode-testing-iconQueued, #cca700);
+		font-weight: 600;
+	}
+
+	.recommendation-kinds,
+	.recommendation-note,
+	.recommendation-done {
+		font-size: 0.76rem;
+		opacity: 0.78;
+	}
+
+	.recommendation-done {
+		opacity: 0.6;
+	}
+
+	.breakdown-list {
+		list-style: none;
+		margin: 0.2rem 0 0;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+
+	.breakdown-row {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+	}
+
+	.breakdown-label {
+		flex: 0 0 6.5rem;
+		opacity: 0.85;
 	}
 
 	.project {

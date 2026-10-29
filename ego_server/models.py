@@ -445,3 +445,63 @@ class StudioSaveResponse(BaseModel):
     new_version: str
     content_etag: str = ""
     sync: SyncResultDTO
+
+
+# === Projects + soft recommendations (GET /projects) ===
+
+
+class RecommendedAfterDTO(BaseModel):
+    """Soft prerequisite declared in ``project.yaml`` (never enforced)."""
+
+    project: str
+    min_passed: int = 0
+    min_per_kind: int | None = None
+    note: str = ""
+
+
+class ReadinessDTO(BaseModel):
+    """Current student's progress against a :class:`RecommendedAfterDTO`.
+
+    ``passed``/``required`` count passed tasks in ``recommended_after.project``.
+    ``per_kind`` holds passed counts for each kind tag under ``min_per_kind``
+    (empty when the recommendation has no ``min_per_kind``).
+    """
+
+    met: bool
+    passed: int
+    required: int
+    per_kind: dict[str, int] = Field(default_factory=dict)
+
+
+class ProjectDTO(BaseModel):
+    """One row of GET /projects for the logged-in user."""
+
+    id: str
+    name: str
+    order: int = 0
+    recommended_after: RecommendedAfterDTO | None = None
+    readiness: ReadinessDTO | None = None
+
+
+# === Exam breakdown (GET /progress/{student}/breakdown) ===
+
+
+class KindCountDTO(BaseModel):
+    """Passed/total tasks with one tag."""
+
+    passed: int = 0
+    total: int = 0
+
+
+class BreakdownDTO(BaseModel):
+    """Per-tag breakdown of one project (``?project=<id>``).
+
+    ``kinds`` always has ``bug``/``modify``/``new`` keys; ``tags`` holds
+    every other tag present on the project's tasks. A passed task counts
+    in every tag it carries. Without ``project`` (or for an unknown id)
+    all of the user's visible tasks are counted and ``project`` is ``None``.
+    """
+
+    project: str | None = None
+    kinds: dict[str, KindCountDTO] = Field(default_factory=dict)
+    tags: dict[str, KindCountDTO] = Field(default_factory=dict)

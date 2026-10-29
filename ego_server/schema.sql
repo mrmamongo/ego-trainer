@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS projects (
   tags         TEXT NOT NULL DEFAULT '[]', -- JSON array as text
   version_policy TEXT NOT NULL DEFAULT 'declare',  -- declare | auto_minor
   archived     INTEGER NOT NULL DEFAULT 0,
+  recommended_after TEXT,                  -- JSON {project,min_passed,min_per_kind,note} | NULL
   created_at   TEXT NOT NULL,
   updated_at   TEXT NOT NULL
 );

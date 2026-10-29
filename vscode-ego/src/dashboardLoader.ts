@@ -6,11 +6,21 @@ import {
     EgoApiError,
     catalogFieldsOf,
     isAuthenticationError,
+    type Breakdown,
     type ProgressRow,
+    type ProjectInfo,
     type TaskMetaWithCatalog,
 } from './api';
 import type { AIAccount } from './aiTypes';
 import { readEgoConfig, egoDir, type EgoMode } from './egoWorkspace';
+import {
+    KIND_LABELS,
+    KIND_TAGS,
+    breakdownRows,
+    hasBreakdown,
+    indexProjects,
+    readinessLine,
+} from './recommendations';
 import {
     aiAccessReasonLabel,
     effectiveDefenseRequired,
@@ -87,6 +97,33 @@ export interface Cabinet {
     defense_required: boolean;
     states: Record<string, TaskState>;
     ai_reason_label: string | null;
+    /** Soft recommendation cards (empty/null when the server has no /projects). */
+    recommendation_cards: RecommendationCard[];
+    /** Exam breakdown card (GET /progress/me/breakdown), null = hidden. */
+    breakdown: BreakdownCard | null;
+}
+
+/** One project card: readiness against its `recommended_after` (if any). */
+export interface RecommendationCard {
+    id: string;
+    name: string;
+    /** True when a recommendation is declared but not met yet. */
+    unmet: boolean;
+    /** «рекомендуем после XL-A: 14/21» or null. */
+    readiness_label: string | null;
+    /** The author's note (may be empty). */
+    note: string;
+    /** Per-kind progress («баги 3/6, доработки 2/6, новое 0/6») or null. */
+    per_kind_label: string | null;
+    /** Project progress line, e.g. «12/27 решено». */
+    progress_label: string;
+}
+
+/** XL-A style breakdown card: bug / modify / new bars. */
+export interface BreakdownCard {
+    project_id: string;
+    project_name: string;
+    rows: { key: string; label: string; passed: number; total: number; percent: number }[];
 }
 
 export interface DashboardData {
@@ -135,6 +172,8 @@ const EMPTY_CABINET: Cabinet = {
     defense_required: false,
     states: {},
     ai_reason_label: null,
+    recommendation_cards: [],
+    breakdown: null,
 };
 
 function summarize(rows: DashboardRow[]): DashboardData['summary'] {
@@ -194,6 +233,10 @@ export interface CabinetInputs {
     /** null = GET /ai/me unavailable (old server / offline). */
     account: AIAccount | null;
     mode: EgoMode;
+    /** null = GET /projects unavailable (old server / offline). */
+    projectInfo?: ProjectInfo[] | null;
+    /** GET /progress/me/breakdown of the project with kind tags (null = hidden). */
+    breakdown?: Breakdown | null;
 }
 
 export interface CabinetBuild {
@@ -202,14 +245,66 @@ export interface CabinetBuild {
     states: Record<string, TaskState>;
 }
 
+/** Project cards for the cabinet (only projects known to GET /projects). */
+export function buildRecommendationCards(
+    projectInfo: ProjectInfo[] | null | undefined,
+    projects: ProjectProgress[]
+): RecommendationCard[] {
+    if (!projectInfo) return [];
+    const byId = indexProjects(projectInfo);
+    const progressById = new Map(projects.map((p) => [p.key.replace(/^p:/, ''), p]));
+    const cards: RecommendationCard[] = [];
+    for (const project of projects) {
+        const id = project.key.replace(/^p:/, '');
+        const info = byId.get(id);
+        if (!info) continue;
+        const rec = info.recommended_after;
+        const readiness = info.readiness;
+        const unmet = Boolean(rec && readiness && readiness.met === false);
+        let perKind: string | null = null;
+        if (unmet && rec && rec.min_per_kind !== null && rec.min_per_kind !== undefined) {
+            const need = rec.min_per_kind;
+            perKind = KIND_TAGS.map(
+                (kind) => `${(KIND_LABELS[kind] || kind).toLocaleLowerCase('ru')} ${readiness?.per_kind?.[kind] ?? 0}/${need}`
+            ).join(', ');
+        }
+        cards.push({
+            id,
+            name: info.name || project.name,
+            unmet,
+            readiness_label: unmet ? readinessLine(info, (pid) => byId.get(pid)?.name) : null,
+            note: rec?.note?.trim() ?? '',
+            per_kind_label: perKind,
+            progress_label: `${project.passed}/${project.total} решено`,
+        });
+    }
+    return cards;
+}
+
+/** Breakdown card for the project described by `breakdown` (null = hidden). */
+export function buildBreakdownCard(
+    breakdown: Breakdown | null | undefined,
+    projectInfo: ProjectInfo[] | null | undefined,
+    projects: ProjectProgress[]
+): BreakdownCard | null {
+    if (!breakdown || !hasBreakdown(breakdown)) return null;
+    const projectId = breakdown.project ?? '';
+    const info = indexProjects(projectInfo).get(projectId);
+    const progress = projects.find((p) => p.key === `p:${projectId}`);
+    return {
+        project_id: projectId,
+        project_name: info?.name || progress?.name || projectId,
+        rows: breakdownRows(breakdown),
+    };
+}
+
 /**
  * Assemble the cabinet sections from tasks, progress and optional evidence.
  * `evidence` / `account` are null when the server lacks the corresponding
  * endpoint; those sections are then hidden by the webview.
  */
 export function buildCabinet(input: CabinetInputs): CabinetBuild {
-    const { tasks, progress, evidence, account, mode } = input;
-    const progressByTask = new Map(progress.map((p) => [p.task_id, p]));
+    const { tasks, progress, evidence, account, mode } = input;    const progressByTask = new Map(progress.map((p) => [p.task_id, p]));
     const latestEvidence = evidence ? newestEvidenceByTask(evidence) : null;
     // Defense gating needs both the server flag and the evidence list; without
     // them a passed solution stays «passed» instead of «ждёт защиты».
@@ -249,23 +344,24 @@ export function buildCabinet(input: CabinetInputs): CabinetBuild {
     if (progress.length > 0) {
         for (const task of tasks) states[task.id] = stateOf(task);
     }
+    const projectProgress: ProjectProgress[] = projects.map((p) => ({
+        key: p.key,
+        name: p.name,
+        passed: p.passed,
+        total: p.total,
+        percent: percent(p.passed, p.total),
+        folders: p.folders.map((f) => ({
+            key: f.key,
+            name: f.name,
+            passed: f.passed,
+            total: f.total,
+            percent: percent(f.passed, f.total),
+        })),
+    }));
     return {
         states,
         cabinet: {
-            projects: projects.map((p) => ({
-                key: p.key,
-                name: p.name,
-                passed: p.passed,
-                total: p.total,
-                percent: percent(p.passed, p.total),
-                folders: p.folders.map((f) => ({
-                    key: f.key,
-                    name: f.name,
-                    passed: f.passed,
-                    total: f.total,
-                    percent: percent(f.passed, f.total),
-                })),
-            })),
+            projects: projectProgress,
             next_task_id: next?.id ?? null,
             next_task_title: next?.title ?? null,
             understanding,
@@ -283,6 +379,8 @@ export function buildCabinet(input: CabinetInputs): CabinetBuild {
             defense_required: defenseRequired === true,
             states,
             ai_reason_label: account ? aiAccessReasonLabel(account.reason) : null,
+            recommendation_cards: buildRecommendationCards(input.projectInfo, projectProgress),
+            breakdown: buildBreakdownCard(input.breakdown, input.projectInfo, projectProgress),
         },
     };
 }
@@ -331,7 +429,31 @@ async function loadServer(api: EgoApi): Promise<DashboardData> {
             account = null;
         }
 
-        const { cabinet, states } = buildCabinet({ tasks, progress, evidence, account, mode: 'server' });
+        // /projects: 404 on an old server is handled inside listProjects
+        // (empty list); other failures hide the recommendation cards only.
+        let projectInfo: ProjectInfo[] | null = null;
+        try {
+            projectInfo = await api.listProjects();
+        } catch (e) {
+            if (e instanceof EgoApiError && e.status === 401) throw e;
+            projectInfo = null;
+        }
+        // Breakdown of the project whose tasks carry bug/modify/new kinds
+        // (XL-A). Hidden when no project qualifies or the server is old.
+        let breakdown: Breakdown | null = null;
+        const kindProject = tasks.find((t) => (t.tags ?? []).some((tag) => (KIND_TAGS as readonly string[]).includes(tag)));
+        if (kindProject?.project_id) {
+            try {
+                breakdown = await api.getMyBreakdown(kindProject.project_id);
+            } catch (e) {
+                if (e instanceof EgoApiError && e.status === 401) throw e;
+                breakdown = null;
+            }
+        }
+
+        const { cabinet, states } = buildCabinet({
+            tasks, progress, evidence, account, mode: 'server', projectInfo, breakdown,
+        });
         const progressMap = new Map(progress.map((p) => [p.task_id, p]));
         const rows: DashboardRow[] = tasks.map((t) => {
             const p = progressMap.get(t.id);

@@ -28,6 +28,7 @@ from ego_server.routers import (
     forgejo_auth,
     lessons,
     progress,
+    projects,
     run as run_router,
     tasks,
 )
@@ -71,6 +72,7 @@ app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(forgejo_auth.router, prefix="/auth", tags=["auth"])
 app.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
 app.include_router(lessons.router, prefix="/lessons", tags=["lessons"])
+app.include_router(projects.router, prefix="/projects", tags=["projects"])
 app.include_router(progress.router, prefix="/progress", tags=["progress"])
 app.include_router(check.router, prefix="/check", tags=["check"])
 app.include_router(run_router.router, prefix="/run", tags=["run"])

@@ -81,6 +81,18 @@ def test_student_shell_is_self_contained_and_has_course_sidebar(client):
     assert "destination.startsWith('lesson:')" in markdown
 
 
+def test_student_cabinet_wires_soft_recommendations(client):
+    """The cabinet reads GET /projects and the XL-A breakdown; old servers degrade."""
+    javascript = client.get("/static/student.js").text
+    assert "request('/projects')" in javascript
+    assert "/progress/me/breakdown?project=" in javascript
+    # Optional endpoints (404 on an old server) must not fail the whole page.
+    assert "Promise.allSettled(" in javascript
+    logic = client.get("/static/student-logic.js").text
+    assert "readinessLine" in logic and "рекомендуем после" in logic
+    assert "breakdownRows" in logic
+
+
 def test_student_view_counter_covers_task_pages_and_ignores_bots(client):
     headers = {"User-Agent": "Mozilla/5.0"}
     assert client.get("/student", headers=headers).status_code == 200
