@@ -1,0 +1,52 @@
+from dataclasses import dataclass, field
+
+
+@dataclass
+class ChatMessage:
+    author: str
+    text: str
+    reactions: list = field(default_factory=list)
+
+    def react(self, emoji):
+        self.reactions.append(emoji)
+        return len(self.reactions)
+
+
+# ===== Ниже ничего не меняй: это рамка для проверки. =====
+
+def task_dc04_message(actions):
+    return given_play(ChatMessage, actions)
+
+
+def given_play(cls, actions):
+    """Готовый помощник: создаёт объект и по очереди выполняет действия сценария."""
+    results = []
+    obj = None
+    for action in actions:
+        name, args = action[0], list(action[1:])
+        try:
+            if name == "new":
+                obj = cls(*args)
+                result = "ok"
+            elif name == "get":
+                result = getattr(obj, args[0])
+            elif name == "set":
+                setattr(obj, args[0], args[1])
+                result = "ok"
+            else:
+                result = getattr(obj, name)(*args)
+        except Exception as error:
+            result = ["error", type(error).__name__, str(error)]
+        results.append(given_plain(result))
+    return results
+
+
+def given_plain(value):
+    """Числа, строки, True/False, None, списки и словари из них — как есть; объект — имя его класса."""
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if isinstance(value, (list, tuple)):
+        return [given_plain(item) for item in value]
+    if isinstance(value, dict):
+        return {key: given_plain(item) for key, item in value.items()}
+    return type(value).__name__

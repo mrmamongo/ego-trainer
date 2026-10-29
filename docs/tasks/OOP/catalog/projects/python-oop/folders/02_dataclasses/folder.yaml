@@ -1,0 +1,6 @@
+id: 02_dataclasses
+code: DC
+name: "dataclass и записи"
+description: "Запись одной строкой: @dataclass сам пишет __init__, __repr__ и __eq__. Значения по умолчанию и ловушка изменяемого значения (default_factory), сравнение записей по полям, frozen-записи и replace, перевод записи в словарь и обратно, сортировка списка записей."
+order: 2
+level: easy
