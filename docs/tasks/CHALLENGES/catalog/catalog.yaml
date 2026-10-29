@@ -1,0 +1,5 @@
+schema_version: 1
+projects:
+  - id: challenges
+    path: projects/challenges
+    enabled: true
