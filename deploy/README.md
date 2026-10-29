@@ -94,7 +94,8 @@ ssh server 'mkdir -p /opt/cogito/incoming/<name> && tar -xzf /opt/cogito/incomin
 ```
 
 Каждый `--content PROJECT=DIR` целиком заменяет `/opt/cogito/content/projects/PROJECT`
-(старый каталог сохраняется в бэкапе).
+(старый каталог сохраняется в бэкапе). Новый проект, которого нет в `content/catalog.yaml`, скрипт допишет туда сам
+(`enabled: true`); `catalog.yaml` тоже попадает в бэкап и возвращается при откате.
 
 ### Расширение VS Code (по желанию)
 

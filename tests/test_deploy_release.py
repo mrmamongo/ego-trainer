@@ -1001,3 +1001,61 @@ def test_build_parser_defaults():
     assert args.expect == ["k=1"]
     assert args.dry_run is False
     assert args.no_dark_theme_check is False
+
+
+CATALOG = (
+    "schema_version: 1\nprojects:\n"
+    "  - id: xl-a\n    path: projects/xl-a\n    enabled: true\n"
+    "  - id: junior\n    path: projects/junior\n    enabled: false\n"
+)
+
+
+def test_add_catalog_projects_appends_only_missing():
+    out = release.add_catalog_projects(CATALOG, ["junior", "python-oop", "xl-a"])
+    assert out.startswith(CATALOG)
+    assert out[len(CATALOG):] == (
+        "  - id: python-oop\n    path: projects/python-oop\n    enabled: true\n"
+    )
+    assert "  - id: junior\n    path: projects/junior\n    enabled: false\n" in out
+    assert release.add_catalog_projects(CATALOG, ["xl-a"]) == CATALOG
+
+
+def test_new_project_is_listed_in_catalog(tmp_path, capsys):
+    root = _make_prod(tmp_path)
+    (root / "content" / "catalog.yaml").write_text(CATALOG)
+    content = tmp_path / "python-oop"
+    content.mkdir()
+    (content / "project.yaml").write_text("id: python-oop\n")
+    cfg = release.Config(
+        name="oop-1", expect_current="ego-trainer:cur", content={"python-oop": content},
+        root=root,
+    )
+    assert release.run_release(
+        cfg, run=as_runner(FakeRunner(_docker_outputs())), fetch=FakeFetch(),
+        getuid=lambda: 1000,
+    ) == release.EXIT_OK
+    catalog = (root / "content" / "catalog.yaml").read_text()
+    assert "  - id: python-oop\n    path: projects/python-oop\n    enabled: true\n" in catalog
+    assert (cfg.backup_dir / "catalog.yaml").read_text() == CATALOG
+
+
+def test_rollback_restores_catalog(tmp_path, capsys):
+    root = _make_prod(tmp_path)
+    (root / "content" / "catalog.yaml").write_text(CATALOG)
+    content = tmp_path / "python-oop"
+    content.mkdir()
+    cfg = _new_image_release(root, content={"python-oop": content})
+
+    class LiveBroken(FakeFetch):
+        def __call__(self, port, path, tries=1):
+            if port == release.LIVE_PORT and path == "/panel":
+                return 404, b""
+            return super().__call__(port, path, tries)
+
+    code = release.run_release(
+        cfg, run=as_runner(FakeRunner(_docker_outputs())), fetch=LiveBroken(),
+        getuid=lambda: 1000,
+    )
+    assert code == release.EXIT_ABORT
+    assert (root / "content" / "catalog.yaml").read_text() == CATALOG
+    assert not (root / "content" / "projects" / "python-oop").exists()

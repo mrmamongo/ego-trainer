@@ -183,6 +183,23 @@ EXPECT_ALIASES = (
 )
 
 
+def add_catalog_projects(text: str, projects: list[str]) -> str:
+    """Append ``catalog.yaml`` entries for projects it does not list yet.
+
+    A new course shipped with ``--content`` must also be listed in the
+    catalogue, or sync never sees it. Listed projects are left as they are
+    (including ``enabled: false``).
+    """
+    listed = set(re.findall(r"^\s*-\s*id:\s*['\"]?([A-Za-z0-9._-]+)", text, flags=re.M))
+    missing = [project for project in projects if project not in listed]
+    if not missing:
+        return text
+    lines = text if text.endswith("\n") else text + "\n"
+    for project in missing:
+        lines += f"  - id: {project}\n    path: projects/{project}\n    enabled: true\n"
+    return lines
+
+
 def _quote_literal(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
@@ -572,6 +589,10 @@ class Config:
     def content_root(self) -> Path:
         return self.root / "content"
 
+    @property
+    def catalog_path(self) -> Path:
+        return self.content_root / "catalog.yaml"
+
     def content_dest(self, project: str) -> Path:
         return self.content_root / "projects" / project
 
@@ -932,6 +953,11 @@ class Release:
             dst = cand / "content" / "projects" / project
             shutil.rmtree(dst, ignore_errors=True)
             shutil.copytree(src, dst)
+        cand_catalog = cand / "content" / "catalog.yaml"
+        cand_catalog.write_text(
+            add_catalog_projects(cand_catalog.read_text(encoding="utf-8"), sorted(cfg.content)),
+            encoding="utf-8",
+        )
         self._chown_if_root(cand)
         before = read_counts(cand / "data" / "ego.db", cfg.expect)
         self.run(["docker", "rm", "-f", CANDIDATE_CONTAINER], check=False)
@@ -1016,6 +1042,8 @@ class Release:
             cfg.backup_dir.mkdir(parents=True, exist_ok=True)
             self._copy_live_db(cfg.backup_dir / "ego-pre-release.db")
             shutil.copy2(cfg.env_path, cfg.backup_dir / "env.bak")
+            if cfg.content:
+                shutil.copy2(cfg.catalog_path, cfg.backup_dir / "catalog.yaml")
             for project in cfg.content:
                 dst = cfg.content_dest(project)
                 self.old_content[project] = dst if dst.exists() else None
@@ -1042,6 +1070,15 @@ class Release:
             staging.rename(dst)
             self._chown_if_root(dst)
             print(f"  placed {project} -> {dst}")
+        catalog = self.cfg.catalog_path
+        old = catalog.read_text(encoding="utf-8")
+        new = add_catalog_projects(old, sorted(self.cfg.content))
+        if new != old:
+            tmp = catalog.with_name(catalog.name + ".release-tmp")
+            tmp.write_text(new, encoding="utf-8")
+            shutil.copymode(catalog, tmp)
+            tmp.replace(catalog)
+            print(f"  catalog.yaml: listed new project(s) in {catalog}")
 
     def switch_image(self) -> None:
         """Rewrite COGITO_IMAGE and recreate the container; raise if unhealthy."""
@@ -1127,6 +1164,9 @@ class Release:
                 shutil.rmtree(dst, ignore_errors=True)
                 staging.rename(dst)
                 self._chown_if_root(dst)
+            saved_catalog = cfg.backup_dir / "catalog.yaml"
+            if cfg.content and saved_catalog.exists():
+                shutil.copy2(saved_catalog, cfg.catalog_path)
             self.run([*self.compose, "up", "-d", "--no-deps", COMPOSE_SERVICE])
             status, _ = self.http(LIVE_PORT, "/health", tries=45)
             if cfg.content:
