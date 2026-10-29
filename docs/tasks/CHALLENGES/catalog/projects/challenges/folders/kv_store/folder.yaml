@@ -1,0 +1,12 @@
+id: kv_store
+code: KV
+name: "Своё хранилище ключ-значение"
+description: "Маленькая программа из трёх файлов: разбор команд, хранилище на словаре, цикл ввода. Растёт от одной функции до сохранения в JSON и транзакций. Без классов: только функции, словари и модули."
+order: 1
+level: medium
+kind: challenge
+workspace:
+  entry: main.py
+  include: ["*.py", "data/*.json"]
+  max_files: 20
+  max_bytes: 200000

@@ -1,0 +1,12 @@
+id: challenges
+name: "Челленджи"
+description: "Программы из нескольких файлов, которые растут этап за этапом."
+version: "0.1.0"
+order: 3
+default_locale: ru
+tags: [challenge, project]
+version_policy: declare
+recommended_after:
+  project: python-start
+  min_passed: 200
+  note: "Челленджи удобнее брать после курса «Python с нуля»: там ты уже учишься писать функции, словари и обработку ошибок. Но это только совет, ничто не закрыто."
