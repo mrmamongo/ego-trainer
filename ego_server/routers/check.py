@@ -182,6 +182,13 @@ def _submission_shape(body: CheckRequest, stage_number: int | None) -> str:
             status_code=422,
             detail="Нужен student_code (одна функция) или files (проект этапа)",
         )
+    if has_files and not body.files:
+        # An empty project would "pass" every stage with nothing to check.
+        raise HTTPException(
+            status_code=422,
+            detail="files пустой: собери файлы проекта этапа "
+            "по include из workspace и отправь их ещё раз",
+        )
     if stage_number is not None:
         if has_code:
             raise HTTPException(status_code=422, detail=STAGE_NEEDS_FILES)

@@ -188,11 +188,25 @@ def test_check_requires_one_of_student_code_or_files(client):
     assert "student_code" in r.json()["detail"]
 
 
-def test_check_rejects_both_student_code_and_files(client):
+def test_check_stage_rejects_both_student_code_and_files(client):
     token, _ = _register_and_login(client)
     r = _check(client, token, "KV01", student_code="pass", files=STAGE1_FILES)
     assert r.status_code == 422
     assert "student_code" in r.json()["detail"] and "files" in r.json()["detail"]
+
+
+def test_check_stage_rejects_an_empty_project(client):
+    """An empty ``files`` would "pass" trivially; it is not a submission."""
+    token, _ = _register_and_login(client)
+    r = _check(client, token, "KV01", files={})
+    assert r.status_code == 422
+    assert "files пустой" in r.json()["detail"]
+
+
+def test_check_stage_rejects_non_string_file_content(client):
+    token, _ = _register_and_login(client)
+    r = _check(client, token, "KV01", files={"main.py": 42})
+    assert r.status_code == 422
 
 
 @pytest.fixture
