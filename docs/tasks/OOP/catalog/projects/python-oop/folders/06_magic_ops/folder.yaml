@@ -1,0 +1,6 @@
+id: 06_magic_ops
+code: MO
+name: "Магические методы II: арифметика и коллекции"
+description: "Как объекты складываются и умножаются (__add__, __sub__, __mul__ возвращают новый объект), что значит return NotImplemented, как sum() работает с объектами (__radd__) и как класс становится похож на коллекцию: len(), obj[i], in и if obj (__len__, __getitem__, __contains__, __bool__)."
+order: 6
+level: medium
