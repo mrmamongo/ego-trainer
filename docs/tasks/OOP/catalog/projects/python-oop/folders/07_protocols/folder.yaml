@@ -1,0 +1,6 @@
+id: 07_protocols
+code: PT
+name: "Протоколы: итераторы, генераторы, with"
+description: "Как работает for внутри (iter и next, StopIteration), чем итератор отличается от итерируемого и почему второй обход бывает пустым, как писать __iter__ через yield, ленивые цепочки генераторов и next(gen, запасное), менеджеры контекста (__enter__ и __exit__, contextlib.contextmanager) и сохранение объекта в JSON через to_dict и from_dict с файлоподобным io.StringIO."
+order: 7
+level: medium
