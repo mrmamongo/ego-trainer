@@ -95,6 +95,11 @@ class ProgramResult(RunResult):
     """
 
     files: dict[str, tuple[Any, str]] = field(default_factory=dict)
+    #: Why the run does not satisfy its expectations (stdout, exit code,
+    #: stderr, files); ``None`` when everything expected happened. Unlike
+    #: ``returncode`` it is unambiguous when a program legitimately exits
+    #: with a non-zero code (``expected_exit``).
+    failure: str | None = None
 
 
 def run_code(
@@ -629,6 +634,8 @@ def run_project(
     expected_stdout: str | None = None,
     match: str = "lines",
     expected_exit: int | None = None,
+    expected_stderr: str | None = None,
+    argv: tuple[str, ...] | list[str] = (),
     expect_files: dict | None = None,
     workspace: dict | None = None,
     timeout: float = 5.0,
@@ -694,6 +701,8 @@ def run_project(
                 expected_stdout=expected_stdout or "",
                 match=match,
                 expected_exit=expected_exit,
+                expected_stderr=expected_stderr,
+                argv=tuple(argv),
                 timeout=timeout,
                 block_network=block_network,
             )
@@ -845,10 +854,12 @@ def _run_entry(
     expected_stdout: str,
     match: str,
     expected_exit: int | None,
+    expected_stderr: str | None = None,
+    argv: tuple[str, ...] = (),
     timeout: float,
     block_network: bool,
 ) -> ProgramResult:
-    """Run ``python -S <entry>`` with ``stdin``; compare stdout / exit code."""
+    """Run ``python -S <entry> *argv`` with ``stdin``; compare the outcome."""
     problem = check_project_path(entry)
     entry_path = None if problem is not None else tmp_dir.joinpath(*entry.split("/"))
     if problem is not None or entry_path is None or not entry_path.is_file():
@@ -859,7 +870,7 @@ def _run_entry(
             exception="FileNotFoundError",
         )
     raw = _run_subprocess(
-        [sys.executable, "-S", entry],
+        [sys.executable, "-S", entry, *argv],
         cwd=tmp_dir,
         timeout=timeout,
         block_network=block_network,
@@ -885,9 +896,19 @@ def _run_entry(
             f"--- expected ---\n{expected_stdout.rstrip()}\n"
             f"--- actual ---\n{stdout.rstrip()}"
         )
+        result.failure = result.stderr
     elif expected_exit is not None and raw.returncode != expected_exit:
         result.returncode = 1
         result.stderr = f"exit code {raw.returncode}, expected {expected_exit}"
+        result.failure = result.stderr
+    elif expected_stderr is not None and expected_stderr not in raw.stderr:
+        result.failure = (
+            "stderr mismatch (contains):\n"
+            f"--- expected to contain ---\n{expected_stderr.rstrip()}\n"
+            f"--- actual ---\n{raw.stderr.rstrip()}"
+        )
+        result.returncode = 1
+        result.stderr = result.failure
     return result
 
 
@@ -912,11 +933,14 @@ def _check_expected_files(result: ProgramResult, tmp_dir: Path, expected: dict) 
         else:
             result.files[path] = _read_json(tmp_dir, path, wanted)
     mismatched = [path for path, (_actual, diff) in result.files.items() if diff]
-    if mismatched and result.returncode == 0:
-        result.returncode = 1
-        result.stderr = "файлы после запуска не совпали: " + "; ".join(
+    if mismatched:
+        reason = "файлы после запуска не совпали: " + "; ".join(
             f"`{path}`: {result.files[path][1]}" for path in mismatched
         )
+        result.failure = result.failure or reason
+        if result.returncode == 0:
+            result.returncode = 1
+            result.stderr = reason
 
 
 def _read_json(tmp_dir: Path, path: str, wanted: Any) -> tuple[Any, str]:

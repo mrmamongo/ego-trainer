@@ -68,6 +68,10 @@ class ProgramCase:
     level: TestLevel = "smoke"
     match: ProgramMatch = "lines"
     expected_exit: int | None = None
+    # Command-line arguments after the entry file (``python main.py *argv``).
+    argv: tuple[str, ...] = ()
+    # Substring that must appear in stderr ("contains"); None = not checked.
+    expected_stderr: str | None = None
     # Optional entry point (default: the challenge workspace entry, main.py).
     entry: str | None = None
     files: dict[str, str] = field(default_factory=dict)
@@ -171,6 +175,8 @@ def program(
     level: TestLevel = "smoke",
     match: ProgramMatch = "lines",
     expected_exit: int | None = None,
+    argv: list[str] | tuple[str, ...] = (),
+    expected_stderr: str | None = None,
     files: dict[str, str] | None = None,
     expect_files: dict[str, Any] | None = None,
     timeout: float | None = None,
@@ -196,8 +202,12 @@ def program(
 
     Arguments are validated at decoration time (``ValueError``): a wrong
     ``level`` / ``match``, non-string ``stdin`` / ``expected_stdout``, a
-    non-dict ``files`` / ``expect_files``, a non-integer ``expected_exit`` or
-    a non-positive ``timeout``.
+    non-dict ``files`` / ``expect_files``, a non-integer ``expected_exit``, a
+    non-positive ``timeout``, an ``argv`` that is not a list / tuple of
+    strings or a non-string ``expected_stderr``.
+
+    ``argv=["-i", "error", "logs/app.log"]`` runs ``python main.py -i error
+    logs/app.log``; ``expected_stderr`` must be contained in stderr.
     """
     if level not in ("smoke", "full"):
         raise ValueError(f"invalid test level: {level!r} (expected 'smoke' or 'full')")
@@ -213,6 +223,15 @@ def program(
         not isinstance(expected_exit, int) or isinstance(expected_exit, bool)
     ):
         raise ValueError(f"@program expected_exit must be an integer code, got {expected_exit!r}")
+    if isinstance(argv, (str, bytes)) or not isinstance(argv, (list, tuple)):
+        raise ValueError(f"@program argv must be a list of strings, got {type(argv).__name__}")
+    for arg in argv:
+        if not isinstance(arg, str):
+            raise ValueError(f"@program argv items must be strings, got {arg!r}")
+    if expected_stderr is not None and not isinstance(expected_stderr, str):
+        raise ValueError(
+            f"@program expected_stderr must be a string, got {type(expected_stderr).__name__}"
+        )
     if timeout is not None and (not isinstance(timeout, (int, float)) or timeout <= 0):
         raise ValueError(f"@program timeout must be a positive number, got {timeout!r}")
     if entry is not None and (not isinstance(entry, str) or not entry):
@@ -233,6 +252,8 @@ def program(
                 level=level,
                 match=match,
                 expected_exit=expected_exit,
+                argv=tuple(argv),
+                expected_stderr=expected_stderr,
                 entry=entry,
                 files=dict(checked_files),
                 expect_files=dict(checked_expected),
