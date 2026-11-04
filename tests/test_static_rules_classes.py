@@ -1058,3 +1058,30 @@ def test_run_check_missing_class(tmp_path):
     assert result.status == "partial"
     assert result.results[0].description == "Правило: нужен класс `Account`"
     assert result.results[0].level == "smoke"
+
+
+@pytest.mark.parametrize("decorator", ["@contextmanager", "@contextlib.contextmanager"])
+def test_function_decorator_contextmanager(decorator):
+    src = """
+        import contextlib
+        from contextlib import contextmanager
+
+        {decorator}
+        def transaction(wallet):
+            yield wallet
+    """.replace("{decorator}", decorator)
+    assert _keys(src, require_decorators={"transaction": ["contextmanager"]}) == []
+
+
+def test_function_decorator_missing_message():
+    src = """
+        def transaction(wallet):
+            yield wallet
+    """
+    (violation,) = evaluate(
+        _src(src), _spec(require_decorators={"transaction": ["contextmanager"]})
+    )
+    assert violation.key == "decorator:transaction"
+    assert violation.description == (
+        "Правило: функция `transaction` должна быть помечена @contextmanager (строка 2)"
+    )

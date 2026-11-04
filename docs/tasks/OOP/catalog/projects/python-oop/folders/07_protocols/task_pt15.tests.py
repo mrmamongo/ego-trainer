@@ -2,6 +2,7 @@ from ego.testing import case, rules
 
 @rules(
     require_functions=['transaction'],
+    require_decorators={'transaction': ['contextmanager']},
 )
 @case(
     args=(100, [30, 20]),

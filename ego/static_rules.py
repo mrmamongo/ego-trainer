@@ -20,7 +20,8 @@ OOP rules (class bodies are about the structure, not the spelling):
 
 - ``require_classes``        — top-level ``class`` with that name
 - ``require_decorators``     — ``{"Account": ["dataclass"], "Account.balance":
-  ["property"]}``: the class / method carries a matching decorator
+  ["property"], "transaction": ["contextmanager"]}``: the class / method /
+  top-level function carries a matching decorator
   (``@dataclass``, ``@dataclasses.dataclass``, ``@dataclass(...)``,
   ``@x.setter`` → ``setter``, ``@abc.abstractmethod`` → ``abstractmethod``)
 - ``require_methods``        — ``{"Account": ["deposit"]}``: methods defined in
@@ -74,6 +75,8 @@ _DECORATOR_ALIASES: dict[str, str] = {
     "dataclasses.dataclass": "dataclass",
     "enum.unique": "unique",
     "unique": "unique",
+    "contextmanager": "contextmanager",
+    "contextlib.contextmanager": "contextmanager",
 }
 
 # Line suffix of the OOP rule reasons: «… (строка 12)».
@@ -519,6 +522,7 @@ def _check_classes(
     found in the code reports the line of the method, the base or the access.
     """
     classes = _class_index(tree)
+    functions = _function_index(tree)
     order: list[str] = []
 
     for name in rules.require_classes:
@@ -531,6 +535,19 @@ def _check_classes(
         if _is_given_class(cls_name):
             continue
         cls = classes.get(cls_name)
+        if cls is None and not method_name and cls_name in functions:
+            # A top-level function: ``{"transaction": ["contextmanager"]}``.
+            func = functions[cls_name]
+            if _missing_decorators(func.decorator_list, members):
+                hit(
+                    subject,
+                    "decorator",
+                    f"функция `{cls_name}` должна быть помечена @{members[0]}",
+                    func.lineno,
+                    subject,
+                )
+                order.append(subject)
+            continue
         if cls is None:
             if subject not in rules.require_classes:  # otherwise already reported
                 hit(subject, "decorator", _missing_class_text(subject, members[0]), None, subject)
@@ -800,6 +817,15 @@ def _class_index(tree: ast.AST) -> dict[str, ast.ClassDef]:
     out: dict[str, ast.ClassDef] = {}
     for stmt in getattr(tree, "body", []):
         if isinstance(stmt, ast.ClassDef) and stmt.name not in out:
+            out[stmt.name] = stmt
+    return out
+
+
+def _function_index(tree: ast.AST) -> dict[str, ast.FunctionDef | ast.AsyncFunctionDef]:
+    """Top-level functions by name (the first definition wins)."""
+    out: dict[str, ast.FunctionDef | ast.AsyncFunctionDef] = {}
+    for stmt in getattr(tree, "body", []):
+        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)) and stmt.name not in out:
             out[stmt.name] = stmt
     return out
 

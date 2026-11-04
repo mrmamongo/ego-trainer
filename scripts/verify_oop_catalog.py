@@ -20,6 +20,9 @@ EXPECTED_IDS = {
     "03_properties": [f"PR{n:02}" for n in range(1, 19)],
     "04_class_methods": [f"CM{n:02}" for n in range(1, 19)],
     "05_magic_compare": [f"MG{n:02}" for n in range(1, 19)],
+    "06_magic_ops": [f"MO{n:02}" for n in range(1, 19)],
+    "07_protocols": [f"PT{n:02}" for n in range(1, 19)],
+    "08_inheritance": [f"IN{n:02}" for n in range(1, 21)],
 }
 
 

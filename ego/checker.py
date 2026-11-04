@@ -21,6 +21,7 @@ import ast
 import dataclasses
 import hashlib
 import importlib.util
+import logging
 import sys
 from pathlib import Path
 from typing import Any, Callable
@@ -530,6 +531,9 @@ def load_tests_file(path: Path, *, entry_point: str | None = None) -> _LoadedTes
     try:
         spec.loader.exec_module(module)
     except Exception:  # noqa: BLE001
+        # A broken tests file (e.g. a bad @rules argument) must not pass
+        # silently as "no tests": the verifier and server logs show why.
+        logging.getLogger(__name__).warning("cannot load tests file %s", path, exc_info=True)
         sys.modules.pop(mod_name, None)
         return None
 
