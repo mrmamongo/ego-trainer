@@ -1,0 +1,12 @@
+id: grep
+code: GR
+name: "Свой grep"
+description: "Утилита командной строки, которая ищет строки в файлах: шаблон и файлы из аргументов, флаги, коды выхода, контекст и свои мини-шаблоны. Тоже без классов: функции, циклы, строки и списки."
+order: 2
+level: medium
+kind: challenge
+workspace:
+  entry: main.py
+  include: ["*.py"]
+  max_files: 20
+  max_bytes: 200000
