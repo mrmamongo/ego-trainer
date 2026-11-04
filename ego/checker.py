@@ -879,14 +879,18 @@ def _run_program(
         expected_stdout=program.expected_stdout,
         match=program.match,
         expected_exit=program.expected_exit,
+        expected_stderr=program.expected_stderr,
+        argv=program.argv,
         expect_files=program.expect_files,
         workspace=scope,
         timeout=program.timeout or timeout,
     )
     if run.timed_out:
         return TestResult(description, False, shown, None, "TIMEOUT", level=program.level)
-    if run.exception or run.returncode != 0:
-        error = "\n".join(run.stderr.splitlines()[:10]) or "unknown error"
+    # A non-zero exit is fine when the case expects exactly that code.
+    expected_nonzero = program.expected_exit is not None and run.returncode == program.expected_exit
+    if run.exception or run.failure or (run.returncode != 0 and not expected_nonzero):
+        error = "\n".join((run.failure or run.stderr).splitlines()[:10]) or "unknown error"
         return TestResult(description, False, shown, None, error, level=program.level)
     return TestResult(description, True, shown, run.stdout, level=program.level)
 

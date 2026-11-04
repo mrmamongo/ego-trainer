@@ -74,6 +74,7 @@ def stage_parse(): ...
 # Чёрный ящик: запустить entry с вводом, сравнить вывод.
 @program(
     stdin="SET a 1\nGET a\nEXIT\n",
+    argv=["--verbose"],                    # (необяз.) аргументы командной строки; expected_stderr — подстрока в stderr
     expected_stdout="OK\n1\n",
     description="SET, потом GET",
     files={"data/store.json": '{"x": "5"}'},          # (необяз.) файлы до запуска
